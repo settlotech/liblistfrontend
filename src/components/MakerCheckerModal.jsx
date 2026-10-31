@@ -32,7 +32,7 @@ export default function MakerCheckerModal({
   onRefresh,
   onEditDraft
 }) {
-  // Determine role: Manager/Admin/Owner is Bank Owner; otherwise Bank Employee
+  // Determine role: Manager/Admin/Owner is Bank Administrator; otherwise Bank Employee
   const isBankOwner = currentUser?.roleType === 'manager' || currentUser?.roleType === 'admin' || currentUser?.roleType === 'owner';
   const isEmployee = !isBankOwner;
 
@@ -109,7 +109,7 @@ export default function MakerCheckerModal({
     if (!currentReviewItem) return;
     setIsSubmitting(true);
     try {
-      await onAction(currentReviewItem.id, action, currentUser?.name || 'Marcus Vance (Bank Owner)', comments);
+      await onAction(currentReviewItem.id, action, currentUser?.name || 'Marcus Vance (Bank Administrator)', comments);
       alert(`Request #${currentReviewItem.id} ${action === 'approve' ? 'Approved & Updated in System' : 'Rejected'}!`);
       setComments('');
       if (onRefresh) onRefresh();
@@ -142,7 +142,7 @@ export default function MakerCheckerModal({
   const handlePublishDraft = async (draft) => {
     setIsSubmitting(true);
     try {
-      await apiService.publishDraft(draft.id, currentUser?.name || 'Marcus Vance (Bank Owner)');
+      await apiService.publishDraft(draft.id, currentUser?.name || 'Marcus Vance (Bank Administrator)');
       alert(`Policy "${draft.title}" published as active!`);
       if (onRefresh) onRefresh();
       if (onSelectPolicy) onSelectPolicy(draft.id);
@@ -218,9 +218,9 @@ export default function MakerCheckerModal({
         change_summary: publishImmediately ? 'Published as active policy' : 'Draft clauses and parameters updated'
       });
 
-      // 2. If publishing immediately (Bank Owner/Manager)
+      // 2. If publishing immediately (Bank Administrator/Manager)
       if (publishImmediately) {
-        await apiService.publishDraft(currentDraftItem.id, currentUser?.name || 'Marcus Vance (Bank Owner)');
+        await apiService.publishDraft(currentDraftItem.id, currentUser?.name || 'Marcus Vance (Bank Administrator)');
         alert(`Draft "${draftEditData.title}" updated and published as ACTIVE policy!`);
         if (onSelectPolicy) onSelectPolicy(currentDraftItem.id);
       } else {
@@ -477,7 +477,7 @@ export default function MakerCheckerModal({
                             </span>
                           </div>
                           <p className="text-slate-600 leading-relaxed text-[12px]">
-                            This policy amendment was authored by <strong>{currentReviewItem.maker_name || currentUser?.name || 'Bank Employee'}</strong> and has been submitted to the governance queue. Marcus Vance (Bank Owner / Department Manager) will review, sign off, or request revisions.
+                            This policy amendment was authored by <strong>{currentReviewItem.maker_name || currentUser?.name || 'Bank Employee'}</strong> and has been submitted to the governance queue. Marcus Vance (Bank Administrator / Department Manager) will review, sign off, or request revisions.
                           </p>
                           <div className="flex items-center gap-3 pt-1 text-[11px] text-slate-500 border-t border-slate-200/70">
                             <span>Request: <strong className="font-mono text-slate-800">CR-#{currentReviewItem.id}</strong></span>
@@ -594,7 +594,7 @@ export default function MakerCheckerModal({
                                 <span>Quick Edit</span>
                               </button>
 
-                              {/* 3. Publish to Active (Bank Owner / Approver) */}
+                              {/* 3. Publish to Active (Bank Administrator / Approver) */}
                               {isBankOwner ? (
                                 <button
                                   type="button"

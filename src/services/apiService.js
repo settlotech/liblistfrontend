@@ -9,6 +9,7 @@ import {
   usersApi,
   templatesApi,
   tasksApi,
+  authApi,
   aiApi
 } from './api/index';
 
@@ -68,7 +69,13 @@ export const apiService = {
   updateTask: tasksApi.updateTask,
   deleteTask: tasksApi.deleteTask,
 
-  // 9. AI Document Ingestion & RAG
+  // 9. Institutional Authentication & JWT Session
+  login: authApi.login,
+  register: authApi.register,
+  getProfile: authApi.getProfile,
+  logout: authApi.logout,
+
+  // 10. AI Document Ingestion & RAG
   ingestDocuments: aiApi.ingestDocuments,
   queryRag: aiApi.queryRag,
   getVectors: aiApi.getVectors

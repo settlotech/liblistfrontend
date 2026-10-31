@@ -370,7 +370,7 @@ Standardized reporting format and system workflow event triggers:
         }
       ]
     },
-    created_by: 'Marcus Vance (Bank Owner)',
+    created_by: 'Marcus Vance (Bank Administrator)',
     updated_at: new Date().toISOString()
   },
 

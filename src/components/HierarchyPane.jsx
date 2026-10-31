@@ -560,7 +560,7 @@ export default function HierarchyPane({
                                     ? 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100'
                                     : 'text-slate-700 hover:bg-white border-transparent hover:border-slate-200 hover:shadow-xs'
                                 }`}
-                                title={`${pol.title}${isDraft ? ' (Draft — pending Bank Owner approval)' : ''}`}
+                                title={`${pol.title}${isDraft ? ' (Draft — pending Bank Administrator approval)' : ''}`}
                               >
                                 {/* Left: Icon + clean product name */}
                                 <div className="flex items-center gap-1.5 min-w-0 flex-1">

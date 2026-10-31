@@ -101,7 +101,7 @@ export default function BankUserManagerModal({
     {
       id: 'marcus_vance',
       name: 'Marcus Vance',
-      role: 'Bank Owner & Sign-Off Authority',
+      role: 'Bank Administrator & Sign-Off Authority',
       roleType: 'manager',
       department: 'Executive Governance & Retail Lending',
       canView: true,
@@ -309,7 +309,7 @@ export default function BankUserManagerModal({
                           ? 'bg-amber-100 text-amber-800' 
                           : 'bg-slate-100 text-slate-600'
                       }`}>
-                        {user.roleType === 'manager' ? 'Bank Owner' : 'Employee'}
+                        {user.roleType === 'manager' ? 'Bank Administrator' : 'Employee'}
                       </span>
                     </div>
 
@@ -352,7 +352,7 @@ export default function BankUserManagerModal({
                     ? 'bg-amber-100 text-amber-900 border border-amber-300' 
                     : 'bg-blue-100 text-blue-900 border border-blue-200'
                 }`}>
-                  {activeUser.roleType === 'manager' ? 'Bank Owner' : 'Bank Employee'}
+                  {activeUser.roleType === 'manager' ? 'Bank Administrator' : 'Bank Employee'}
                 </span>
               </div>
             </div>

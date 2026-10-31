@@ -9,9 +9,11 @@ import ConfigurePolicyModal from './components/ConfigurePolicyModal';
 import AddPolicyModal from './components/AddPolicyModal';
 import ExportModal from './components/ExportModal';
 import SplashScreen from './components/SplashScreen';
+import Login from './components/login/login';
 import NotificationsModal from './components/NotificationsModal';
 import BankUserManagerModal from './components/BankUserManagerModal';
 import SuperAdminLoginModal from './components/SuperAdminLoginModal';
+import RoleLoginModal from './components/RoleLoginModal';
 import VectorSpaceModal from './components/VectorSpaceModal';
 import ChangeManagementCenterPane from './components/ChangeManagementCenterPane.jsx';
 import TasksWorkspaceCenterPane from './components/TasksWorkspaceCenterPane.jsx';
@@ -19,8 +21,11 @@ import TemplatesWorkspaceCenterPane from './components/TemplatesWorkspaceCenterP
 import { apiService } from './services/apiService';
 import { banksList, policiesDatabase } from './data/mockData';
 import { DEFAULT_DEPARTMENTS } from './data/defaultPolicies';
+import { useAuth } from './context/AuthContext';
 
 export default function App() {
+  const { user: authUser, logout: authLogout } = useAuth();
+
   // Standalone /3dviewer route redirect
   useEffect(() => {
     if (typeof window !== 'undefined' && (window.location.pathname === '/3dviewer' || window.location.pathname === '/3dview')) {
@@ -31,19 +36,90 @@ export default function App() {
   // Initial loading splash screen
   const [showSplash, setShowSplash] = useState(true);
 
-  // Current active user persona (Default: Marcus Vance, CBA Bank Owner)
-  const [currentUser, setCurrentUser] = useState({
-    id: 'marcus_vance',
-    name: 'Marcus Vance',
-    role: 'Bank Owner',
-    roleType: 'manager',
-    department: 'Executive Governance & Retail Operations',
-    bankName: 'Commonwealth Bank of Australia',
-    avatar: 'MV'
+  // Authentication State with Local/Session persistence
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    try {
+      const token = localStorage.getItem('libtrak_access_token');
+      const user = localStorage.getItem('libtrak_authenticated_user');
+      return Boolean(token && user);
+    } catch (_) {
+      return false;
+    }
+  });
+
+  // Current active user persona (restores from stored session or null before login)
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const user = localStorage.getItem('libtrak_authenticated_user');
+      if (user) {
+        const u = JSON.parse(user);
+        const isPlatformOwner = 
+          u.email?.toLowerCase().includes('ramesh') || 
+          u.role?.toLowerCase().includes('platform') || 
+          u.role?.toLowerCase().includes('admin') || 
+          u.roleType === 'admin' ||
+          u.id === 'u_admin_ramesh';
+        if (isPlatformOwner) {
+          u.roleType = 'admin';
+          u.role = 'Platform Owner';
+        }
+        return u;
+      }
+    } catch (_) {}
+    return null;
   });
 
   // Current view: 'WORKSPACE' (3-pane layout from libtrack_UI) vs 'SUPER_ADMIN' (Platform Owner portal)
-  const [currentView, setCurrentView] = useState('WORKSPACE');
+  const [currentView, setCurrentView] = useState(() => {
+    try {
+      const user = localStorage.getItem('libtrak_authenticated_user');
+      if (user) {
+        const u = JSON.parse(user);
+        if (u.roleType === 'admin' || u.role?.toLowerCase().includes('platform') || u.email?.toLowerCase().includes('ramesh') || u.id === 'u_admin_ramesh') {
+          return 'SUPER_ADMIN';
+        }
+      }
+    } catch (_) {}
+    return 'WORKSPACE';
+  });
+
+  // Keep currentUser synced when authUser changes from AuthContext
+  useEffect(() => {
+    if (authUser) {
+      const isPlatformOwner = 
+        authUser.email?.toLowerCase().includes('ramesh') || 
+        authUser.role?.toLowerCase().includes('platform') || 
+        authUser.role?.toLowerCase().includes('admin') || 
+        authUser.roleType === 'admin' ||
+        authUser.id === 'u_admin_ramesh';
+
+      const roleType = isPlatformOwner 
+        ? 'admin' 
+        : (authUser.role === 'manager' || authUser.role?.toLowerCase().includes('owner') || authUser.role?.toLowerCase().includes('manager')
+            ? 'manager' 
+            : (authUser.role_type || 'employee'));
+
+      const formatted = {
+        id: authUser.id,
+        name: authUser.name,
+        email: authUser.email,
+        role: isPlatformOwner ? 'Platform Owner' : (authUser.role === 'Bank Owner' || authUser.role?.toLowerCase().includes('owner') || roleType === 'manager' ? 'Bank Administrator' : (authUser.role || 'Bank Employee')),
+        roleType: roleType,
+        department: authUser.department || (isPlatformOwner ? 'National Banking Oversight & APRA Audit' : roleType === 'manager' ? 'Executive Governance' : 'Credit Operations Squad'),
+        bankName: isPlatformOwner ? 'Central Platform Governance' : 'Commonwealth Bank of Australia',
+        bankId: isPlatformOwner ? 'platform' : 'cba',
+        avatar: authUser.name ? authUser.name.split(' ').map(n => n[0]).join('').slice(0, 2) : 'AU',
+        canApprove: true,
+        canReject: true,
+        canEdit: true
+      };
+      setCurrentUser(formatted);
+      setIsAuthenticated(true);
+      if (roleType === 'admin') {
+        setCurrentView('SUPER_ADMIN');
+      }
+    }
+  }, [authUser]);
 
   // Banks & Institutions
   const [banks, setBanks] = useState(banksList);
@@ -90,10 +166,11 @@ export default function App() {
   const [isNotificationsModalOpen, setIsNotificationsModalOpen] = useState(false);
   const [isBankUserManagerOpen, setIsBankUserManagerOpen] = useState(false);
   const [isSuperAdminModalOpen, setIsSuperAdminModalOpen] = useState(false);
+  const [isRoleLoginOpen, setIsRoleLoginOpen] = useState(false);
   const [isVectorSpaceOpen, setIsVectorSpaceOpen] = useState(false);
   const [preselectedDept, setPreselectedDept] = useState({ id: null, name: '' });
 
-  // Bank Users & Role-Based Access Control State (Bank Owner Governance)
+  // Bank Users & Role-Based Access Control State (Bank Administrator Governance)
   const [bankUsers, setBankUsers] = useState([
     {
       id: 'sarah_jenkins',
@@ -181,7 +258,7 @@ export default function App() {
     {
       id: 'marcus_vance',
       name: 'Marcus Vance',
-      role: 'Bank Owner & Sign-Off Authority',
+      role: 'Bank Administrator & Sign-Off Authority',
       roleType: 'manager',
       department: 'Executive Governance & Retail Lending',
       canView: true,
@@ -229,13 +306,13 @@ export default function App() {
   }, []);
 
   // Compute direct permissions for currently active persona
-  const currentStaffConfig = bankUsers.find(u => u.id === currentUser.id);
-  const canCurrentUserCreateDocument = currentUser.roleType === 'manager' || currentUser.roleType === 'admin' 
+  const currentStaffConfig = bankUsers.find(u => u.id === currentUser?.id);
+  const canCurrentUserCreateDocument = currentUser?.roleType === 'manager' || currentUser?.roleType === 'admin' 
     ? true 
     : (currentStaffConfig ? currentStaffConfig.canCreate !== false : true);
 
   const canCurrentUserEditSelectedPolicy = (policyId) => {
-    if (currentUser.roleType === 'manager' || currentUser.roleType === 'admin') return true;
+    if (currentUser?.roleType === 'manager' || currentUser?.roleType === 'admin') return true;
     if (!currentStaffConfig) return true;
     if (currentStaffConfig.canEdit === false) return false;
     if (policyId && currentStaffConfig.policyPermissions && currentStaffConfig.policyPermissions[policyId]) {
@@ -269,16 +346,16 @@ export default function App() {
   // 2. Fetch Policies with Bank User Access Control Filtering (Completely hides blocked policies)
   const loadPolicies = useCallback(async () => {
     try {
-      const data = await apiService.getPolicies('all', '', currentUser.roleType);
+      const data = await apiService.getPolicies('all', '', currentUser?.roleType || 'employee');
       // Canonical database data: directly use DB policies
       const fullList = (data && Array.isArray(data)) ? data : [];
       console.log(`%c🏛️ [APP STATE] Active Database Policies (${fullList.length} policies loaded from DB):`, 'color: #10B981; font-weight: bold;', fullList);
 
       setAllPolicies(fullList);
 
-      // Enforce employee policy access permissions set by the Bank Owner
+      // Enforce employee policy access permissions set by the Bank Administrator
       let baseData = fullList;
-      if (currentUser.roleType === 'employee' && currentStaffConfig) {
+      if (currentUser?.roleType === 'employee' && currentStaffConfig) {
         if (currentStaffConfig.canView === false) {
           baseData = [];
         } else {
@@ -311,7 +388,7 @@ export default function App() {
       setAllPolicies([]);
       setPolicies([]);
     }
-  }, [currentUser.roleType, currentStaffConfig]);
+  }, [currentUser?.roleType, currentStaffConfig]);
 
   // 3. Fetch Maker-Checker items & Notification count
   const loadMakerChecker = useCallback(async () => {
@@ -336,14 +413,81 @@ export default function App() {
     loadPolicies();
   }, [loadPolicies]);
 
+  // Successful institutional login handler
+  const handleLoginSuccess = (user, token) => {
+    const isPlatformOwner = 
+      user?.email?.toLowerCase().includes('ramesh') || 
+      user?.role?.toLowerCase().includes('platform') || 
+      user?.role?.toLowerCase().includes('admin') || 
+      user?.roleType === 'admin' ||
+      user?.id === 'u_admin_ramesh';
+
+    const roleType = isPlatformOwner 
+      ? 'admin' 
+      : (user?.role === 'manager' || user?.role?.toLowerCase().includes('owner') || user?.role?.toLowerCase().includes('manager')
+          ? 'manager' 
+          : (user?.roleType || 'employee'));
+
+    const formattedUser = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: isPlatformOwner ? 'Platform Owner' : (user.role === 'Bank Owner' || user.role?.toLowerCase().includes('owner') || roleType === 'manager' ? 'Bank Administrator' : (user.role || 'Bank Employee')),
+      roleType: roleType,
+      department: user.department || (isPlatformOwner ? 'National Banking Oversight & APRA Audit' : roleType === 'manager' ? 'Executive Governance' : 'Credit Operations Squad'),
+      bankName: isPlatformOwner ? 'Central Platform Governance' : 'Commonwealth Bank of Australia',
+      bankId: isPlatformOwner ? 'platform' : 'cba',
+      avatar: user.name ? user.name.split(' ').map(n => n[0]).join('').slice(0, 2) : 'AU',
+      canApprove: true,
+      canReject: true,
+      canEdit: true
+    };
+
+    setCurrentUser(formattedUser);
+    setIsAuthenticated(true);
+    try {
+      localStorage.setItem('libtrak_authenticated_user', JSON.stringify(formattedUser));
+      if (token) localStorage.setItem('libtrak_access_token', token);
+    } catch (_) {}
+
+    if (roleType === 'admin') {
+      setCurrentView('SUPER_ADMIN');
+    } else {
+      setCurrentView('WORKSPACE');
+    }
+    setRefreshTrigger(prev => prev + 1);
+  };
+
+  // Real-time logout handler
+  const handleLogout = async () => {
+    try {
+      if (authLogout) await authLogout();
+    } catch (_) {}
+    try {
+      await apiService.logout();
+    } catch (_) {}
+    try {
+      localStorage.removeItem('libtrak_authenticated_user');
+      localStorage.removeItem('libtrak_access_token');
+      sessionStorage.removeItem('user');
+    } catch (_) {}
+    setIsAuthenticated(false);
+    setCurrentUser(null);
+  };
+
   // Switch role and automatically set view if admin
   const handleSelectUser = (user) => {
     setCurrentUser(user);
+    setIsAuthenticated(true);
+    try {
+      localStorage.setItem('libtrak_authenticated_user', JSON.stringify(user));
+    } catch (_) {}
     if (user.roleType === 'admin') {
       setCurrentView('SUPER_ADMIN');
     } else {
       setCurrentView('WORKSPACE');
     }
+    setRefreshTrigger(prev => prev + 1);
   };
 
   // Toggle view between Super Admin Portal and 3-Pane Workspace
@@ -395,7 +539,7 @@ export default function App() {
   // Action: Toggle Policy Active / Inactive (Safe Archiving)
   const handleTogglePolicyStatus = async (policyId, newStatus) => {
     try {
-      await apiService.togglePolicyStatus(policyId, newStatus, currentUser.name);
+      await apiService.togglePolicyStatus(policyId, newStatus, currentUser?.name || 'Authorized Officer');
       setRefreshTrigger(prev => prev + 1);
     } catch (err) {
       console.error('Failed to toggle status:', err);
@@ -405,7 +549,7 @@ export default function App() {
   // Action: Toggle Document Masking
   const handleTogglePolicyMasking = async (policyId, isMasked) => {
     try {
-      await apiService.togglePolicyMasking(policyId, isMasked, currentUser.name);
+      await apiService.togglePolicyMasking(policyId, isMasked, currentUser?.name || 'Authorized Officer');
       setRefreshTrigger(prev => prev + 1);
     } catch (err) {
       console.error('Failed to toggle masking:', err);
@@ -452,23 +596,35 @@ export default function App() {
     || policies[0]
     || null;
 
+  // If not authenticated, directly show Tamil's exact Login component
+  if (!isAuthenticated || !currentUser) {
+    return (
+      <Login
+        onLoginSuccess={handleLoginSuccess}
+      />
+    );
+  }
+
+  // Initial Institutional Loading Screen
+  if (showSplash) {
+    return (
+      <SplashScreen
+        onFinish={() => setShowSplash(false)}
+        selectedBank={selectedBank}
+        onSelectBank={setSelectedBank}
+        banks={banks}
+      />
+    );
+  }
+
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#eef4fa] font-sans text-slate-800">
-      
-      {/* Initial Institutional Loading Screen */}
-      {showSplash && (
-        <SplashScreen
-          onFinish={() => setShowSplash(false)}
-          selectedBank={selectedBank}
-          onSelectBank={setSelectedBank}
-          banks={banks}
-        />
-      )}
 
       {/* Top Application Header */}
       <Header
         currentUser={currentUser}
         onSelectUser={handleSelectUser}
+        onLogout={handleLogout}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
         pendingReviewCount={
@@ -480,6 +636,7 @@ export default function App() {
         onOpenNotifications={() => setIsNotificationsModalOpen(true)}
         onOpenBankUserManagerModal={() => setIsBankUserManagerOpen(true)}
         onOpenSuperAdminModal={() => setIsSuperAdminModalOpen(true)}
+        onOpenRoleLogin={() => setIsRoleLoginOpen(true)}
         onOpenVectorSpace={() => setIsVectorSpaceOpen(true)}
         isLeftOpen={isLeftOpen}
         onToggleLeft={() => setIsLeftOpen(!isLeftOpen)}
@@ -767,7 +924,15 @@ export default function App() {
         onLoginAsSuperAdmin={(adminUser) => handleSelectUser(adminUser)}
       />
 
-      {/* 8. 3D Vector Space DB Visualizer */}
+      {/* 8. Institutional Role Login & Credential Authentication Modal */}
+      <RoleLoginModal
+        isOpen={isRoleLoginOpen}
+        onClose={() => setIsRoleLoginOpen(false)}
+        currentUser={currentUser}
+        onSelectUser={handleSelectUser}
+      />
+
+      {/* 9. 3D Vector Space DB Visualizer */}
       <VectorSpaceModal
         isOpen={isVectorSpaceOpen}
         onClose={() => setIsVectorSpaceOpen(false)}

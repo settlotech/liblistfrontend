@@ -69,7 +69,7 @@ export function TasksWorkspaceCenterPane({
     try {
       await apiService.createTask({
         ...newTask,
-        assigned_by: currentUser?.name || 'Marcus Vance (Bank Owner)',
+        assigned_by: currentUser?.name || 'Marcus Vance (Bank Administrator)',
         status: 'pending'
       });
       setIsAssignModalOpen(false);
@@ -428,7 +428,7 @@ export function TasksWorkspaceCenterPane({
                     className="w-full p-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] text-xs bg-white font-medium"
                   >
                     <option value="Sarah Jenkins">Sarah Jenkins (Bank Employee)</option>
-                    <option value="Marcus Vance">Marcus Vance (Bank Owner)</option>
+                    <option value="Marcus Vance">Marcus Vance (Bank Administrator)</option>
                     <option value="Compliance Squad">Compliance Squad (All Personnel)</option>
                   </select>
                 </div>

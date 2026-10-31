@@ -35,12 +35,12 @@ export const userRoles = [
     bankId: 'cba',
     name: 'Marcus Vance',
     email: 'marcus.vance@cba.com.au',
-    role: 'Bank Owner',
+    role: 'Bank Administrator',
     roleType: 'manager',
     type: 'bank',
     bankName: 'Commonwealth Bank of Australia (CBA)',
     avatar: 'MV',
-    badge: '🏦 Bank Owner',
+    badge: '🏦 Bank Administrator',
   },
   // NAB Roles
   {

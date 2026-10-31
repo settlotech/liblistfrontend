@@ -1484,10 +1484,10 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
               mandatory_dvs: true,
               sections: docSections
             },
-            created_by: currentUser?.name || 'Bank Owner',
+            created_by: currentUser?.name || 'Bank Administrator',
             creation_mode: 'upload',
             user_role: currentUser?.roleType || 'manager',
-            user_name: currentUser?.name || 'Bank Owner'
+            user_name: currentUser?.name || 'Bank Administrator'
           });
         } else {
           const targetDeptName = departments.find(d => d.id === docDept)?.name || 'Retail Banking';
@@ -1584,7 +1584,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
     setIsSubmitting(true);
     try {
       if (isBankOwner) {
-        // Direct Publish for Bank Owner
+        // Direct Publish for Bank Administrator
         const res = await apiService.createPolicy({
           department_id: finalDeptId,
           title: finalTitle.trim(),
@@ -1598,10 +1598,10 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
             sections: finalSections,
             phases: selectedTemplatePhases
           },
-          created_by: currentUser?.name || 'Bank Owner',
+          created_by: currentUser?.name || 'Bank Administrator',
           creation_mode: creationMode,
           user_role: currentUser?.roleType || 'manager',
-          user_name: currentUser?.name || 'Bank Owner'
+          user_name: currentUser?.name || 'Bank Administrator'
         });
 
         if (res.id) {
@@ -1609,7 +1609,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
           onClose();
         }
       } else {
-        // Bank Employee: Submits for Bank Owner Approval (Maker-Checker)
+        // Bank Employee: Submits for Bank Administrator Approval (Maker-Checker)
         const targetDeptName = departments.find(d => d.id === finalDeptId)?.name || 'Retail Banking';
         await apiService.createMakerCheckerItem({
           type: 'create_policy',
@@ -1619,7 +1619,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
           change_details: `Proposed new operational policy: "${finalTitle.trim()}" in ${targetDeptName}. Mode: ${creationMode}. SLA: ${finalSla}, Daily Limit: ${finalDaily}. Sections: ${finalSections.length}. Summary: ${finalSummary.trim() || finalTitle.trim()}`,
           status: 'pending'
         });
-        alert(`Policy proposal "${finalTitle.trim()}" submitted for Bank Owner (Marcus Vance) approval.`);
+        alert(`Policy proposal "${finalTitle.trim()}" submitted for Bank Administrator (Marcus Vance) approval.`);
         onClose();
       }
     } catch (err) {
@@ -2971,7 +2971,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                 ? (isBankOwner ? 'Publishing Policy...' : 'Submitting Proposal...') 
                 : creationMode === 'library'
                   ? (isBankOwner ? 'Adopt & Publish Policy' : 'Submit Template Proposal')
-                  : (isBankOwner ? 'Publish Operational Policy' : 'Submit for Bank Owner Approval')}
+                  : (isBankOwner ? 'Publish Operational Policy' : 'Submit for Bank Administrator Approval')}
             </button>
           </div>
         </div>

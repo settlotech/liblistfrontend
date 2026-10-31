@@ -171,7 +171,7 @@ export default function ConfigurePolicyModal({
       });
 
       if (publishImmediately && isChecker) {
-        await apiService.publishDraft(policy.id, currentUser?.name || 'Marcus Vance (Bank Owner)');
+        await apiService.publishDraft(policy.id, currentUser?.name || 'Marcus Vance (Bank Administrator)');
         setStatusMessage({
           type: 'success',
           text: `Policy "${title}" saved and published as ACTIVE!`

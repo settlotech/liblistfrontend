@@ -15,12 +15,15 @@ import {
   KeyRound,
   Users,
   Box,
-  X
+  X,
+  UserCheck,
+  LogOut
 } from 'lucide-react';
 
 export default function Header({
   currentUser,
   onSelectUser,
+  onLogout,
   searchQuery,
   setSearchQuery,
   pendingReviewCount = 0,
@@ -28,6 +31,7 @@ export default function Header({
   onOpenNotifications,
   onOpenBankUserManagerModal,
   onOpenSuperAdminModal,
+  onOpenRoleLogin,
   onOpenVectorSpace,
   isLeftOpen,
   onToggleLeft,
@@ -57,7 +61,7 @@ export default function Header({
     {
       id: 'marcus_vance',
       name: 'Marcus Vance',
-      role: 'Bank Owner',
+      role: 'Bank Administrator',
       roleType: 'manager',
       department: 'Executive Governance',
       bankName: 'Commonwealth Bank (CBA)',
@@ -152,7 +156,7 @@ export default function Header({
       {/* Right: Clean Notification Bell + Bank User Manager + Role Selector */}
       <div className="flex items-center gap-2">
         
-        {/* Bank User & Access Control Management (Bank Owner Feature) */}
+        {/* Bank User & Access Control Management (Bank Administrator Feature) */}
         {isBankOwner && onOpenBankUserManagerModal && (
           <button
             onClick={onOpenBankUserManagerModal}
@@ -199,6 +203,19 @@ export default function Header({
           </button>
         )}
 
+        {/* Platform Owner: Quick Super Admin Portal / Bank Workspace Toggle */}
+        {isSuperAdmin && onToggleSuperAdminView && (
+          <button
+            onClick={onToggleSuperAdminView}
+            title={currentView === 'SUPER_ADMIN' ? "Switch to 3-Pane Bank Workspace" : "Open Super Admin Portal"}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs transition-all cursor-pointer active:scale-95"
+          >
+            <Crown className="w-3.5 h-3.5 text-amber-600" />
+            <span className="hidden sm:inline">{currentView === 'SUPER_ADMIN' ? 'Bank Workspace' : 'Super Admin Portal'}</span>
+            <span className="sm:hidden">{currentView === 'SUPER_ADMIN' ? 'Workspace' : 'Portal'}</span>
+          </button>
+        )}
+
         {/* Role Selector Pill */}
         <div ref={roleDropdownRef} className="relative">
           <button
@@ -210,98 +227,104 @@ export default function Header({
             </div>
             <div className="hidden sm:block">
               <div className="text-[12.5px] font-semibold text-slate-800 leading-tight">
-                {currentUser?.name || 'Marcus Vance'}
+                {currentUser?.name || 'Bank Officer'}
               </div>
               <div className="text-[10.5px] text-slate-500">
-                {currentUser?.roleType === 'admin' ? 'Platform Owner' : currentUser?.roleType === 'manager' ? 'Bank Owner' : 'Bank Employee'}
+                {currentUser?.roleType === 'admin' ? 'Platform Owner' : (currentUser?.role?.toLowerCase().includes('owner') || currentUser?.role?.toLowerCase().includes('administrator') || currentUser?.roleType === 'manager' ? 'Bank Administrator' : 'Bank Employee')}
               </div>
             </div>
             <ChevronDown className="w-3 h-3 text-slate-400" />
           </button>
 
-          {/* Role Dropdown Menu */}
+          {/* User Profile Dropdown Menu */}
           {isRoleDropdownOpen && (
-            <div className="absolute right-0 top-full mt-1.5 w-72 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in duration-100">
-              <div className="px-3.5 py-2 border-b border-slate-100 bg-slate-50/70">
-                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Select Bank User</span>
-                <p className="text-[11.5px] text-slate-600 mt-0.5">Switch between Bank Owner and Employee</p>
-              </div>
-              <div className="divide-y divide-slate-100">
-                {roles.map((r) => {
-                  const isActive = currentUser?.id === r.id;
-                  return (
-                    <button
-                      key={r.id}
-                      onClick={() => {
-                        if (onSelectUser) onSelectUser(r);
-                        setIsRoleDropdownOpen(false);
-                      }}
-                      className={`w-full p-2.5 text-left flex items-start gap-2.5 hover:bg-slate-50 transition cursor-pointer ${
-                        isActive ? 'bg-[#0057B8]/10' : ''
-                      }`}
-                    >
-                      <div className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs text-white flex-shrink-0 ${
-                        isActive ? 'bg-[#0057B8]' : 'bg-slate-600'
-                      }`}>
-                        {r.avatar}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className={`text-[12.5px] font-bold flex items-center justify-between ${isActive ? 'text-[#0057B8]' : 'text-slate-800'}`}>
-                          <span>{r.name}</span>
-                          {isActive && <CheckCircle className="w-3.5 h-3.5 text-[#0057B8]" />}
-                        </div>
-                        <div className="text-[11.5px] text-slate-600 font-medium">{r.role}</div>
-                        <div className="text-[10.5px] text-slate-400">{r.bankName}</div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Dedicated Separate Link for Super Admin (Platform Owner: Ramesh) */}
-              <div className="p-2 border-t border-slate-100 bg-amber-50/40">
-                <button
-                  onClick={() => {
-                    setIsRoleDropdownOpen(false);
-                    if (onSelectUser) onSelectUser(superAdminRole);
-                    else if (onOpenSuperAdminModal) onOpenSuperAdminModal();
-                  }}
-                  className={`w-full p-2 text-left flex items-center justify-between rounded-lg hover:bg-amber-100/70 transition cursor-pointer ${
-                    currentUser?.roleType === 'admin' ? 'bg-amber-100/80' : ''
-                  }`}
-                  title="Direct access to Platform Owner (Ramesh)"
-                >
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs text-amber-900 bg-amber-200 flex-shrink-0">
-                      👑
-                    </div>
-                    <div>
-                      <div className="text-[12px] font-bold text-slate-900 flex items-center gap-1.5">
-                        <span>Ramesh</span>
-                        <span className="text-[9.5px] font-semibold text-amber-800 bg-amber-100 px-1 py-0.2 rounded border border-amber-200">Platform Owner</span>
-                      </div>
-                      <div className="text-[10px] text-slate-500">Separate Super Admin Gateway</div>
-                    </div>
+            <div className="absolute right-0 top-full mt-1.5 w-64 bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in duration-100">
+              
+              {/* Authenticated User Identity */}
+              <div className="px-3.5 py-2.5 border-b border-slate-100 bg-slate-50/70 flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs text-white bg-[#0057B8] flex-shrink-0 shadow-2xs">
+                  {currentUser?.avatar || (currentUser?.roleType === 'admin' ? 'R' : currentUser?.roleType === 'manager' ? 'MV' : 'SJ')}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-bold text-slate-800 truncate">
+                    {currentUser?.name || 'Bank Officer'}
                   </div>
-                  <Crown className="w-3.5 h-3.5 text-amber-600" />
-                </button>
+                  <div className="text-[11px] font-medium text-[#0057B8] truncate">
+                    {currentUser?.role === 'Bank Owner' || currentUser?.role?.toLowerCase().includes('owner') || currentUser?.role?.toLowerCase().includes('administrator') || currentUser?.roleType === 'manager' ? 'Bank Administrator' : (currentUser?.roleType === 'admin' ? 'Platform Owner' : (currentUser?.role || 'Bank Employee'))}
+                  </div>
+                </div>
               </div>
 
-              {/* Bank Owner Quick Option: Manage Bank Users */}
+              {/* Department & Email Info */}
+              <div className="px-3.5 py-2 text-[11px] text-slate-600 border-b border-slate-100 space-y-1">
+                {currentUser?.email && (
+                  <div className="truncate text-slate-500">
+                    <span className="font-semibold text-slate-700">Email: </span>
+                    {currentUser.email}
+                  </div>
+                )}
+                {currentUser?.department && (
+                  <div className="truncate text-slate-500">
+                    <span className="font-semibold text-slate-700">Dept: </span>
+                    {currentUser.department}
+                  </div>
+                )}
+              </div>
+
+              {/* Platform Owner / Super Admin View Switcher */}
+              {isSuperAdmin && onToggleSuperAdminView && (
+                <div className="p-2 border-b border-slate-100 bg-amber-50/40">
+                  <button
+                    onClick={() => {
+                      setIsRoleDropdownOpen(false);
+                      onToggleSuperAdminView();
+                    }}
+                    className="w-full p-2 text-left flex items-center justify-between rounded-xl hover:bg-amber-100/70 transition cursor-pointer text-amber-900"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Crown className="w-4 h-4 text-amber-600" />
+                      <div>
+                        <div className="text-xs font-bold">
+                          {currentView === 'SUPER_ADMIN' ? 'Back to Bank Workspace' : 'Open Super Admin Portal'}
+                        </div>
+                        <div className="text-[10px] text-amber-700">Multi-Bank Governance</div>
+                      </div>
+                    </div>
+                  </button>
+                </div>
+              )}
+
+              {/* Bank Administrator: Manage Bank Users (Optional) */}
               {isBankOwner && onOpenBankUserManagerModal && (
-                <div className="p-2 border-t border-slate-100 bg-slate-50/50">
+                <div className="p-1.5 border-b border-slate-100">
                   <button
                     onClick={() => {
                       setIsRoleDropdownOpen(false);
                       onOpenBankUserManagerModal();
                     }}
-                    className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white border border-slate-200 hover:bg-slate-100 transition cursor-pointer"
+                    className="w-full flex items-center gap-2 py-1.5 px-2.5 rounded-lg text-xs font-semibold text-slate-700 hover:text-slate-900 hover:bg-slate-100 transition cursor-pointer"
                   >
-                    <Users className="w-3.5 h-3.5 text-slate-600" />
-                    <span>Manage Bank Users & Clearances</span>
+                    <Users className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Manage Bank Users</span>
                   </button>
                 </div>
               )}
+
+              {/* Logout Action */}
+              <div className="p-2">
+                {onLogout && (
+                  <button
+                    onClick={() => {
+                      setIsRoleDropdownOpen(false);
+                      onLogout();
+                    }}
+                    className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold text-rose-600 hover:text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition cursor-pointer"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Logout & End Session</span>
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>

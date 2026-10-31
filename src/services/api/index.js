@@ -7,6 +7,7 @@ import { metricsApi } from './metricsApi';
 import { usersApi } from './usersApi';
 import { templatesApi } from './templatesApi';
 import { tasksApi } from './tasksApi';
+import { authApi } from './authApi';
 import { aiApi } from './aiApi';
 
 export {
@@ -20,6 +21,7 @@ export {
   usersApi,
   templatesApi,
   tasksApi,
+  authApi,
   aiApi
 };
 
@@ -32,6 +34,7 @@ export const api = {
   ...usersApi,
   ...templatesApi,
   ...tasksApi,
+  ...authApi,
   ...aiApi
 };
 

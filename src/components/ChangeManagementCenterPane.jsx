@@ -178,12 +178,12 @@ export function ChangeManagementCenterPane({
     }
   };
 
-  // 2. Publish draft directly as active (Bank Owner action)
+  // 2. Publish draft directly as active (Bank Administrator action)
   const handlePublishDraft = async (draft) => {
     if (!window.confirm(`Publish "${draft.title}" immediately as active policy?`)) return;
     setIsSubmitting(true);
     try {
-      await apiService.publishDraft(draft.id, currentUser?.name || 'Marcus Vance (Bank Owner)');
+      await apiService.publishDraft(draft.id, currentUser?.name || 'Marcus Vance (Bank Administrator)');
       alert(`Policy "${draft.title}" published as active in repository!`);
       if (onRefresh) onRefresh();
     } catch (err) {
@@ -218,7 +218,7 @@ export function ChangeManagementCenterPane({
       await apiService.actionMakerChecker(
         item.id,
         action,
-        currentUser?.name || 'Marcus Vance (Bank Owner)',
+        currentUser?.name || 'Marcus Vance (Bank Administrator)',
         decisionNote
       );
       alert(`Request CR-#${item.id} ${action === 'approve' ? 'APPROVED & DEPLOYED' : 'REJECTED'} successfully!`);
@@ -515,7 +515,7 @@ export function ChangeManagementCenterPane({
                                 type="button"
                                 onClick={() => handleOpenSubmitModal(draft)}
                                 className="px-3 py-1.5 rounded-lg bg-[#0057B8] hover:bg-[#004EA6] text-white text-[11px] font-bold transition cursor-pointer flex items-center gap-1 shadow-xs active:scale-95"
-                                title="Submit Draft to Bank Owner for Approval"
+                                title="Submit Draft to Bank Administrator for Approval"
                               >
                                 <Send className="w-3 h-3" />
                                 <span>Submit</span>
@@ -765,7 +765,7 @@ export function ChangeManagementCenterPane({
                           </div>
                         </div>
 
-                        {/* Approver Adjudication Action Box (Bank Owner) */}
+                        {/* Approver Adjudication Action Box (Bank Administrator) */}
                         {isBankOwner ? (
                           <div className="pt-3 border-t border-slate-200 space-y-3">
                             <div>
@@ -828,7 +828,7 @@ export function ChangeManagementCenterPane({
                           /* Submitter Employee View */
                           <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 flex flex-wrap items-center justify-between gap-2">
                             <span className="font-semibold">
-                              Pending review by Department Manager / Bank Owner (Marcus Vance).
+                              Pending review by Department Manager / Bank Administrator (Marcus Vance).
                             </span>
                             <div className="flex items-center gap-2">
                               {onEditDraft && (

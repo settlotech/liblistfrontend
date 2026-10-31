@@ -53,7 +53,7 @@ export const policyApi = {
     });
   },
 
-  async publishDraft(id, userName = 'Marcus Vance (Bank Owner)') {
+  async publishDraft(id, userName = 'Marcus Vance (Bank Administrator)') {
     return await apiFetch(`/policies/${id}/status`, {
       method: 'PATCH',
       body: JSON.stringify({ status: 'active', user_name: userName })

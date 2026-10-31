@@ -193,7 +193,7 @@ export default function PolicyWorkspacePane({
         { id: 'm4', name: 'Digital Lending SOP & Consumer Credit Act', status: 'Certified', score: '100%', completedDate: '20 Oct 2026' }
       ],
       notes: [
-        { id: 'tn1', author: 'Marcus Vance (Bank Owner)', date: '16 Oct 2026', text: 'Sarah demonstrated flawless command of Equifax automated checks with zero false positives.' },
+        { id: 'tn1', author: 'Marcus Vance (Bank Administrator)', date: '16 Oct 2026', text: 'Sarah demonstrated flawless command of Equifax automated checks with zero false positives.' },
         { id: 'tn2', author: 'Sarah Jenkins (Bank Employee)', date: '18 Oct 2026', text: 'Completed practice scenarios on Tier-1 credit card limit overrides exceeding $25k.' }
       ],
       certifiedCount: 3,
@@ -212,7 +212,7 @@ export default function PolicyWorkspacePane({
         { id: 'm4', name: 'Digital Lending SOP & Consumer Credit Act', status: 'Certified', score: '95%', completedDate: '14 Oct 2026' }
       ],
       notes: [
-        { id: 'tn3', author: 'Marcus Vance (Bank Owner)', date: '14 Oct 2026', text: 'On track for full operational delegation sign-off once Module 2 completes.' }
+        { id: 'tn3', author: 'Marcus Vance (Bank Administrator)', date: '14 Oct 2026', text: 'On track for full operational delegation sign-off once Module 2 completes.' }
       ],
       certifiedCount: 2,
       onboardingCompleted: false,
@@ -230,7 +230,7 @@ export default function PolicyWorkspacePane({
         { id: 'm4', name: 'Digital Lending SOP & Consumer Credit Act', status: 'Certified', score: '97%', completedDate: '19 Oct 2026' }
       ],
       notes: [
-        { id: 'tn4', author: 'Marcus Vance (Bank Owner)', date: '20 Oct 2026', text: 'Full 100% accreditation achieved across all 4 mandatory operational modules.' }
+        { id: 'tn4', author: 'Marcus Vance (Bank Administrator)', date: '20 Oct 2026', text: 'Full 100% accreditation achieved across all 4 mandatory operational modules.' }
       ],
       certifiedCount: 4,
       onboardingCompleted: true,
@@ -248,7 +248,7 @@ export default function PolicyWorkspacePane({
         { id: 'm4', name: 'Digital Lending SOP & Consumer Credit Act', status: 'In Progress', score: '--', dueDate: '10 Nov 2026' }
       ],
       notes: [
-        { id: 'tn5', author: 'Marcus Vance (Bank Owner)', date: '21 Oct 2026', text: 'Enrolled in expedited onboarding path.' }
+        { id: 'tn5', author: 'Marcus Vance (Bank Administrator)', date: '21 Oct 2026', text: 'Enrolled in expedited onboarding path.' }
       ],
       certifiedCount: 1,
       onboardingCompleted: false,
@@ -257,7 +257,7 @@ export default function PolicyWorkspacePane({
     {
       id: 'marcus_vance',
       name: 'Marcus Vance',
-      role: 'Bank Owner',
+      role: 'Bank Administrator',
       department: 'Executive Governance & Sign-Off Authority',
       modules: [
         { id: 'm1', name: 'APRA CPS 234 & Credit Verification', status: 'Certified', score: '100%', completedDate: '01 Oct 2026' },
@@ -266,7 +266,7 @@ export default function PolicyWorkspacePane({
         { id: 'm4', name: 'Digital Lending SOP & Consumer Credit Act', status: 'Certified', score: '100%', completedDate: '02 Oct 2026' }
       ],
       notes: [
-        { id: 'tn6', author: 'Executive Risk Committee', date: '03 Oct 2026', text: 'Bank Owner governance certification validated for Commonwealth Bank credit policies.' }
+        { id: 'tn6', author: 'Executive Risk Committee', date: '03 Oct 2026', text: 'Bank Administrator governance certification validated for Commonwealth Bank credit policies.' }
       ],
       certifiedCount: 4,
       onboardingCompleted: true,
@@ -282,7 +282,7 @@ export default function PolicyWorkspacePane({
   const handleAddTrainingNote = (e) => {
     e.preventDefault();
     if (!newTrainingNoteText.trim()) return;
-    const authorRole = currentUser?.roleType === 'manager' ? 'Bank Owner' : 'Bank Employee';
+    const authorRole = currentUser?.roleType === 'manager' ? 'Bank Administrator' : 'Bank Employee';
     const newNote = {
       id: `tn-${Date.now()}`,
       author: `${currentUser?.name || 'Marcus Vance'} (${authorRole})`,
@@ -479,12 +479,12 @@ export default function PolicyWorkspacePane({
                   <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
                   <span>Draft Policy</span>
                 </div>
-                {/* Publish button — Bank Owner only (Blue) */}
+                {/* Publish button — Bank Administrator only (Blue) */}
                 {isBankOwner && (
                   <button
                     onClick={async () => {
                       try {
-                        await apiService.publishDraft(activeDoc.id, currentUser?.name || 'Marcus Vance (Bank Owner)');
+                        await apiService.publishDraft(activeDoc.id, currentUser?.name || 'Marcus Vance (Bank Administrator)');
                         setRefreshTrigger(t => t + 1);
                         if (onToggleStatus) onToggleStatus(activeDoc.id, 'active');
                       } catch (err) {
@@ -493,7 +493,7 @@ export default function PolicyWorkspacePane({
                       }
                     }}
                     className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[13px] font-semibold bg-[#0057B8] hover:bg-[#004EA6] text-white shadow-2xs transition cursor-pointer"
-                    title="Publish this draft as an active policy (Bank Owner action)"
+                    title="Publish this draft as an active policy (Bank Administrator action)"
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     <span>Publish Active</span>
@@ -538,7 +538,7 @@ export default function PolicyWorkspacePane({
                 )}
               </div>
             ) : (
-              /* Active / Inactive Toggle: ONLY the approver (Bank Owner) gets the interactive toggle */
+              /* Active / Inactive Toggle: ONLY the approver (Bank Administrator) gets the interactive toggle */
               isBankOwner ? (
                 <button
                   type="button"
@@ -548,7 +548,7 @@ export default function PolicyWorkspacePane({
                       ? 'bg-white hover:bg-slate-50 text-slate-800 border-slate-300 shadow-2xs'
                       : 'bg-slate-100 text-slate-600 border-slate-300 hover:bg-slate-200'
                   }`}
-                  title="Toggle status: Active / Inactive (Bank Owner only)"
+                  title="Toggle status: Active / Inactive (Bank Administrator only)"
                 >
                   <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-[#0057B8]' : 'bg-slate-400'}`}></span>
                   <span>{isActive ? 'Active' : 'Inactive'}</span>
@@ -817,7 +817,7 @@ export default function PolicyWorkspacePane({
                   </div>
                 </div>
 
-                {/* CARD 2: Cost to the Bank Owner */}
+                {/* CARD 2: Cost to the Bank Administrator */}
                 <div className="p-4 rounded-xl border border-slate-300 bg-gradient-to-br from-slate-50 to-white shadow-2xs space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -826,7 +826,7 @@ export default function PolicyWorkspacePane({
                       </div>
                       <div>
                         <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Institutional Investment</span>
-                        <h5 className="text-[13px] font-bold text-slate-900">Cost to the Bank Owner</h5>
+                        <h5 className="text-[13px] font-bold text-slate-900">Cost to the Bank Administrator</h5>
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5">
@@ -927,7 +927,7 @@ export default function PolicyWorkspacePane({
                           ? 'bg-slate-800 text-slate-200'
                           : 'bg-slate-100 text-slate-500'
                       }`}>
-                        {u.role === 'Bank Owner' ? 'Owner' : 'Employee'}
+                        {u.role === 'Bank Administrator' ? 'Owner' : 'Employee'}
                       </span>
                     </button>
                   ))}

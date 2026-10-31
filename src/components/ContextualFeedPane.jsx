@@ -77,7 +77,7 @@ export default function ContextualFeedPane({
       {
         id: `c-${Date.now()}`,
         author: currentUser?.name || 'Reviewer',
-        role: currentUser?.roleType === 'manager' ? 'Bank Owner' : 'Bank Employee',
+        role: currentUser?.roleType === 'manager' ? 'Bank Administrator' : 'Bank Employee',
         time: 'Just now',
         text: newCommentText.trim()
       }
@@ -88,7 +88,7 @@ export default function ContextualFeedPane({
   const handleCreateMI = (e) => {
     e.preventDefault();
     if (!newMITitle.trim()) return;
-    const authorRole = currentUser?.roleType === 'manager' ? 'Bank Owner' : 'Bank Employee';
+    const authorRole = currentUser?.roleType === 'manager' ? 'Bank Administrator' : 'Bank Employee';
     const item = {
       id: `mi-${Date.now()}`,
       type: newMIType,

@@ -34,7 +34,7 @@ import { apiService } from '../services/apiService';
 const BANK_DETAILS = {
   cba: {
     users: [
-      { id: 'u1', name: 'Marcus Vance', role: 'Bank Owner', roleType: 'manager', dept: 'Executive Governance & Retail Operations', email: 'marcus.vance@cba.com.au', avatar: 'MV', lastActive: 'Active Now' },
+      { id: 'u1', name: 'Marcus Vance', role: 'Bank Administrator', roleType: 'manager', dept: 'Executive Governance & Retail Operations', email: 'marcus.vance@cba.com.au', avatar: 'MV', lastActive: 'Active Now' },
       { id: 'u2', name: 'Sarah Jenkins', role: 'Bank Employee (Maker)', roleType: 'employee', dept: 'Credit Operations Squad', email: 'sarah.jenkins@cba.com.au', avatar: 'SJ', lastActive: '12m ago' },
       { id: 'u3', name: 'David Miller', role: 'Bank Employee (Reviewer)', roleType: 'employee', dept: 'InfoSec & Cyber Defense', email: 'david.miller@cba.com.au', avatar: 'DM', lastActive: '1h ago' },
       { id: 'u4', name: 'Emma Watson', role: 'Bank Employee', roleType: 'employee', dept: 'Regulatory Compliance Audit', email: 'emma.watson@cba.com.au', avatar: 'EW', lastActive: 'Yesterday' }
@@ -50,7 +50,7 @@ const BANK_DETAILS = {
       { id: 'cdr-privacy-policy', code: 'CBA-POL-008', title: 'Consumer Data Right (CDR) & Privacy Governance', version: 'v1.1', status: 'Enforced', type: 'Governance Policy', summary: 'Open Banking CDR API consent management, 7-year statutory retention, and one-click revocation dashboard.' }
     ],
     loginLogs: [
-      { id: 'log-1', user: 'Marcus Vance', role: 'Bank Owner', time: 'Active Now', loginTime: 'Oct 26, 2026, 09:14 AM AEST', duration: '2h 15m active', authMethod: 'FIDO2 Hardware Key (YubiKey 5C)', ip: '10.240.12.4 (Sydney CBD HQ)', status: 'Active Session' },
+      { id: 'log-1', user: 'Marcus Vance', role: 'Bank Administrator', time: 'Active Now', loginTime: 'Oct 26, 2026, 09:14 AM AEST', duration: '2h 15m active', authMethod: 'FIDO2 Hardware Key (YubiKey 5C)', ip: '10.240.12.4 (Sydney CBD HQ)', status: 'Active Session' },
       { id: 'log-2', user: 'Sarah Jenkins', role: 'Bank Employee', time: 'Active Now', loginTime: 'Oct 26, 2026, 10:20 AM AEST', duration: '1h 05m active', authMethod: 'OAuth 2.0 PKCE + Microsoft Entra SSO', ip: '10.240.18.29 (Sydney Lending Center)', status: 'Active Session' },
       { id: 'log-3', user: 'David Miller', role: 'Bank Employee', time: '1 hour ago', loginTime: 'Oct 26, 2026, 08:30 AM AEST', duration: '1h 45m (Completed)', authMethod: 'Biometric FaceID + Passkey', ip: '192.168.4.12 (CBA Cyber Command)', status: 'Logged Out' },
       { id: 'log-4', user: 'Emma Watson', role: 'Bank Employee', time: 'Yesterday', loginTime: 'Oct 25, 2026, 03:15 PM AEST', duration: '3h 20m (Expired)', authMethod: 'Hardware Token Step-Up', ip: '10.140.8.91 (Melbourne Branch)', status: 'Session Expired' }
@@ -1645,7 +1645,7 @@ export default function AdminDashboard({
                     onChange={(e) => {
                       const type = e.target.value;
                       const defaultRoleMap = {
-                        manager: 'Bank Owner',
+                        manager: 'Bank Administrator',
                         employee: 'Bank Employee (Maker)',
                         admin: 'Platform Super Admin'
                       };
@@ -1658,7 +1658,7 @@ export default function AdminDashboard({
                     className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 outline-none focus:bg-white focus:border-blue-500 font-bold"
                   >
                     <option value="employee">Bank Employee (Maker / Checker)</option>
-                    <option value="manager">Bank Owner (Executive Approver)</option>
+                    <option value="manager">Bank Administrator (Executive Approver)</option>
                     <option value="admin">Platform Super Admin</option>
                   </select>
                 </div>
