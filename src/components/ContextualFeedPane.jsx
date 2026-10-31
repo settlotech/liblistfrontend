@@ -15,7 +15,8 @@ import {
   Plus,
   FileText,
   Calendar,
-  Filter
+  Filter,
+  Eye
 } from 'lucide-react';
 import { apiService } from '../services/apiService';
 import ShidneyAIChat from './ShidneyAIChat';
@@ -29,6 +30,7 @@ export default function ContextualFeedPane({
   width = 340,
   refreshTrigger = 0,
   onOpenMakerChecker,
+  onViewRequest,
   onSelectPolicy,
   policies = []
 }) {
@@ -104,12 +106,15 @@ export default function ContextualFeedPane({
   };
 
   const handleQuickApprove = async (requestId) => {
+    const note = window.prompt("Approver Decision Note / Feedback (Optional):", "Approved via Contextual Action Pane");
+    if (note === null) return; // user cancelled prompt
     try {
-      await apiService.reviewMakerCheckerItem(requestId, 'approved', 'Approved via Contextual Action Pane', currentUser?.name || 'Marcus Vance');
+      await apiService.reviewMakerCheckerItem(requestId, 'approve', currentUser?.name || 'Marcus Vance', note || 'Approved via Contextual Action Pane');
       setPendingRequests(prev => prev.filter(r => r.id !== requestId));
       alert("Change request approved and deployed to repository.");
     } catch (err) {
       console.error(err);
+      alert("Failed to approve: " + err.message);
     }
   };
 
@@ -237,14 +242,32 @@ export default function ContextualFeedPane({
                     <p className="text-slate-600 text-[11.5px] leading-snug">{req.change_summary || req.reason}</p>
                     <div className="text-[10.5px] text-slate-400 flex items-center justify-between pt-1 border-t border-slate-100">
                       <span>Submitted by {req.maker_name}</span>
-                      {currentUser?.roleType === 'manager' && (
+                      <div className="flex items-center gap-1.5">
                         <button
-                          onClick={() => handleQuickApprove(req.id)}
-                          className="px-2.5 py-0.5 bg-[#0057B8] hover:bg-[#004EA6] text-white rounded text-[11px] font-medium transition cursor-pointer shadow-2xs"
+                          type="button"
+                          onClick={() => {
+                            if (onViewRequest) {
+                              onViewRequest(req);
+                            } else if (onOpenMakerChecker) {
+                              onOpenMakerChecker();
+                            }
+                          }}
+                          className="px-2.5 py-0.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 rounded text-[11px] font-medium transition cursor-pointer shadow-2xs flex items-center gap-1"
+                          title="View Request Details & Proposed Clauses"
                         >
-                          Approve
+                          <Eye className="w-3 h-3 text-slate-500" />
+                          <span>View</span>
                         </button>
-                      )}
+                        {currentUser?.roleType === 'manager' && (
+                          <button
+                            type="button"
+                            onClick={() => handleQuickApprove(req.id)}
+                            className="px-2.5 py-0.5 bg-[#0057B8] hover:bg-[#004EA6] text-white rounded text-[11px] font-medium transition cursor-pointer shadow-2xs"
+                          >
+                            Approve
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))

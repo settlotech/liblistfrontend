@@ -17,7 +17,7 @@ import {
   Pause
 } from 'lucide-react';
 import { apiService } from '../services/apiService';
-import { DEFAULT_POLICIES } from '../data/defaultPolicies';
+
 
 // Department Color Palette for 3D Vector Nodes
 const DEPT_COLORS = {
@@ -117,7 +117,7 @@ export default function VectorSpaceModal({
 
   // Build semantic clusters when DB table has fresh/empty records
   const buildSynthesizedNodes = () => {
-    const allPols = (policies && policies.length > 0) ? policies : DEFAULT_POLICIES;
+    const allPols = (policies && policies.length > 0) ? policies : [];
     const generated = [];
 
     allPols.forEach((pol, pIdx) => {

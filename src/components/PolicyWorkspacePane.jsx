@@ -21,10 +21,12 @@ import {
   TrendingUp,
   Filter,
   BookOpen,
-  CheckCircle2
+  CheckCircle2,
+  X,
+  Check,
+  Send
 } from 'lucide-react';
 import { apiService } from '../services/apiService';
-import { DEFAULT_POLICIES } from '../data/defaultPolicies';
 
 // Clean Formatted Content Renderer: Removes raw markdown hashes, strips unnecessary asterisks, filters out empty points, renders compact enterprise typography
 function FormattedPolicyContent({ content }) {
@@ -140,12 +142,42 @@ export default function PolicyWorkspacePane({
   canEditPolicy = true,
   canCreateDocument = true
 }) {
-  const [detailedPolicy, setDetailedPolicy] = useState(policy || DEFAULT_POLICIES[0]);
+  const [detailedPolicy, setDetailedPolicy] = useState(policy || null);
   const [isLoading, setIsLoading] = useState(false);
   const [activeSupplementaryTab, setActiveSupplementaryTab] = useState('parameters'); // 'parameters' | 'training' | 'reports' | 'incidents' | 'faqs' | 'reg_reference'
 
   const isBankOwner = currentUser?.roleType === 'manager' || currentUser?.roleType === 'admin';
   const isEmployee = currentUser?.roleType === 'employee';
+
+  // Immediately sync prop when available (lightweight data from sidebar click)
+  useEffect(() => {
+    if (policy) {
+      setDetailedPolicy(policy);
+    }
+  }, [policy]);
+
+  // LAZY LOAD: Fetch full policy details (with phases, content, versions, artifacts) only when policy.id changes
+  useEffect(() => {
+    if (!policy?.id) return;
+    let cancelled = false;
+
+    const fetchDetails = async () => {
+      setIsLoading(true);
+      try {
+        const full = await apiService.getPolicyDetails(policy.id, currentUser?.roleType || 'employee');
+        if (!cancelled && full) {
+          setDetailedPolicy(full);
+        }
+      } catch (err) {
+        console.error('Failed to load policy details:', err);
+        // Keep the lightweight policy already shown
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    };
+    fetchDetails();
+    return () => { cancelled = true; };
+  }, [policy?.id, currentUser?.roleType, refreshTrigger]);
 
   // Training users, modules tracking, and notes per user
   const [trainingUsers, setTrainingUsers] = useState([
@@ -266,36 +298,85 @@ export default function PolicyWorkspacePane({
     setNewTrainingNoteText('');
   };
 
-  // Immediately sync prop when available
-  useEffect(() => {
-    if (policy) {
-      setDetailedPolicy(prev => prev?.id === policy.id ? prev : policy);
-    }
-  }, [policy]);
+  // State for Approver/Bank Manager adding training sessions
+  const [isAddTrainingModalOpen, setIsAddTrainingModalOpen] = useState(false);
+  const [isSavingTraining, setIsSavingTraining] = useState(false);
+  const [newTrainingSession, setNewTrainingSession] = useState({
+    title: '',
+    description: '',
+    category: 'APRA Mandatory Certification',
+    minScore: '95%',
+    dueDate: '30 Days from Enrollment',
+    url: ''
+  });
 
-  // Fetch full policy details with versions & artifacts
-  useEffect(() => {
-    if (!policy?.id) return;
-    const fetchDetails = async () => {
-      setIsLoading(true);
-      try {
-        const full = await apiService.getPolicyDetails(policy.id, currentUser?.roleType || 'employee');
-        if (full) {
-          setDetailedPolicy(full);
-        } else {
-          setDetailedPolicy(policy);
-        }
-      } catch (err) {
-        console.error('Failed to load policy details:', err);
-        setDetailedPolicy(policy);
-      } finally {
-        setIsLoading(false);
+  const handleAddTrainingSessionSubmit = async (e) => {
+    e.preventDefault();
+    if (!newTrainingSession.title.trim()) return;
+    setIsSavingTraining(true);
+    try {
+      if (activeDoc?.id) {
+        await apiService.addPolicyArtifact(activeDoc.id, {
+          tab_type: 'training',
+          title: newTrainingSession.title.trim(),
+          description: newTrainingSession.description.trim(),
+          url_or_file: newTrainingSession.url.trim() || 'https://lms.banking.gov.au/apra-cps234',
+          user_name: currentUser?.name || 'Bank Approver'
+        });
       }
-    };
-    fetchDetails();
-  }, [policy?.id, currentUser?.roleType, refreshTrigger]);
 
-  const activeDoc = detailedPolicy || DEFAULT_POLICIES[0];
+      // Immediately assign this training module to all enrolled training users
+      const newModId = `mod-${Date.now()}`;
+      const newModuleObj = {
+        id: newModId,
+        name: newTrainingSession.title.trim(),
+        status: 'In Progress',
+        score: '--',
+        dueDate: newTrainingSession.dueDate || '30 Days'
+      };
+
+      setTrainingUsers(prev => prev.map(u => ({
+        ...u,
+        modules: [newModuleObj, ...u.modules]
+      })));
+
+      alert(`Training session "${newTrainingSession.title}" added to policy "${activeDoc.title}" and assigned to all branch personnel!`);
+      setIsAddTrainingModalOpen(false);
+      setNewTrainingSession({
+        title: '',
+        description: '',
+        category: 'APRA Mandatory Certification',
+        minScore: '95%',
+        dueDate: '30 Days from Enrollment',
+        url: ''
+      });
+      setRefreshTrigger(t => t + 1);
+    } catch (err) {
+      console.error('Failed to add training session:', err);
+      alert('Failed to save training session: ' + err.message);
+    } finally {
+      setIsSavingTraining(false);
+    }
+  };
+
+  const activeDoc = detailedPolicy || policy;
+
+  if (!activeDoc) {
+    return (
+      <main className="flex-1 flex flex-col h-full overflow-y-auto bg-[#f0f4f9] p-5 sm:p-7 space-y-5 custom-scrollbar select-none text-slate-800">
+        <div className="p-5 rounded-2xl border border-slate-200/90 bg-white shadow-2xs space-y-3.5 animate-pulse">
+          <div className="h-4 bg-slate-100 rounded w-2/5" />
+          <div className="h-7 bg-slate-100 rounded w-3/4" />
+          <div className="h-4 bg-slate-100 rounded w-full" />
+          <div className="h-4 bg-slate-100 rounded w-4/5" />
+        </div>
+        <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-[12px] text-blue-700 font-medium text-center animate-pulse">
+          Loading institutional policy from database…
+        </div>
+      </main>
+    );
+  }
+
   const isActive = activeDoc.status === 'active';
 
   const parameters = typeof activeDoc.parameters === 'string' 
@@ -308,8 +389,46 @@ export default function PolicyWorkspacePane({
   const incidentItems = artifacts.filter(a => a.tab_type === 'incidents');
   const faqItems = artifacts.filter(a => a.tab_type === 'faqs');
 
+  // Extract phases from parameters (DB-stored structured data)
+  const phases = Array.isArray(parameters.phases) ? parameters.phases : [];
+
+  // Loading skeleton for lazy-loaded content
+  if (isLoading && (!activeDoc.content || activeDoc.content.length < 50)) {
+    return (
+      <main className="flex-1 flex flex-col h-full overflow-y-auto bg-[#f0f4f9] p-5 sm:p-7 space-y-5 custom-scrollbar select-none text-slate-800">
+        <div className="p-5 rounded-2xl border border-slate-200/90 bg-white shadow-2xs space-y-3.5 animate-pulse">
+          <div className="h-4 bg-slate-100 rounded w-2/5" />
+          <div className="h-7 bg-slate-100 rounded w-3/4" />
+          <div className="h-4 bg-slate-100 rounded w-full" />
+          <div className="h-4 bg-slate-100 rounded w-4/5" />
+        </div>
+        <div className="p-5 rounded-2xl border border-slate-200/90 bg-white shadow-2xs space-y-4 animate-pulse">
+          <div className="h-5 bg-slate-100 rounded w-1/3" />
+          <div className="space-y-2">
+            <div className="h-4 bg-slate-100 rounded w-full" />
+            <div className="h-4 bg-slate-100 rounded w-11/12" />
+            <div className="h-4 bg-slate-100 rounded w-4/5" />
+            <div className="h-4 bg-slate-100 rounded w-full" />
+            <div className="h-4 bg-slate-100 rounded w-3/4" />
+          </div>
+        </div>
+        <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-[12px] text-blue-700 font-medium text-center animate-pulse">
+          Loading policy details from database…
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="flex-1 flex flex-col h-full overflow-y-auto bg-[#f0f4f9] p-5 sm:p-7 space-y-5 custom-scrollbar select-none text-slate-800">
+      
+      {/* Lazy-loading progress indicator */}
+      {isLoading && (
+        <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-50 border border-blue-200 text-[12px] text-blue-700 font-medium">
+          <span className="w-3 h-3 border-2 border-blue-400 border-t-blue-700 rounded-full animate-spin flex-shrink-0" />
+          <span>Refreshing policy data from database…</span>
+        </div>
+      )}
       
       {/* ----------------- TOP SEPARATE CARD: DOCUMENT HEADER & ACTIONS ----------------- */}
       <div className="p-5 sm:p-6 rounded-2xl border border-slate-200/90 bg-white shadow-2xs space-y-3.5">
@@ -320,24 +439,24 @@ export default function PolicyWorkspacePane({
           <div className="flex items-center gap-1.5 text-[12.5px] text-slate-500 font-medium">
             <span className="hover:text-blue-600 cursor-pointer">Library Group</span>
             <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-            <span className="text-slate-700 font-semibold">{detailedPolicy.department_name || 'Retail Banking'}</span>
+            <span className="text-slate-700 font-semibold">{activeDoc?.department_name || 'Retail Banking'}</span>
             <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
             <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200 font-mono text-[11px] font-bold">
-              v{detailedPolicy.version || '1.0'}
+              v{activeDoc?.version || '1.0'}
             </span>
           </div>
 
           {/* Direct Lifecycle Action Buttons */}
           <div className="flex items-center gap-2">
-            {/* Configure / Update Button (Controlled by canEditPolicy) */}
+            {/* Configure Button (Controlled by canEditPolicy) */}
             {canEditPolicy ? (
               <button
-                onClick={() => onOpenConfigureModal(detailedPolicy)}
+                onClick={() => onOpenConfigureModal(activeDoc)}
                 className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[13px] font-medium bg-[#0057B8] hover:bg-[#004EA6] text-white shadow-primary-sm transition cursor-pointer"
                 title={isEmployee ? "Submit Proposed Amendments (Bank Employee)" : "Configure Clauses & Thresholds directly"}
               >
                 <FileEdit className="w-3.5 h-3.5" />
-                <span>Configure / Update</span>
+                <span>Configure</span>
               </button>
             ) : (
               <div 
@@ -349,28 +468,101 @@ export default function PolicyWorkspacePane({
               </div>
             )}
 
-            {/* Draft Status Badge or [Active / Inactive] Toggle Button */}
-            {detailedPolicy.status === 'draft' ? (
-              <div 
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-bold bg-amber-50 text-amber-800 border border-amber-300 shadow-2xs"
-                title="Saved Draft - Not yet published as active policy"
-              >
-                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-                <span>Draft Policy</span>
+            {/* Draft Status Badge or [Active / Inactive] Toggle Button (Approver Only) */}
+            {activeDoc.status === 'draft' ? (
+              <div className="flex items-center gap-2">
+                {/* Draft badge */}
+                <div 
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-bold bg-amber-50 text-amber-800 border border-amber-300 shadow-2xs"
+                  title="Saved Draft - Not yet published as active policy"
+                >
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                  <span>Draft Policy</span>
+                </div>
+                {/* Publish button — Bank Owner only (Blue) */}
+                {isBankOwner && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        await apiService.publishDraft(activeDoc.id, currentUser?.name || 'Marcus Vance (Bank Owner)');
+                        setRefreshTrigger(t => t + 1);
+                        if (onToggleStatus) onToggleStatus(activeDoc.id, 'active');
+                      } catch (err) {
+                        console.error('Publish draft failed:', err);
+                        alert('Failed to publish draft. Please try again.');
+                      }
+                    }}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[13px] font-semibold bg-[#0057B8] hover:bg-[#004EA6] text-white shadow-2xs transition cursor-pointer"
+                    title="Publish this draft as an active policy (Bank Owner action)"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Publish Active</span>
+                  </button>
+                )}
+
+                {/* Submit for Review button — Bank Employee (Blue) */}
+                {isEmployee && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        await apiService.createMakerCheckerItem({
+                          policy_id: activeDoc?.id,
+                          policy_title: activeDoc?.title,
+                          title: activeDoc?.title,
+                          department_name: activeDoc?.department_name || 'Retail Banking',
+                          department: activeDoc?.department_name || 'Retail Banking',
+                          maker_name: currentUser?.name || 'Bank Employee',
+                          requested_by: `${currentUser?.name || 'Bank Employee'} (Bank Employee)`,
+                          change_details: `Draft policy "${activeDoc.title}" submitted for sign-off.`,
+                          status: 'pending',
+                          proposed_changes: {
+                            title: activeDoc.title,
+                            summary: activeDoc.summary,
+                            content: activeDoc.content,
+                            parameters: activeDoc.parameters
+                          }
+                        });
+                        alert(`Draft "${activeDoc.title}" submitted for review! It now appears in Maker-Checker queue.`);
+                        setRefreshTrigger(t => t + 1);
+                      } catch (err) {
+                        console.error('Failed to submit draft for review:', err);
+                        alert('Failed to submit draft: ' + err.message);
+                      }
+                    }}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[13px] font-semibold bg-[#0057B8] hover:bg-[#004EA6] text-white shadow-2xs transition cursor-pointer"
+                    title="Submit this draft to Marcus Vance for approval"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Submit for Review</span>
+                  </button>
+                )}
               </div>
             ) : (
-              <button
-                onClick={() => onToggleStatus(detailedPolicy.id, isActive ? 'inactive' : 'active')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-medium border transition cursor-pointer ${
-                  isActive
-                    ? 'bg-white hover:bg-slate-50 text-slate-800 border-slate-300'
-                    : 'bg-slate-100 text-slate-600 border-slate-300 hover:bg-slate-200'
-                }`}
-                title="Toggle between Active enforcement and Safe Archive"
-              >
-                <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
-                <span>{isActive ? 'Active' : 'Archived'}</span>
-              </button>
+              /* Active / Inactive Toggle: ONLY the approver (Bank Owner) gets the interactive toggle */
+              isBankOwner ? (
+                <button
+                  type="button"
+                  onClick={() => onToggleStatus && onToggleStatus(activeDoc.id, isActive ? 'inactive' : 'active')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-medium border transition cursor-pointer ${
+                    isActive
+                      ? 'bg-white hover:bg-slate-50 text-slate-800 border-slate-300 shadow-2xs'
+                      : 'bg-slate-100 text-slate-600 border-slate-300 hover:bg-slate-200'
+                  }`}
+                  title="Toggle status: Active / Inactive (Bank Owner only)"
+                >
+                  <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-[#0057B8]' : 'bg-slate-400'}`}></span>
+                  <span>{isActive ? 'Active' : 'Inactive'}</span>
+                </button>
+              ) : (
+                /* Non-approver employee view: read-only status pill */
+                <div
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-medium bg-slate-50 text-slate-700 border border-slate-200"
+                  title="Policy Status: Active"
+                >
+                  <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-[#0057B8]' : 'bg-slate-400'}`}></span>
+                  <span>{isActive ? 'Active' : 'Inactive'}</span>
+                </div>
+              )
             )}
           </div>
         </div>
@@ -378,10 +570,10 @@ export default function PolicyWorkspacePane({
         {/* Policy Document Title & Clean Summary */}
         <div className="pt-0.5">
           <h1 className="text-xl sm:text-2xl font-bold text-[#111827] tracking-tight">
-            {detailedPolicy.title}
+            {activeDoc.title}
           </h1>
           <p className="text-[13px] text-[#4b5563] mt-1.5 font-normal leading-relaxed">
-            {detailedPolicy.summary}
+            {activeDoc.summary}
           </p>
         </div>
       </div>
@@ -396,7 +588,64 @@ export default function PolicyWorkspacePane({
           <span className="text-[10.5px] text-slate-400 font-mono">CORE SPECIFICATION</span>
         </div>
 
-          <FormattedPolicyContent content={detailedPolicy.content} />
+          <FormattedPolicyContent content={activeDoc.content} />
+
+            {/* PHASE-WISE BREAKDOWN — Rendered when phases are stored in DB parameters */}
+            {phases.length > 0 && (
+              <div className="mt-6 pt-5 border-t border-slate-200/80 space-y-4">
+                <div className="flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-[#0057B8]" />
+                  <h4 className="text-[13.5px] font-bold text-slate-900 tracking-tight">
+                    Operational Phases ({phases.length})
+                  </h4>
+                  <span className="text-[11px] font-medium text-blue-800 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
+                    Structured Governance Sections
+                  </span>
+                </div>
+
+                <div className="space-y-3">
+                  {phases.map((phase) => (
+                    <div
+                      key={phase.id || phase.phase_number}
+                      className="rounded-xl border border-slate-200 bg-slate-50/60 hover:bg-white hover:border-blue-200 transition p-4 space-y-2 group"
+                    >
+                      {/* Phase header */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[#0057B8] text-white text-[10px] font-black flex items-center justify-center">
+                            {phase.phase_number}
+                          </span>
+                          <h5 className="text-[12.5px] font-bold text-slate-900 group-hover:text-blue-800 transition">
+                            Phase {phase.phase_number}: {phase.title}
+                          </h5>
+                        </div>
+                      </div>
+
+                      {/* Phase summary */}
+                      {phase.summary && (
+                        <p className="text-[12px] text-slate-600 leading-relaxed pl-8">
+                          {phase.summary}
+                        </p>
+                      )}
+
+                      {/* Key rules tags */}
+                      {phase.key_rules && phase.key_rules.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 pl-8">
+                          {phase.key_rules.map((rule, rIdx) => (
+                            <span
+                              key={rIdx}
+                              className="text-[10.5px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-200 font-medium"
+                            >
+                              {rule}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* DIRECT IN-SYSTEM DOCUMENTS (IF THIS IS A MASTER PRODUCT POLICY) */}
             {activeDoc.direct_documents && activeDoc.direct_documents.length > 0 && (
@@ -461,11 +710,65 @@ export default function PolicyWorkspacePane({
                     </p>
                   </div>
                 </div>
-                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                  APRA CPS 234 Verified • 98.4% Branch Staff Certified
-                </span>
+                <div className="flex items-center gap-2">
+                  {isBankOwner && (
+                    <button
+                      type="button"
+                      onClick={() => setIsAddTrainingModalOpen(true)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#0057B8] hover:bg-[#004EA6] text-white shadow-2xs transition cursor-pointer"
+                      title="Approver / Bank Manager: Add a new mandatory training session or accreditation module"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add Training Session</span>
+                    </button>
+                  )}
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                    APRA CPS 234 Verified • 98.4% Branch Staff Certified
+                  </span>
+                </div>
               </div>
+
+              {/* Institutional Training Sessions Added by Approver in Database */}
+              {trainingItems.length > 0 && (
+                <div className="p-4 rounded-xl border border-blue-200 bg-blue-50/40 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
+                      <BookOpen className="w-3.5 h-3.5 text-blue-700" />
+                      <span>Active Policy Training Sessions Enforced in System ({trainingItems.length})</span>
+                    </span>
+                    <span className="text-[10.5px] text-blue-700 font-semibold bg-blue-100 px-2 py-0.5 rounded-full">
+                      Neon DB Synced
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                    {trainingItems.map(item => (
+                      <div key={item.id} className="p-3 rounded-lg bg-white border border-blue-200/80 shadow-2xs space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-slate-900">{item.title}</span>
+                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded">
+                            Active
+                          </span>
+                        </div>
+                        {item.description && (
+                          <p className="text-[11.5px] text-slate-600 leading-relaxed">{item.description}</p>
+                        )}
+                        {item.url_or_file && (
+                          <a 
+                            href={item.url_or_file} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-[11px] text-blue-700 hover:underline flex items-center gap-1 pt-1 font-medium"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            <span>Launch Training Module</span>
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* 1. ONBOARDING TRAINING COST CALCULATION (FOR USER & FOR BANK OWNER) */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
@@ -1070,7 +1373,7 @@ export default function PolicyWorkspacePane({
               <div key={item.id} className="p-3 bg-white rounded-xl border border-[#e5e7eb] flex items-center justify-between">
                 <div>
                   <h4 className="text-[13.5px] font-semibold text-slate-800">{item.title}</h4>
-                  <span className="text-[11px] text-slate-500">{item.file_type} • Updated for v{detailedPolicy.version}</span>
+                  <span className="text-[11px] text-slate-500">{item.file_type} • Updated for v{activeDoc.version || '1.0'}</span>
                 </div>
                 <button className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium cursor-pointer">
                   Open Guide
@@ -1151,15 +1454,15 @@ export default function PolicyWorkspacePane({
               Version Control Timeline
             </h4>
             <span className="text-[11.5px] text-slate-400">
-              {(detailedPolicy.versions || []).length} Recorded Revisions
+              {(activeDoc.versions || []).length} Recorded Revisions
             </span>
           </div>
 
           <div className="divide-y divide-slate-100 text-[12.5px]">
-            {(detailedPolicy.versions || []).length === 0 ? (
+            {(activeDoc.versions || []).length === 0 ? (
               <p className="py-2 text-slate-400 text-xs">Initial baseline version 1.0 active.</p>
             ) : (
-              (detailedPolicy.versions || []).map((ver) => (
+              (activeDoc.versions || []).map((ver) => (
                 <div key={ver.id || ver.version_number} className="py-2.5 flex items-start justify-between gap-4">
                   <div>
                     <div className="flex items-center gap-2">
@@ -1180,6 +1483,138 @@ export default function PolicyWorkspacePane({
         </div>
 
       </div>
+
+      {/* Approver / Bank Manager Add Training Session Modal */}
+      {isAddTrainingModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden flex flex-col">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-white">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#0057B8] flex items-center justify-center font-bold text-sm">
+                  <GraduationCap className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Add Mandatory Training Session</h3>
+                  <p className="text-[11.5px] text-slate-500">Bank Approver: Configure and assign institutional compliance training</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddTrainingModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddTrainingSessionSubmit} className="p-5 space-y-3.5 text-xs">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Training Module Title *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. APRA CPS 234 Operational Risk & Credit Delegation Walkthrough"
+                  value={newTrainingSession.title}
+                  onChange={(e) => setNewTrainingSession(prev => ({ ...prev, title: e.target.value }))}
+                  className="w-full p-2.5 rounded-lg border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 bg-white text-slate-900 font-medium"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10.5px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                    Accreditation Category
+                  </label>
+                  <select
+                    value={newTrainingSession.category}
+                    onChange={(e) => setNewTrainingSession(prev => ({ ...prev, category: e.target.value }))}
+                    className="w-full p-2 rounded-lg border border-slate-300 focus:outline-none focus:border-[#0057B8] bg-white text-slate-800"
+                  >
+                    <option value="APRA Mandatory Certification">APRA Mandatory Certification</option>
+                    <option value="Internal SOP Walkthrough">Internal SOP Walkthrough</option>
+                    <option value="Officer Delegation Exam">Officer Delegation Exam</option>
+                    <option value="AML/CTF Screening Drill">AML/CTF Screening Drill</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10.5px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                    Passing Benchmark / Score
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 95% Required"
+                    value={newTrainingSession.minScore}
+                    onChange={(e) => setNewTrainingSession(prev => ({ ...prev, minScore: e.target.value }))}
+                    className="w-full p-2 rounded-lg border border-slate-300 focus:outline-none focus:border-[#0057B8] bg-white text-slate-800"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Module Objectives & Instructions
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="Provide scope, core directives, and required practical scenarios for staff completion..."
+                  value={newTrainingSession.description}
+                  onChange={(e) => setNewTrainingSession(prev => ({ ...prev, description: e.target.value }))}
+                  className="w-full p-2.5 rounded-lg border border-slate-300 focus:outline-none focus:border-[#0057B8] bg-white text-slate-800 leading-relaxed"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10.5px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                    Completion Due Date
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 30 Days from Enrollment"
+                    value={newTrainingSession.dueDate}
+                    onChange={(e) => setNewTrainingSession(prev => ({ ...prev, dueDate: e.target.value }))}
+                    className="w-full p-2 rounded-lg border border-slate-300 focus:outline-none focus:border-[#0057B8] bg-white text-slate-800"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10.5px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                    LMS / Material Link
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="https://lms.banking.gov.au/..."
+                    value={newTrainingSession.url}
+                    onChange={(e) => setNewTrainingSession(prev => ({ ...prev, url: e.target.value }))}
+                    className="w-full p-2 rounded-lg border border-slate-300 focus:outline-none focus:border-[#0057B8] bg-white text-slate-800"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddTrainingModalOpen(false)}
+                  className="px-3.5 py-1.5 text-slate-600 hover:bg-slate-100 rounded-lg text-xs font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingTraining}
+                  className="px-4 py-2 bg-[#0057B8] hover:bg-[#004EA6] text-white rounded-lg text-xs font-bold shadow-xs transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>{isSavingTraining ? 'Saving to Database...' : 'Save & Enforce Training Session'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

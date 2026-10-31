@@ -164,8 +164,8 @@ export default function Header({
           </button>
         )}
 
-        {/* 3D Vector DB Topology Visualizer */}
-        {onOpenVectorSpace && (
+        {/* 3D Vector DB Topology Visualizer (Disabled per preference) */}
+        {/* {onOpenVectorSpace && (
           <button
             onClick={onOpenVectorSpace}
             title="Interactive 3D Vector Space & Policy Semantic Topology"
@@ -174,7 +174,7 @@ export default function Header({
             <Box className="w-3.5 h-3.5 text-indigo-600 group-hover:text-white" />
             <span>3D Vector DB</span>
           </button>
-        )}
+        )} */}
 
         {/* Clean Notification Bell Icon with Badge Count */}
         <button
@@ -183,8 +183,8 @@ export default function Header({
           className="relative p-2 rounded-lg text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-50 transition cursor-pointer border border-slate-200 shadow-2xs"
         >
           <Bell className="w-4 h-4 text-slate-700" />
-          <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-            {pendingReviewCount > 0 ? pendingReviewCount : 2}
+          <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 bg-[#0057B8] text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-2xs">
+            {pendingReviewCount !== undefined ? pendingReviewCount : 2}
           </span>
         </button>
 

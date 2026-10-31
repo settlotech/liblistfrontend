@@ -13,9 +13,12 @@ import NotificationsModal from './components/NotificationsModal';
 import BankUserManagerModal from './components/BankUserManagerModal';
 import SuperAdminLoginModal from './components/SuperAdminLoginModal';
 import VectorSpaceModal from './components/VectorSpaceModal';
+import ChangeManagementCenterPane from './components/ChangeManagementCenterPane.jsx';
+import TasksWorkspaceCenterPane from './components/TasksWorkspaceCenterPane.jsx';
+import TemplatesWorkspaceCenterPane from './components/TemplatesWorkspaceCenterPane.jsx';
 import { apiService } from './services/apiService';
 import { banksList, policiesDatabase } from './data/mockData';
-import { DEFAULT_POLICIES, DEFAULT_DEPARTMENTS } from './data/defaultPolicies';
+import { DEFAULT_DEPARTMENTS } from './data/defaultPolicies';
 
 export default function App() {
   // Standalone /3dviewer route redirect
@@ -50,8 +53,8 @@ export default function App() {
   // Data states - Initialize with 2 policies per department and Credit Card policy first
   const [departments, setDepartments] = useState(DEFAULT_DEPARTMENTS);
   const [selectedDepartmentId, setSelectedDepartmentId] = useState('all');
-  const [policies, setPolicies] = useState(DEFAULT_POLICIES);
-  const [allPolicies, setAllPolicies] = useState(DEFAULT_POLICIES);
+  const [policies, setPolicies] = useState([]);
+  const [allPolicies, setAllPolicies] = useState([]);
   const [selectedPolicyId, setSelectedPolicyId] = useState('credit-card-limits-policy');
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -74,6 +77,10 @@ export default function App() {
   // Mobile drawer states
   const [isMobileLeftOpen, setIsMobileLeftOpen] = useState(false);
   const [isMobileRightOpen, setIsMobileRightOpen] = useState(false);
+
+  // Center workspace active view: 'policy' (default) | 'change_management'
+  const [activeWorkspaceView, setActiveWorkspaceView] = useState('policy');
+  const [focusedReviewItemId, setFocusedReviewItemId] = useState(null);
 
   // Modal open states
   const [isMakerCheckerOpen, setIsMakerCheckerOpen] = useState(false);
@@ -241,6 +248,7 @@ export default function App() {
   const loadHierarchy = useCallback(async () => {
     try {
       const data = await apiService.getHierarchy();
+      console.log('%c🏛️ [APP STATE] Active Departments loaded from PostgreSQL DB:', 'color: #8B5CF6; font-weight: bold;', data);
       if (data && Array.isArray(data) && data.length > 0) {
         const enriched = data.map(d => {
           if (['credit-cards', 'retail-lending', 'onboarding', 'security', 'legal-compliance'].includes(d.id)) {
@@ -262,13 +270,9 @@ export default function App() {
   const loadPolicies = useCallback(async () => {
     try {
       const data = await apiService.getPolicies('all', '', currentUser.roleType);
-      const rawList = (data && Array.isArray(data) && data.length > 0) ? data : DEFAULT_POLICIES;
-
-      // Robustly combine with DEFAULT_POLICIES to guarantee 2 policies per primary department
-      const map = new Map();
-      DEFAULT_POLICIES.forEach(p => map.set(p.id, p));
-      rawList.forEach(p => map.set(p.id, p));
-      const fullList = Array.from(map.values());
+      // Canonical database data: directly use DB policies
+      const fullList = (data && Array.isArray(data)) ? data : [];
+      console.log(`%c🏛️ [APP STATE] Active Database Policies (${fullList.length} policies loaded from DB):`, 'color: #10B981; font-weight: bold;', fullList);
 
       setAllPolicies(fullList);
 
@@ -283,7 +287,7 @@ export default function App() {
               return currentStaffConfig.policyPermissions[pol.id].canView === true;
             }
             if (currentStaffConfig.allowedPolicyIds) {
-              return currentStaffConfig.allowedPolicyIds.includes(pol.id) || !DEFAULT_POLICIES.some(dp => dp.id === pol.id);
+              return currentStaffConfig.allowedPolicyIds.includes(pol.id);
             }
             return true;
           });
@@ -304,8 +308,8 @@ export default function App() {
       });
     } catch (err) {
       console.error('Failed to load policies:', err);
-      setAllPolicies(DEFAULT_POLICIES);
-      setPolicies(DEFAULT_POLICIES);
+      setAllPolicies([]);
+      setPolicies([]);
     }
   }, [currentUser.roleType, currentStaffConfig]);
 
@@ -314,6 +318,7 @@ export default function App() {
     try {
       const data = await apiService.getMakerCheckerItems();
       if (data) {
+        console.log(`%c🏛️ [APP STATE] Governance queue loaded: ${data.pendingCount || 0} in review, ${data.drafts?.length || 0} drafts from DB:`, 'color: #EF4444; font-weight: bold;', data);
         setMakerCheckerData(data);
       }
     } catch (err) {
@@ -429,20 +434,23 @@ export default function App() {
   };
 
   // Open Add Policy Modal pre-populated with Department from hover '+'
-  const handleOpenAddPolicyModal = (deptId, deptName) => {
+  const handleOpenAddPolicyModal = (deptId = null, deptName = '') => {
     if (!canCurrentUserCreateDocument) {
       alert("Access Restricted: Policy authoring permission has been revoked for your account by Department Manager Marcus Vance.");
       return;
     }
+    console.log(`%c➕ [+] BUTTON CLICKED: Opening AddPolicyModal with Target Department: "${deptName || deptId || 'None (Generic)'}"`, 'color: #0057B8; font-weight: bold; font-size: 13px;', { deptId, deptName });
     setPreselectedDept({ id: deptId, name: deptName });
     setIsAddPolicyModalOpen(true);
   };
 
-  // Active selected policy - Defaults to Credit Card Issuance policy
+  // Active selected policy from database (including saved drafts)
   const activePolicy = allPolicies.find(p => p.id === selectedPolicyId) 
     || policies.find(p => p.id === selectedPolicyId) 
+    || (makerCheckerData.drafts || []).find(d => d.id === selectedPolicyId)
     || allPolicies[0] 
-    || DEFAULT_POLICIES[0];
+    || policies[0]
+    || null;
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#eef4fa] font-sans text-slate-800">
@@ -463,7 +471,11 @@ export default function App() {
         onSelectUser={handleSelectUser}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
-        pendingReviewCount={makerCheckerData.pendingCount}
+        pendingReviewCount={
+          (currentUser?.roleType === 'manager' || currentUser?.roleType === 'admin')
+            ? (makerCheckerData.pendingCount || 0)
+            : ((makerCheckerData.pending?.length || 0) + (makerCheckerData.drafts?.length || 0))
+        }
         onOpenMakerChecker={() => setIsMakerCheckerOpen(true)}
         onOpenNotifications={() => setIsNotificationsModalOpen(true)}
         onOpenBankUserManagerModal={() => setIsBankUserManagerOpen(true)}
@@ -520,14 +532,27 @@ export default function App() {
                 selectedPolicyId={selectedPolicyId}
                 onSelectPolicy={(id) => {
                   setSelectedPolicyId(id);
+                  setActiveWorkspaceView('policy');
                   const pol = allPolicies.find(p => p.id === id);
                   if (pol && pol.department_id) {
                     setSelectedDepartmentId(pol.department_id);
                   }
                 }}
+                activeWorkspaceView={activeWorkspaceView}
+                onSelectWorkspaceView={(view) => {
+                  if (view === 'change_management') {
+                    setActiveWorkspaceView('change_management');
+                    setFocusedReviewItemId(null);
+                  } else {
+                    setActiveWorkspaceView(view);
+                  }
+                }}
                 onOpenAddPolicyModal={handleOpenAddPolicyModal}
                 onOpenVectorSpace={() => setIsVectorSpaceOpen(true)}
-                onOpenMakerChecker={() => setIsMakerCheckerOpen(true)}
+                onOpenMakerChecker={() => {
+                  setActiveWorkspaceView('change_management');
+                  setFocusedReviewItemId(null);
+                }}
                 onOpenConfigureModal={() => setIsConfigureModalOpen(true)}
                 canCreateDocument={canCurrentUserCreateDocument}
                 isMobileOpen={isMobileLeftOpen}
@@ -535,6 +560,7 @@ export default function App() {
                 isCollapsed={!isLeftOpen}
                 width={leftWidth}
                 refreshTrigger={refreshTrigger}
+                currentUser={currentUser}
               />
 
               {/* Left Draggable Resizer Bar */}
@@ -546,18 +572,64 @@ export default function App() {
             </>
           )}
 
-          {/* Pane 2: Center - Detailed Library Info (Top) + Supplementary section (Bottom) */}
-          <PolicyWorkspacePane
-            policy={activePolicy}
-            currentUser={currentUser}
-            canEditPolicy={canCurrentUserEditSelectedPolicy(selectedPolicyId)}
-            canCreateDocument={canCurrentUserCreateDocument}
-            onOpenConfigureModal={() => setIsConfigureModalOpen(true)}
-            onToggleStatus={handleTogglePolicyStatus}
-            onToggleMasking={handleTogglePolicyMasking}
-            onOpenExportModal={() => setIsExportModalOpen(true)}
-            refreshTrigger={refreshTrigger}
-          />
+          {/* Pane 2: Center - PolicyWorkspacePane, ChangeManagementCenterPane, TasksWorkspaceCenterPane, or TemplatesWorkspaceCenterPane */}
+          {activeWorkspaceView === 'change_management' ? (
+            <ChangeManagementCenterPane
+              currentUser={currentUser}
+              drafts={makerCheckerData.drafts || allPolicies.filter(p => p.status === 'draft')}
+              inReviewItems={makerCheckerData.pending}
+              historyItems={makerCheckerData.history}
+              policies={allPolicies}
+              onBackToPolicy={() => {
+                setActiveWorkspaceView('policy');
+                setFocusedReviewItemId(null);
+              }}
+              onOpenAddPolicyModal={handleOpenAddPolicyModal}
+              onEditDraft={(draft) => {
+                setSelectedPolicyId(draft.id);
+                setIsConfigureModalOpen(true);
+              }}
+              onRefresh={() => {
+                setRefreshTrigger(prev => prev + 1);
+                loadMakerChecker();
+                loadPolicies();
+              }}
+              initialTab={focusedReviewItemId ? 'in_review' : 'drafts'}
+              focusedItemId={focusedReviewItemId}
+            />
+          ) : activeWorkspaceView === 'tasks' ? (
+            <TasksWorkspaceCenterPane
+              currentUser={currentUser}
+              onBackToPolicy={() => setActiveWorkspaceView('policy')}
+              onOpenPolicy={(policyId) => {
+                setSelectedPolicyId(policyId);
+                setActiveWorkspaceView('policy');
+                setRefreshTrigger(prev => prev + 1);
+              }}
+              onOpenAddPolicyModal={handleOpenAddPolicyModal}
+            />
+          ) : activeWorkspaceView === 'templates' ? (
+            <TemplatesWorkspaceCenterPane
+              currentUser={currentUser}
+              onBackToPolicy={() => setActiveWorkspaceView('policy')}
+              onOpenAddPolicyModal={handleOpenAddPolicyModal}
+              onSelectTemplate={(tpl) => {
+                handleOpenAddPolicyModal(tpl.department_id, tpl.department_id);
+              }}
+            />
+          ) : (
+            <PolicyWorkspacePane
+              policy={activePolicy}
+              currentUser={currentUser}
+              canEditPolicy={canCurrentUserEditSelectedPolicy(selectedPolicyId)}
+              canCreateDocument={canCurrentUserCreateDocument}
+              onOpenConfigureModal={() => setIsConfigureModalOpen(true)}
+              onToggleStatus={handleTogglePolicyStatus}
+              onToggleMasking={handleTogglePolicyMasking}
+              onOpenExportModal={() => setIsExportModalOpen(true)}
+              refreshTrigger={refreshTrigger}
+            />
+          )}
 
           {/* Pane 3: Right - Comments/Queries with Chat option */}
           {isRightOpen && (
@@ -577,8 +649,18 @@ export default function App() {
                 isCollapsed={!isRightOpen}
                 width={rightWidth}
                 refreshTrigger={refreshTrigger}
-                onOpenMakerChecker={() => setIsMakerCheckerOpen(true)}
-                onSelectPolicy={(id) => setSelectedPolicyId(id)}
+                onOpenMakerChecker={() => {
+                  setActiveWorkspaceView('change_management');
+                  setFocusedReviewItemId(null);
+                }}
+                onViewRequest={(req) => {
+                  setFocusedReviewItemId(req.id);
+                  setActiveWorkspaceView('change_management');
+                }}
+                onSelectPolicy={(id) => {
+                  setSelectedPolicyId(id);
+                  setActiveWorkspaceView('policy');
+                }}
                 policies={allPolicies}
               />
             </>
@@ -603,9 +685,15 @@ export default function App() {
           setSelectedPolicyId(id);
           setIsMakerCheckerOpen(false);
         }}
+        onEditDraft={(draft) => {
+          setSelectedPolicyId(draft.id);
+          setIsMakerCheckerOpen(false);
+          setIsConfigureModalOpen(true);
+        }}
         onRefresh={() => {
           setRefreshTrigger(prev => prev + 1);
           loadMakerChecker();
+          loadPolicies();
         }}
       />
 
@@ -644,9 +732,18 @@ export default function App() {
       <NotificationsModal
         isOpen={isNotificationsModalOpen}
         onClose={() => setIsNotificationsModalOpen(false)}
+        currentUser={currentUser}
+        pendingItems={makerCheckerData.pending}
+        drafts={makerCheckerData.drafts || allPolicies.filter(p => p.status === 'draft')}
+        history={makerCheckerData.history}
         onOpenPolicy={(id) => {
           setSelectedPolicyId(id);
+          setActiveWorkspaceView('policy');
           setRefreshTrigger(prev => prev + 1);
+        }}
+        onOpenReviewItem={(item) => {
+          setActiveWorkspaceView('change_management');
+          setFocusedReviewItemId(item.id);
         }}
       />
 

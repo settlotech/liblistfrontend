@@ -30,7 +30,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { apiService } from '../services/apiService';
-import { DEFAULT_POLICIES, DEFAULT_DEPARTMENTS } from '../data/defaultPolicies';
+import { DEFAULT_DEPARTMENTS } from '../data/defaultPolicies';
 
 // Clean stroke icons
 const getDeptIcon = (iconName, className = "w-4 h-4 text-slate-600") => {
@@ -68,20 +68,22 @@ export default function HierarchyPane({
   onCloseMobile,
   isCollapsed = false,
   width = 280,
-  refreshTrigger = 0
+  refreshTrigger = 0,
+  currentUser = { roleType: 'employee' },
+  activeWorkspaceView = 'policy',
+  onSelectWorkspaceView
 }) {
   const [departments, setDepartments] = useState(DEFAULT_DEPARTMENTS);
-  const [internalPolicies, setInternalPolicies] = useState(DEFAULT_POLICIES);
+  const [internalPolicies, setInternalPolicies] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   
   // Pinned libraries state (persisted in localStorage)
   const [pinnedPolicyIds, setPinnedPolicyIds] = useState(() => {
     try {
       const saved = localStorage.getItem('liblist_pinned_policies');
       if (saved) return JSON.parse(saved);
-    } catch (e) {
-      // fallback
-    }
+    } catch (e) {}
     return ['personal-loans-assessment-sop', 'aml-ctf-screening-policy'];
   });
 
@@ -129,9 +131,10 @@ export default function HierarchyPane({
     handleTogglePin(policyId, e);
   };
 
-  // Fetch live hierarchy & fallback policies
+  // Fetch live hierarchy & fallback policies — lightweight (no content body)
   const loadHierarchy = async () => {
     try {
+      const userRole = currentUser?.roleType || 'employee';
       const data = await apiService.getHierarchy();
       if (data && Array.isArray(data) && data.length > 0) {
         const enriched = data.map(d => {
@@ -145,31 +148,31 @@ export default function HierarchyPane({
         setDepartments(DEFAULT_DEPARTMENTS);
       }
 
-      const polData = await apiService.getPolicies('all');
-      if (polData && Array.isArray(polData) && polData.length > 0) {
+      // Lightweight policy list from DB (no content — just id, title, status, version, department_id)
+      const polData = await apiService.getPolicies('all', '', userRole);
+      if (polData && Array.isArray(polData)) {
         setInternalPolicies(polData);
       } else {
-        setInternalPolicies(DEFAULT_POLICIES);
+        setInternalPolicies([]);
       }
     } catch (err) {
       console.error('Failed to load hierarchy:', err);
       setDepartments(DEFAULT_DEPARTMENTS);
-      setInternalPolicies(DEFAULT_POLICIES);
+      setInternalPolicies([]);
     }
   };
 
   useEffect(() => {
     loadHierarchy();
-  }, [refreshTrigger]);
+  }, [refreshTrigger, currentUser?.roleType]);
 
-  // Robustly combine policies across defaults, backend fetch, and props
-  const combinedPolicies = [
-    ...DEFAULT_POLICIES,
-    ...(Array.isArray(internalPolicies) ? internalPolicies : []),
-    ...(Array.isArray(policies) ? policies : [])
-  ];
+  // Canonical policy list: prioritize policies from DB
+  const sourceList = (Array.isArray(policies) && policies.length > 0)
+    ? policies
+    : (Array.isArray(internalPolicies) ? internalPolicies : []);
+
   const policyMap = new Map();
-  combinedPolicies.forEach(p => {
+  sourceList.forEach(p => {
     if (p && p.id) policyMap.set(p.id, p);
   });
   const allAvailablePolicies = Array.from(policyMap.values());
@@ -181,7 +184,8 @@ export default function HierarchyPane({
   );
 
   const displayedPrimary = activeDepartments.filter(d => 
-    d.name.toLowerCase().includes(searchQuery.toLowerCase())
+    d.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    allAvailablePolicies.some(p => p.department_id === d.id && p.title.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
   // Get pinned policies objects
@@ -242,8 +246,18 @@ export default function HierarchyPane({
             <nav className="space-y-0.5">
               {/* 1. Task List with 3 Active badge */}
               <button
-                onClick={() => setIsTaskModalOpen(true)}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 text-[12px] rounded-lg text-slate-700 hover:bg-white hover:text-slate-900 border border-transparent hover:border-slate-200 shadow-xs hover:shadow-2xs transition group cursor-pointer text-left"
+                onClick={() => {
+                  if (onSelectWorkspaceView) {
+                    onSelectWorkspaceView('tasks');
+                  } else {
+                    setIsTaskModalOpen(true);
+                  }
+                }}
+                className={`w-full flex items-center justify-between px-2.5 py-1.5 text-[12px] rounded-lg border transition group cursor-pointer text-left ${
+                  activeWorkspaceView === 'tasks'
+                    ? 'bg-blue-50 text-[#0057B8] border-blue-200 font-bold shadow-xs'
+                    : 'text-slate-700 hover:bg-white hover:text-slate-900 border-transparent hover:border-slate-200 shadow-xs hover:shadow-2xs'
+                }`}
               >
                 <span className="flex items-center gap-2 font-medium">
                   <ListChecks className="w-3.5 h-3.5 text-[#0057B8]" />
@@ -256,8 +270,18 @@ export default function HierarchyPane({
 
               {/* 2. Templates (Clone/Create) - Opens AddPolicyModal with Template Selector */}
               <button
-                onClick={() => onOpenAddPolicyModal && onOpenAddPolicyModal()}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 text-[12px] rounded-lg text-slate-700 hover:bg-white hover:text-slate-900 border border-transparent hover:border-slate-200 shadow-xs hover:shadow-2xs transition group cursor-pointer text-left"
+                onClick={() => {
+                  if (onSelectWorkspaceView) {
+                    onSelectWorkspaceView('templates');
+                  } else if (onOpenAddPolicyModal) {
+                    onOpenAddPolicyModal();
+                  }
+                }}
+                className={`w-full flex items-center justify-between px-2.5 py-1.5 text-[12px] rounded-lg border transition group cursor-pointer text-left ${
+                  activeWorkspaceView === 'templates'
+                    ? 'bg-purple-50 text-purple-700 border-purple-200 font-bold shadow-xs'
+                    : 'text-slate-700 hover:bg-white hover:text-slate-900 border-transparent hover:border-slate-200 shadow-xs hover:shadow-2xs'
+                }`}
                 title="Browse & Clone Policy Templates"
               >
                 <span className="flex items-center gap-2 font-medium">
@@ -273,6 +297,7 @@ export default function HierarchyPane({
               <button
                 onClick={() => {
                   if (onSelectDepartment) onSelectDepartment('legal-compliance');
+                  if (onSelectWorkspaceView) onSelectWorkspaceView('policy');
                 }}
                 className="w-full flex items-center justify-between px-2.5 py-1.5 text-[12px] rounded-lg text-slate-700 hover:bg-white hover:text-slate-900 border border-transparent hover:border-slate-200 shadow-xs hover:shadow-2xs transition group cursor-pointer text-left"
                 title="APRA CPS 230 / CPS 234 Standards Library"
@@ -286,9 +311,17 @@ export default function HierarchyPane({
               {/* 4. Change Management (Drafts) */}
               <button
                 onClick={() => {
-                  if (onOpenMakerChecker) onOpenMakerChecker();
+                  if (onSelectWorkspaceView) {
+                    onSelectWorkspaceView('change_management');
+                  } else if (onOpenMakerChecker) {
+                    onOpenMakerChecker();
+                  }
                 }}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 text-[12px] rounded-lg text-slate-700 hover:bg-white hover:text-slate-900 border border-transparent hover:border-slate-200 shadow-xs hover:shadow-2xs transition group cursor-pointer text-left"
+                className={`w-full flex items-center justify-between px-2.5 py-1.5 text-[12px] rounded-lg border transition group cursor-pointer text-left ${
+                  activeWorkspaceView === 'change_management'
+                    ? 'bg-amber-50 text-amber-900 border-amber-300 font-bold shadow-xs'
+                    : 'text-slate-700 hover:bg-white hover:text-slate-900 border-transparent hover:border-slate-200 shadow-xs hover:shadow-2xs'
+                }`}
                 title="Change Management & Pending Review Drafts"
               >
                 <span className="flex items-center gap-2 font-medium">
@@ -303,9 +336,17 @@ export default function HierarchyPane({
               {/* 5. Settings */}
               <button
                 onClick={() => {
-                  if (onOpenConfigureModal) onOpenConfigureModal();
+                  if (onSelectWorkspaceView) {
+                    onSelectWorkspaceView('settings');
+                  } else if (onOpenConfigureModal) {
+                    onOpenConfigureModal();
+                  }
                 }}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 text-[12px] rounded-lg text-slate-700 hover:bg-white hover:text-slate-900 border border-transparent hover:border-slate-200 shadow-xs hover:shadow-2xs transition group cursor-pointer text-left"
+                className={`w-full flex items-center justify-between px-2.5 py-1.5 text-[12px] rounded-lg border transition group cursor-pointer text-left ${
+                  activeWorkspaceView === 'settings'
+                    ? 'bg-slate-100 text-slate-900 border-slate-300 font-bold shadow-xs'
+                    : 'text-slate-700 hover:bg-white hover:text-slate-900 border-transparent hover:border-slate-200 shadow-xs hover:shadow-2xs'
+                }`}
                 title="Policy Governance & Threshold Settings"
               >
                 <span className="flex items-center gap-2 font-medium">
@@ -338,7 +379,10 @@ export default function HierarchyPane({
                   return (
                     <div
                       key={`pinned-${pol.id}`}
-                      onClick={() => onSelectPolicy && onSelectPolicy(pol.id)}
+                      onClick={() => {
+                        if (onSelectPolicy) onSelectPolicy(pol.id);
+                        if (onSelectWorkspaceView) onSelectWorkspaceView('policy');
+                      }}
                       onContextMenu={(e) => handleContextMenu(pol.id, e)}
                       className={`group flex items-center justify-between px-2.5 py-1.5 text-[11.5px] rounded-lg transition cursor-pointer border ${
                         isPolSelected
@@ -498,6 +542,7 @@ export default function HierarchyPane({
                           deptPolicies.map(pol => {
                             const isPolSelected = selectedPolicyId === pol.id;
                             const isPinnedPol = pinnedPolicyIds.includes(pol.id);
+                            const isDraft = pol.status === 'draft';
 
                             return (
                               <div
@@ -505,47 +550,56 @@ export default function HierarchyPane({
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   if (onSelectPolicy) onSelectPolicy(pol.id);
+                                  if (onSelectWorkspaceView) onSelectWorkspaceView('policy');
                                 }}
                                 onContextMenu={(e) => handleContextMenu(pol.id, e)}
-                                className={`group/pol flex items-center justify-between py-1 px-2 rounded-md text-[11.5px] transition cursor-pointer ${
+                                className={`group/pol flex items-center justify-between py-1.5 px-2.5 rounded-lg text-[11.5px] transition cursor-pointer border ${
                                   isPolSelected
-                                    ? 'bg-[#0057B8] text-white font-medium shadow-primary-sm'
-                                    : 'text-slate-700 hover:bg-slate-200/60'
+                                    ? 'bg-[#0057B8] text-white font-medium border-[#0057B8] shadow-sm'
+                                    : isDraft
+                                    ? 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100'
+                                    : 'text-slate-700 hover:bg-white border-transparent hover:border-slate-200 hover:shadow-xs'
                                 }`}
-                                title={`${pol.title} (Right-click or click pin to toggle)`}
+                                title={`${pol.title}${isDraft ? ' (Draft — pending Bank Owner approval)' : ''}`}
                               >
+                                {/* Left: Icon + clean product name */}
                                 <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                                  {pol.is_product ? (
+                                  {isDraft ? (
+                                    <span className={`w-2 h-2 rounded-full flex-shrink-0 bg-amber-400 ${isPolSelected ? 'bg-amber-300' : ''}`} />
+                                  ) : pol.is_product ? (
                                     <CreditCard className={`w-3 h-3 flex-shrink-0 ${isPolSelected ? 'text-amber-300' : 'text-blue-600'}`} />
                                   ) : (
                                     <FileText className={`w-3 h-3 flex-shrink-0 ${isPolSelected ? 'text-slate-200' : 'text-slate-400 group-hover/pol:text-slate-600'}`} />
                                   )}
-                                  <span className="truncate tracking-tight">{pol.title}</span>
+                                  {/* Product name — truncated cleanly */}
+                                  <span className="truncate tracking-tight font-medium leading-none">
+                                    {pol.title}
+                                  </span>
                                 </div>
-                                <div className="flex items-center gap-1 flex-shrink-0 ml-1">
+
+                                {/* Right: version badge + pin + draft badge */}
+                                <div className="flex items-center gap-1 flex-shrink-0 ml-1.5">
+                                  {isDraft && (
+                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                                      isPolSelected ? 'bg-amber-400 text-amber-950' : 'bg-amber-200 text-amber-800'
+                                    }`}>Draft</span>
+                                  )}
+                                  <span className={`text-[9.5px] font-mono px-1 py-0.5 rounded ${
+                                    isPolSelected ? 'bg-blue-800/60 text-blue-100' : isDraft ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-400'
+                                  }`}>
+                                    v{pol.version || '1.0'}
+                                  </span>
                                   <button
                                     onClick={(e) => handleTogglePin(pol.id, e)}
-                                    title={isPinnedPol ? "Unpin library" : "Pin library"}
-                                    className={`p-0.5 rounded transition cursor-pointer ${
-                                      isPolSelected 
-                                        ? 'text-blue-200 hover:text-white' 
-                                        : isPinnedPol ? 'text-amber-500' : 'text-slate-300 hover:text-[#0057B8]'
+                                    title={isPinnedPol ? 'Unpin library' : 'Pin library'}
+                                    className={`p-0.5 rounded transition cursor-pointer opacity-0 group-hover/pol:opacity-100 ${
+                                      isPolSelected
+                                        ? 'text-blue-200 hover:text-white opacity-100'
+                                        : isPinnedPol ? 'text-amber-500 opacity-100' : 'text-slate-300 hover:text-[#0057B8]'
                                     }`}
                                   >
                                     <Pin className={`w-2.5 h-2.5 ${isPinnedPol ? 'fill-current' : ''}`} />
                                   </button>
-                                  {pol.status === 'draft' && (
-                                    <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
-                                      isPolSelected ? 'bg-amber-400 text-amber-950 font-black' : 'bg-amber-100 text-amber-800 border border-amber-300'
-                                    }`}>
-                                      Draft
-                                    </span>
-                                  )}
-                                  <span className={`text-[9.5px] font-mono px-1 py-0.2 rounded ${
-                                    isPolSelected ? 'bg-slate-800 text-slate-300' : 'bg-slate-200/60 text-slate-500'
-                                  }`}>
-                                    v{pol.version || '1.0'}
-                                  </span>
                                 </div>
                               </div>
                             );

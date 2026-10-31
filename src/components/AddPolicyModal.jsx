@@ -198,12 +198,40 @@ export default function AddPolicyModal({
 }) {
   // 3 Policy Creation Modes: 'direct' | 'library' | 'upload'
   const [creationMode, setCreationMode] = useState('direct');
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
 
   // Direct In-System Template Selection State
   const [selectedDirectTemplateId, setSelectedDirectTemplateId] = useState(null);
   const [activeTemplateInfoId, setActiveTemplateInfoId] = useState(null);
   const [expandedSectionId, setExpandedSectionId] = useState(null);
   const [expandedModalSectionId, setExpandedModalSectionId] = useState(null);
+  const [dynamicTemplates, setDynamicTemplates] = useState(POLICY_TEMPLATES);
+  const [selectedTemplatePhases, setSelectedTemplatePhases] = useState([]);
+
+  // Fetch dynamic starter templates from DB whenever modal opens
+  useEffect(() => {
+    if (isOpen) {
+      apiService.getTemplates()
+        .then((dbTpls) => {
+          if (Array.isArray(dbTpls) && dbTpls.length > 0) {
+            const formatted = dbTpls.map((t, idx) => ({
+              id: t.id,
+              name: t.name || `Template ${idx + 1}`,
+              title: t.title || 'Operational Standard',
+              dept: t.department_id || 'company-policies',
+              sla: t.sla || '4 Hours',
+              daily: t.daily_limit || '$25,000 AUD',
+              cap: t.officer_cap || '$100,000 AUD',
+              summary: t.summary || '',
+              sections: typeof t.sections === 'string' ? JSON.parse(t.sections) : (t.sections || []),
+              phases: typeof t.phases === 'string' ? JSON.parse(t.phases) : (t.phases || [])
+            }));
+            setDynamicTemplates(formatted);
+          }
+        })
+        .catch((err) => console.warn('Could not load dynamic templates from DB:', err));
+    }
+  }, [isOpen]);
 
   // Form Fields
   const [departmentId, setDepartmentId] = useState(preselectedDepartmentId || departments[0]?.id || 'company-policies');
@@ -332,12 +360,23 @@ export default function AddPolicyModal({
     setTurnaroundSla(template.sla);
     setDailyLimit(template.daily);
     setOfficerCap(template.cap);
-    setSections(JSON.parse(JSON.stringify(template.sections)));
+    setSections(JSON.parse(JSON.stringify(template.sections || [])));
+    if (template.phases && template.phases.length > 0) {
+      setSelectedTemplatePhases(JSON.parse(JSON.stringify(template.phases)));
+    } else {
+      setSelectedTemplatePhases([]);
+    }
     // Retain department if user opened creation modal for a specific department (e.g. '+' on Credit Cards)
     if (!preselectedDepartmentId && template.dept) {
       const match = departments.find(d => d.id === template.dept);
       if (match) setDepartmentId(match.id);
     }
+    console.log(`%c📋 [TEMPLATE SELECTED] "${template.title}" chosen. Target Department: "${preselectedDepartmentName || departmentId}"`, 'color: #3B82F6; font-weight: bold;', {
+      templateId: template.id,
+      targetDepartment: preselectedDepartmentId || departmentId,
+      isTargetLockedFromPlus: Boolean(preselectedDepartmentId),
+      sectionsCount: (template.sections || []).length
+    });
   };
 
   const handleAddPresetSection = (name) => {
@@ -400,7 +439,9 @@ export default function AddPolicyModal({
         },
         created_by: currentUser?.name || 'Current User',
         creation_mode: creationMode,
-        status: 'draft'
+        status: 'draft',
+        user_role: currentUser?.roleType || 'employee',
+        user_name: currentUser?.name || 'Staff User'
       });
 
       // 2. Also register in maker-checker queue if not bank owner
@@ -431,6 +472,24 @@ export default function AddPolicyModal({
     }
   };
 
+  // Close interceptor: Prompts to save draft if user has authored content or picked a template
+  const handleRequestClose = () => {
+    const hasDraftContent = Boolean(
+      selectedDirectTemplateId ||
+      title.trim() ||
+      summary.trim() ||
+      content.trim() ||
+      uploadedFileName ||
+      (sections.length > 0 && sections.some(s => s.content && s.content.trim()))
+    );
+
+    if (hasDraftContent) {
+      setShowCloseConfirm(true);
+    } else {
+      onClose();
+    }
+  };
+
   // AI Thinking state for document ingestion
   const [isAiThinking, setIsAiThinking] = useState(false);
   const [aiStep, setAiStep] = useState('');
@@ -451,11 +510,13 @@ export default function AddPolicyModal({
       setDailyLimit('$25,000 AUD');
       setOfficerCap('$100,000 AUD');
       setSections([]);
+      setShowCloseConfirm(false);
     } else {
       setExpandedSectionId(null);
       setExpandedModalSectionId(null);
       setActiveTemplateInfoId(null);
       setErrorMessage('');
+      setShowCloseConfirm(false);
     }
   }, [isOpen]);
 
@@ -988,6 +1049,9 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
     try {
       const formData = new FormData();
       formData.append('department_id', departmentId || preselectedDepartmentId || 'credit-cards');
+      // Pass role info so backend sets correct status (draft for employee, active for manager/admin)
+      formData.append('user_role', currentUser?.roleType || 'employee');
+      formData.append('user_name', currentUser?.name || 'Staff User');
 
       for (const file of files) {
         formData.append('files', file);
@@ -1421,7 +1485,9 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
               sections: docSections
             },
             created_by: currentUser?.name || 'Bank Owner',
-            creation_mode: 'upload'
+            creation_mode: 'upload',
+            user_role: currentUser?.roleType || 'manager',
+            user_name: currentUser?.name || 'Bank Owner'
           });
         } else {
           const targetDeptName = departments.find(d => d.id === docDept)?.name || 'Retail Banking';
@@ -1529,10 +1595,13 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
             daily_limit: finalDaily,
             approval_limits: { officer_cap: finalCap },
             mandatory_dvs: true,
-            sections: finalSections
+            sections: finalSections,
+            phases: selectedTemplatePhases
           },
           created_by: currentUser?.name || 'Bank Owner',
-          creation_mode: creationMode
+          creation_mode: creationMode,
+          user_role: currentUser?.roleType || 'manager',
+          user_name: currentUser?.name || 'Bank Owner'
         });
 
         if (res.id) {
@@ -1589,8 +1658,9 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
             </div>
           </div>
           <button 
-            onClick={onClose}
+            onClick={handleRequestClose}
             className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 cursor-pointer"
+            title="Close modal"
           >
             <X className="w-4 h-4" />
           </button>
@@ -1659,19 +1729,24 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
               {/* STEP 1: CHOOSE STARTING TEMPLATE FIRST */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
-                    1. Choose Starting Template
-                  </label>
+                  <div className="flex items-center gap-2">
+                    <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
+                      1. Choose Starting Template
+                    </label>
+                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                      DB Dynamic ({dynamicTemplates.length})
+                    </span>
+                  </div>
                   {selectedDirectTemplateId && (
                     <span className="text-[11px] text-[#0057B8] font-bold bg-blue-100/70 border border-blue-200 px-2 py-0.5 rounded-full">
-                      {POLICY_TEMPLATES.find(t => t.id === selectedDirectTemplateId)?.name} Selected
+                      {dynamicTemplates.find(t => t.id === selectedDirectTemplateId)?.name} Selected
                     </span>
                   )}
                 </div>
 
-                {/* 4 Simple Template Cards with (i) Info Icon Button */}
+                {/* Dynamic Template Cards with (i) Info Icon Button */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  {POLICY_TEMPLATES.map((tpl) => {
+                  {dynamicTemplates.map((tpl) => {
                     const isSelected = selectedDirectTemplateId === tpl.id;
                     return (
                       <div
@@ -1757,37 +1832,64 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
               {/* STEP 2: DOCUMENT CONFIGURATION & CLAUSES (REVEALED AFTER TEMPLATE SELECTION) */}
               {selectedDirectTemplateId && (
                 <div className="space-y-4 pt-1 border-t border-blue-200/60 animate-in fade-in duration-150">
-                  {/* Target Department Partition & Policy Title */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="sm:col-span-1">
-                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                        Target Department
-                      </label>
-                      <select
-                        value={departmentId}
-                        onChange={(e) => setDepartmentId(e.target.value)}
-                        className="w-full p-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-[13px] bg-white font-medium text-slate-900 shadow-2xs"
-                      >
-                        {departments.map(d => (
-                          <option key={d.id} value={d.id}>{d.name}</option>
-                        ))}
-                      </select>
-                    </div>
+                  {/* If opened from specific department (+), target is ALREADY CHOSEN — do not ask again */}
+                  {preselectedDepartmentId ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 p-2.5 bg-blue-50/80 border border-blue-200/90 rounded-xl text-xs">
+                        <span className="w-2.5 h-2.5 rounded-full bg-[#0057B8] animate-pulse"></span>
+                        <span className="text-slate-500 font-medium">Target Department:</span>
+                        <strong className="text-[#0057B8] font-bold text-[13px]">
+                          {preselectedDepartmentName || departments.find(d => d.id === departmentId)?.name || 'Credit Cards'}
+                        </strong>
+                      </div>
 
-                    <div className="sm:col-span-2">
-                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                        Policy Title
-                      </label>
-                      <input
-                        type="text"
-                        value={title}
-                        onChange={(e) => setTitle(e.target.value)}
-                        placeholder="e.g. Credit Assessment & Approval Guidelines"
-                        required
-                        className="w-full p-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-[13px] bg-white font-semibold text-slate-900 shadow-2xs"
-                      />
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                          Policy Document Title *
+                        </label>
+                        <input
+                          type="text"
+                          value={title}
+                          onChange={(e) => setTitle(e.target.value)}
+                          placeholder="e.g. Credit Assessment & Approval Guidelines"
+                          required
+                          className="w-full p-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-[13px] bg-white font-semibold text-slate-900 shadow-2xs"
+                        />
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    /* If opened from generic Library List [+] without a specific department, allow choosing target department */
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="sm:col-span-1">
+                        <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                          Target Department
+                        </label>
+                        <select
+                          value={departmentId}
+                          onChange={(e) => setDepartmentId(e.target.value)}
+                          className="w-full p-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-[13px] bg-white font-medium text-slate-900 shadow-2xs"
+                        >
+                          {departments.map(d => (
+                            <option key={d.id} value={d.id}>{d.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                          Policy Title
+                        </label>
+                        <input
+                          type="text"
+                          value={title}
+                          onChange={(e) => setTitle(e.target.value)}
+                          placeholder="e.g. Credit Assessment & Approval Guidelines"
+                          required
+                          className="w-full p-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-[13px] bg-white font-semibold text-slate-900 shadow-2xs"
+                        />
+                      </div>
+                    </div>
+                  )}
 
               {/* Policy Sections & Modular Clauses (Image 4 Builder) */}
               <div className="pt-1 space-y-3">
@@ -2855,7 +2957,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleRequestClose}
               className="px-4 py-2 text-[13px] text-slate-600 hover:bg-slate-100 rounded-lg transition cursor-pointer"
             >
               Cancel
@@ -3006,6 +3108,59 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
           </div>
         );
       })()}
+
+      {/* CLOSE CONFIRMATION / SAVE TO DRAFT PROMPT */}
+      {showCloseConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden p-6 animate-in zoom-in-95 duration-150">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center flex-shrink-0 shadow-2xs">
+                <Save className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base font-bold text-slate-900">
+                  Save as Draft Before Closing?
+                </h3>
+                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                  You have drafted policy specifications. Would you like to save this as a draft in the database so you can re-edit it later?
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-col sm:flex-row items-center justify-end gap-2 pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowCloseConfirm(false)}
+                className="w-full sm:w-auto px-3.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              >
+                Keep Editing
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCloseConfirm(false);
+                  onClose();
+                }}
+                className="w-full sm:w-auto px-3.5 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 border border-red-200 rounded-xl transition cursor-pointer"
+              >
+                Discard & Close
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setShowCloseConfirm(false);
+                  await handleSaveDraft();
+                }}
+                disabled={isSubmitting}
+                className="w-full sm:w-auto px-4 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>Save to Draft & Close</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

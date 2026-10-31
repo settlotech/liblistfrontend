@@ -15,7 +15,7 @@ import {
   EyeOff,
   Search
 } from 'lucide-react';
-import { DEFAULT_POLICIES } from '../data/defaultPolicies';
+
 
 export default function BankUserManagerModal({
   isOpen,
@@ -239,7 +239,8 @@ export default function BankUserManagerModal({
     onClose();
   };
 
-  const availablePolicies = (policies && policies.length > 0) ? policies : DEFAULT_POLICIES;
+  // Canonical policies list from database
+  const availablePolicies = (policies && policies.length > 0) ? policies : [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">

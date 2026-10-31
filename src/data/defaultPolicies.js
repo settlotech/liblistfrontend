@@ -147,10 +147,10 @@ Governs credit assessment for unsecured personal loans up to $75,000 AUD, vehicl
     version: '2.0',
     status: 'active',
     is_masked: false,
-    content: `1. Scope & Prudential Mandate
+    content: `### Phase 1: Scope & Prudential Mandate
 Applies to all retail mortgage originations across branch, online, and broker channels adhering to APRA APS 220 credit risk standards.
 
-2. Mandatory Underwriting Thresholds
+### Phase 2: Mandatory Underwriting Thresholds
 1. **Serviceability Buffer**: Mandatory minimum +3.00% interest rate buffer applied over the standard variable rate.
 2. **Loan-to-Value Ratio (LVR)**: LVR exceeding 80% requires Lenders Mortgage Insurance (LMI) validation.
 3. **Genuine Savings**: Minimum 5% verified genuine savings held for at least 3 continuous months.`,
@@ -166,9 +166,280 @@ Applies to all retail mortgage originations across branch, online, and broker ch
         'Valuation Report via CoreLogic Electronic Valuation (EVR)',
         'HEM Living Expense Cross-Verification',
         'Title Deed & Encumbrance Check via PEXA'
+      ],
+      compliance_tags: ['APRA APS 220', 'LMI Validation', 'Genuine Savings'],
+      phases: [
+        {
+          id: 'phase-1',
+          phase_number: 1,
+          title: 'Scope & Prudential Mandate',
+          summary: 'APRA APS 220 credit risk standards across all mortgage origination channels.',
+          key_rules: ['Branch, online, and broker channels', 'APRA APS 220 compliance'],
+          content: 'Applies to all retail mortgage originations across branch, online, and broker channels adhering to APRA APS 220 credit risk standards.'
+        },
+        {
+          id: 'phase-2',
+          phase_number: 2,
+          title: 'Mandatory Underwriting Thresholds',
+          summary: '+3.00% interest rate buffer, LMI validation over 80% LVR, and 3-month genuine savings.',
+          key_rules: ['+3.00% buffer over active rate', 'LMI required for LVR > 80%', '5% genuine savings for 3 months'],
+          content: '1. Serviceability Buffer: Mandatory minimum +3.00% interest rate buffer applied over the standard variable rate.\n2. Loan-to-Value Ratio (LVR): LVR exceeding 80% requires Lenders Mortgage Insurance (LMI) validation.\n3. Genuine Savings: Minimum 5% verified genuine savings held for at least 3 continuous months.'
+        }
       ]
     },
-    created_by: 'Sarah Jenkins (Maker)',
+    created_by: 'Sarah Jenkins (Bank Employee)',
+    updated_at: new Date().toISOString()
+  },
+
+  // Authoritative PDF Template: Home Loan Valuations (from docks/hl_valuation.pdf)
+  {
+    id: 'hl-valuation-policy',
+    department_id: 'retail-lending',
+    department_name: 'Retail Lending',
+    title: 'Home Loan Valuations Policy',
+    summary: 'Establishes a consistent and prudent framework for the valuation of residential properties used as security for home loans to assess lending risk, ensure APRA APS 220 compliance, and protect the interests of both the lender and borrowers.',
+    version: '1.0',
+    status: 'active',
+    is_masked: false,
+    content: `### Phase 1: Purpose & Governance Scope
+Valuation is a critical step in mortgage lending. Accurate assessment of the collateral value determines the risk coverage. The purpose of this policy is to establish a consistent and prudent framework for the valuation of residential properties used as security for home loans under APRA APS 220 prudential governance.
+
+#### Operational Scope
+This policy applies to:
+- All residential home loan applications and consumer mortgage originations.
+- New property purchases (off-the-plan, existing residential, and vacant land).
+- Refinancing transactions from other accredited Authorized Deposit-taking Institutions (ADIs).
+- Construction and renovation loans requiring progress draws.
+- Loan variations, top-up applications, and equity release facilities.
+- Portfolio reviews and ongoing prudential risk monitoring.
+
+### Phase 2: Underwriting Principles & Prudence Rules
+All residential properties offered as security for a home loan must be independently valued to ensure that the property's market value adequately supports the proposed lending exposure.
+
+#### 1. Independence Principle
+Valuers must be completely independent of the borrower, mortgage broker, loan assessor, and approving credit authority. Borrowers and intermediaries must never influence the valuation outcome or select individual valuers directly.
+
+#### 2. Objectivity & Market Evidence
+Valuation assessments must be based strictly on market evidence, verified comparable sales, and professional certified valuer judgment. Unsupported assumptions or subjective personal opinions are strictly prohibited.
+
+#### 3. Prudence Rule (Lowest-Value Standard)
+Lending decisions and Loan-to-Value Ratio (LVR) determinations must strictly be based on the lower of:
+1. The negotiated Purchase Price; or
+2. The Assessed Fair Market Value from the independent valuation.
+
+### Phase 3: Approved Valuation Methods & Thresholds
+The bank authorizes four distinct valuation tiers based on property complexity, exposure, and risk profile:
+
+#### 1. Full Valuation (Physical Internal & External Inspection)
+Carried out by an approved panel valuer with comprehensive internal and external physical property inspection. Mandatory under the following conditions:
+- Loan-to-Value Ratio (LVR) exceeds 80%.
+- Construction or development loans requiring staged progress drawdowns.
+- Unique, high-end, or specialized properties (acreage, rural residential, heritage).
+- High-value properties exceeding delegated officer caps (> $2,000,000 AUD).
+- Heightened risk indicators or adverse environmental/zoning flags.
+
+#### 2. Desktop Valuation
+Conducted using external mapping, digital imagery, and recent market transactions without physical entry. Permitted subject to Credit Team sign-off for:
+- Low-to-medium risk residential lending.
+- Established residential properties in metropolitan and high-liquidity suburbs.
+- Refinancing applications with LVR <= 80%.
+
+#### 3. Automated Valuation Models (AVM)
+Algorithmic statistical assessment via CoreLogic / EVR. Permitted only where:
+- Property value is below institution cap ($1,500,000 AUD).
+- Property type is standard detached residential or low-density strata.
+- LVR does not exceed 75% with zero negative credit marks.
+
+#### 4. Drive-thru / Kerbside Valuation
+External roadside inspection used when limited internal inspection is considered acceptable and additional physical assurance is required beyond a desktop valuation.
+
+### Phase 4: Validity Periods & Turnaround SLAs
+Credit assessments and loan documentation can only rely on valuations within their statutory validity shelf-life:
+
+| Valuation Type | Validity in Days | Turnaround SLA |
+| :--- | :--- | :--- |
+| **Full Valuation** | **90 Calendar Days** | 48 Business Hours |
+| **Desktop Valuation** | **90 Calendar Days** | 24 Business Hours |
+| **Automated Valuation Models (AVM)** | **30 Calendar Days** | Real-time (Instant) |
+| **Drive-thru / Kerbside** | **60 Calendar Days** | 24 Business Hours |
+
+#### Mandatory Re-valuation Triggers
+A new or updated valuation is automatically triggered and required before settlement if:
+1. The statutory validity period (90 days for full/desktop, 30 days for AVM) expires prior to loan settlement.
+2. Macroeconomic property market conditions deteriorate significantly (> 5% suburb-level decline).
+3. Material physical changes, severe weather damage, or unauthorized alterations occur to the security property.
+4. Additional lending or loan variation is requested after initial credit approval.
+
+### Phase 5: Verification Checklist & System Event Telemetry
+Standardized reporting format and system workflow event triggers:
+
+#### Standardized Report Requirements
+- Standard usage clause with authorized mortgage insurer responsibility extension.
+- Main improvement dimensions, site dimensions, and Land Description verified against Title Registry.
+- Recommended Replacement Cost calculation for mandatory building insurance coverage.
+- Minimum 3 comparable sales within 6 months of valuation date, with at least 2 sales within 10% of subject property's value.
+- Capitalization methodology mandatory for blocks of units or multi-dwelling lots.
+- General valuer commentary on environmental, zoning, and adverse marketability factors.
+
+#### Operational Workflow Lifecycle Events
+1. **Loan Origination Trigger**: Receipt of home loan application initiates security collateral validation.
+2. **Valuer Panel Assignment**: System dispatches instruction to independent accredited panel valuer.
+3. **Inspection & Report Ingestion**: Standardized EVR report ingested with title check and comparable sales analysis.
+4. **Credit Decisioning Event**: Underwriting engine enforces the lowest-value prudence rule (lower of price vs valuation).
+5. **Discrepancy Escalation**: Valuation shortfall > 10% automatically escalates to Level 3 Senior Credit Officer.
+6. **Expiry Sentinel**: 90-day threshold countdown triggers automated renewal alert and blocks drawdown upon expiration.
+7. **APRA CPS 234 Audit Logging**: Cryptographically signed event telemetry recorded to audit logs with valuer accreditation ID.`,
+    parameters: {
+      approval_limits: {
+        officer_cap: '$2,000,000 AUD',
+        manager_cap: '$5,000,000 AUD',
+        executive_cap: '$10,000,000 AUD'
+      },
+      turnaround_sla: '90 Days Validity (Full/Desktop), 30 Days (AVM)',
+      daily_limit: 'Lower of Purchase Price or Assessed Market Value',
+      verification_steps: [
+        'Full internal/external inspection mandatory if LVR > 80% or loan > $2M',
+        'Panel Valuer API Registration & conflict-of-interest check',
+        'Minimum 3 comparable sales within 6 months (at least 2 within 10%)',
+        'Recommended Replacement Cost for insurance calculation',
+        'Serviceability buffer calculation (+3.0% over active mortgage reference rate)'
+      ],
+      compliance_tags: ['APRA APS 220', 'Independent Valuers', 'LVR Limits', 'AVM Standard', 'CoreLogic EVR'],
+      phases: [
+        {
+          id: 'phase-1',
+          phase_number: 1,
+          title: 'Purpose & Governance Scope',
+          summary: 'Consistent and prudent framework for residential property security valuations complying with APRA APS 220.',
+          key_rules: [
+            'Applies to all residential home loans, new purchases, refinances, and construction draws',
+            'APRA APS 220 regulatory compliance for credit risk governance'
+          ],
+          content: 'Valuation is a critical step in mortgage lending. Accurate assessment of the collateral value determines the risk coverage. The purpose of this policy is to establish a consistent and prudent framework for the valuation of residential properties used as security for home loans under APRA APS 220 prudential governance.'
+        },
+        {
+          id: 'phase-2',
+          phase_number: 2,
+          title: 'Underwriting Principles & Prudence Rules',
+          summary: 'Core prudence mandate ensuring lending decisions adopt the lower of purchase price or assessed market value.',
+          key_rules: [
+            'Independence: Valuers must be independent of borrower, broker, and assessor',
+            'Objectivity: Based strictly on verified market evidence and comparable sales',
+            'Prudence Rule: Decisions must be based on lower of purchase price or market value'
+          ],
+          content: 'All residential properties offered as security for a home loan must be independently valued to ensure that the propertys market value adequately supports the proposed lending exposure.'
+        },
+        {
+          id: 'phase-3',
+          phase_number: 3,
+          title: 'Approved Valuation Methods & Thresholds',
+          summary: 'Four distinct valuation tiers: Full Physical Inspection, Desktop Valuation, AVM, and Kerbside.',
+          key_rules: [
+            'Full Valuation: Mandatory when LVR > 80%, construction loans, or high-value loans > $2M AUD',
+            'Desktop: Low-to-medium risk residential lending with LVR <= 80%',
+            'AVM: Standard residential below $1.5M with LVR <= 75%',
+            'Drive-thru / Kerbside: Roadside inspection when additional physical assurance is needed'
+          ],
+          content: 'The bank authorizes four distinct valuation tiers based on property complexity, exposure, and risk profile.'
+        },
+        {
+          id: 'phase-4',
+          phase_number: 4,
+          title: 'Validity Periods & Turnaround SLAs',
+          summary: 'Statutory validity shelf-life: Full/Desktop 90 calendar days; AVM 30 calendar days.',
+          key_rules: [
+            'Full Valuation: 90 calendar days validity, 48-hour SLA',
+            'Desktop Valuation: 90 calendar days validity, 24-hour SLA',
+            'AVM: 30 calendar days validity, instant SLA',
+            'Re-valuation triggers: Expiry, severe market drop (>5%), property damage, top-up request'
+          ],
+          content: 'Credit assessments and loan documentation can only rely on valuations within their statutory validity shelf-life.'
+        },
+        {
+          id: 'phase-5',
+          phase_number: 5,
+          title: 'Verification Checklist & Event Telemetry',
+          summary: 'Standardized report requirements, comparable sales rules, and end-to-end event triggers.',
+          key_rules: [
+            'Standardized Report: Min 3 comparable sales within 6 months (2 within 10%)',
+            'Insurance replacement cost calculation included in report',
+            'Discrepancy > 10% escalates to Level 3 Senior Credit Officer',
+            'APRA CPS 234 event telemetry logged with valuer accreditation ID'
+          ],
+          content: 'Standardized reporting format and system workflow event triggers from origination to settlement and audit logging.'
+        }
+      ]
+    },
+    created_by: 'Marcus Vance (Bank Owner)',
+    updated_at: new Date().toISOString()
+  },
+
+  // Bank Employee Draft Specification: Maker-Checker draft workflow
+  {
+    id: 'commercial-equipment-finance-draft',
+    department_id: 'retail-lending',
+    department_name: 'Retail Lending',
+    title: 'Commercial Equipment Finance & Asset Lending SOP',
+    summary: 'Draft guidelines authored by Operations Squad for heavy machinery, medical devices, and commercial vehicle chattel mortgages.',
+    version: '0.9',
+    status: 'draft',
+    is_masked: false,
+    content: `### Phase 1: Purpose & Product Scope
+Draft operational SOP for underwriting commercial chattel mortgages, hire purchase contracts, and equipment lease facilities up to $500,000 AUD.
+
+### Phase 2: Asset Valuation & Depreciation Benchmarks
+1. **Asset Classes**: Heavy haulage transport, earthmoving equipment, agricultural machinery, and specialized medical imaging systems.
+2. **Depreciation Schedule**: Standard Australian Taxation Office (ATO) diminishing value schedule verified before financing term approval.
+3. **PPSR Registration**: Mandatory Personal Property Securities Register (PPSR) charge registration within 24 hours of loan agreement signing.
+
+### Phase 3: Delegated Limits & Turnaround SLAs
+- Bank Employee (Maker) Assessment Cap: $50,000 AUD.
+- Credit Officer Sign-off Cap: $150,000 AUD.
+- Executive Risk Committee: > $500,000 AUD.
+- Turnaround SLA: 36 business hours.`,
+    parameters: {
+      approval_limits: {
+        officer_cap: '$50,000 AUD',
+        manager_cap: '$150,000 AUD',
+        executive_cap: '$500,000 AUD'
+      },
+      turnaround_sla: '36 Hours',
+      daily_limit: '$100,000 AUD',
+      verification_steps: [
+        'PPSR Security Charge Registration Verification',
+        'ATO Asset Depreciation Benchmark Audit',
+        '2-Year Audited Business Tax Returns & BAS Statements',
+        'Director Personal Guarantee & Comprehensive Credit Check'
+      ],
+      compliance_tags: ['PPSR Act 2009', 'Commercial Asset Lending', 'ATO Depreciation'],
+      phases: [
+        {
+          id: 'phase-1',
+          phase_number: 1,
+          title: 'Purpose & Product Scope',
+          summary: 'Commercial chattel mortgages, hire purchase contracts, and equipment lease facilities up to $500,000 AUD.',
+          key_rules: ['Draft guidelines authored by Operations Squad', 'Covers equipment up to $500,000 AUD'],
+          content: 'Draft operational SOP for underwriting commercial chattel mortgages, hire purchase contracts, and equipment lease facilities up to $500,000 AUD.'
+        },
+        {
+          id: 'phase-2',
+          phase_number: 2,
+          title: 'Asset Valuation & Depreciation Benchmarks',
+          summary: 'Asset classes, ATO diminishing value schedules, and mandatory PPSR registration.',
+          key_rules: ['ATO diminishing value schedule verified', 'PPSR charge registration within 24 hours'],
+          content: 'Asset classes: Heavy haulage transport, earthmoving equipment, agricultural machinery, and specialized medical imaging systems.'
+        },
+        {
+          id: 'phase-3',
+          phase_number: 3,
+          title: 'Delegated Limits & Turnaround SLAs',
+          summary: 'Approval tiers and turnaround SLA of 36 business hours.',
+          key_rules: ['Bank Employee (Maker) assessment cap: $50,000 AUD', 'Credit Officer sign-off cap: $150,000 AUD'],
+          content: 'Approval thresholds and SLAs for commercial chattel mortgages.'
+        }
+      ]
+    },
+    created_by: 'Sarah Jenkins (Bank Employee)',
     updated_at: new Date().toISOString()
   },
 

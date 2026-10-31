@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Building2, 
   ShieldCheck, 
@@ -126,6 +126,75 @@ export default function AdminDashboard({
   const [inspectedBank, setInspectedBank] = useState(null);
   const [inspectionTab, setInspectionTab] = useState('policies'); // 'policies' | 'users' | 'logs'
   const [selectedInspectedPolicy, setSelectedInspectedPolicy] = useState(null);
+
+  // Dynamic DB Users & Roles Management
+  const [dbUsers, setDbUsers] = useState([]);
+  const [isCreateUserOpen, setIsCreateUserOpen] = useState(false);
+  const [isSubmittingUser, setIsSubmittingUser] = useState(false);
+  const [userSuccessMessage, setUserSuccessMessage] = useState('');
+  const [userErrorMessage, setUserErrorMessage] = useState('');
+  const [newUserData, setNewUserData] = useState({
+    name: '',
+    email: '',
+    bank_id: 'cba',
+    role: 'Bank Employee (Maker)',
+    role_type: 'employee',
+    department: 'Retail Banking Operations'
+  });
+
+  const loadDbUsers = async () => {
+    try {
+      const data = await apiService.getUsers();
+      if (Array.isArray(data) && data.length > 0) {
+        setDbUsers(data);
+      }
+    } catch (err) {
+      console.warn('Failed to load DB users in AdminDashboard:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadDbUsers();
+  }, []);
+
+  const handleCreateUserSubmit = async (e) => {
+    e.preventDefault();
+    if (!newUserData.name || !newUserData.email) {
+      setUserErrorMessage('Name and work email are required.');
+      return;
+    }
+    setIsSubmittingUser(true);
+    setUserErrorMessage('');
+    try {
+      await apiService.createUser({
+        name: newUserData.name.trim(),
+        email: newUserData.email.trim(),
+        bank_id: newUserData.bank_id,
+        role: newUserData.role,
+        role_type: newUserData.role_type,
+        department: newUserData.department,
+        created_by: 'Platform Super Admin (Ramesh)'
+      });
+      setUserSuccessMessage(`Successfully provisioned ${newUserData.name} as ${newUserData.role}!`);
+      await loadDbUsers();
+      setTimeout(() => {
+        setIsCreateUserOpen(false);
+        setUserSuccessMessage('');
+        setNewUserData({
+          name: '',
+          email: '',
+          bank_id: inspectedBank?.id.toLowerCase() || 'cba',
+          role: 'Bank Employee (Maker)',
+          role_type: 'employee',
+          department: 'Retail Banking Operations'
+        });
+      }, 1000);
+    } catch (err) {
+      setUserErrorMessage(err.message || 'Failed to create user');
+    } finally {
+      setIsSubmittingUser(false);
+    }
+  };
 
   // Add Master Policy Framework Modal State (Direct & AI Upload)
   const [isAddFrameworkOpen, setIsAddFrameworkOpen] = useState(false);
@@ -338,6 +407,22 @@ export default function AdminDashboard({
   const currentBankData = inspectedBank 
     ? (BANK_DETAILS[inspectedBank.id.toLowerCase()] || BANK_DETAILS.cba)
     : null;
+
+  const currentBankKey = inspectedBank?.id?.toLowerCase();
+  const bankDbUsers = currentBankKey ? dbUsers.filter(u => (u.bank_id || '').toLowerCase() === currentBankKey) : [];
+  const displayedUsers = bankDbUsers.length > 0 
+    ? bankDbUsers.map(u => ({
+        id: u.id,
+        name: u.name,
+        role: u.role,
+        roleType: u.role_type || (u.role?.toLowerCase().includes('owner') || u.role?.toLowerCase().includes('manager') ? 'manager' : 'employee'),
+        dept: u.department || 'Retail Banking Squad',
+        email: u.email,
+        avatar: u.avatar || u.name?.slice(0, 2).toUpperCase() || 'U',
+        lastActive: 'Active Now'
+      }))
+    : (currentBankData?.users || []);
+  const activeMembersCount = displayedUsers.length;
 
   return (
     <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#f8fafc] p-6 sm:p-8 space-y-6 text-xs relative">
@@ -848,7 +933,7 @@ export default function AdminDashboard({
                   <User className="w-3.5 h-3.5 text-blue-600" />
                   <span>Registered Bank Users</span>
                 </div>
-                <div className="text-lg font-extrabold text-slate-900 mt-1">{currentBankData.users.length} Active Members</div>
+                <div className="text-lg font-extrabold text-slate-900 mt-1">{activeMembersCount} Active Members</div>
                 <div className="text-[10.5px] text-slate-500">Click to view roster & permissions</div>
               </div>
 
@@ -903,7 +988,7 @@ export default function AdminDashboard({
                     : 'border-transparent text-slate-500 hover:text-slate-800'
                 }`}
               >
-                Registered Bank Users ({currentBankData.users.length})
+                Registered Bank Users ({activeMembersCount})
               </button>
               <button
                 onClick={() => setInspectionTab('logs')}
@@ -962,9 +1047,34 @@ export default function AdminDashboard({
               {/* TAB B: Bank Users */}
               {inspectionTab === 'users' && (
                 <div className="space-y-3">
-                  <div className="text-xs text-slate-600 font-medium">
-                    List of all registered bank personnel for <strong>{inspectedBank.name}</strong> and their system status.
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-slate-200">
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900">
+                        Personnel Roster — {inspectedBank.name}
+                      </h4>
+                      <p className="text-[11px] text-slate-500">
+                        {displayedUsers.length} institutional accounts with active role-based access control.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewUserData(prev => ({
+                          ...prev,
+                          bank_id: inspectedBank?.id?.toLowerCase() || 'cba'
+                        }));
+                        setUserErrorMessage('');
+                        setUserSuccessMessage('');
+                        setIsCreateUserOpen(true);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0057B8] hover:bg-[#004EA6] text-white rounded-lg font-bold text-xs shadow-xs transition cursor-pointer self-start sm:self-auto"
+                      title="Provision new bank user and assign maker/checker role"
+                    >
+                      <PlusCircle className="w-3.5 h-3.5" />
+                      <span>Create User & Assign Role</span>
+                    </button>
                   </div>
+
                   <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
                     <table className="w-full text-left text-xs">
                       <thead>
@@ -977,7 +1087,7 @@ export default function AdminDashboard({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {currentBankData.users.map((u) => (
+                        {displayedUsers.map((u) => (
                           <tr key={u.id} className="hover:bg-slate-50/80 transition">
                             <td className="py-3 px-4 font-bold text-slate-900 flex items-center gap-2">
                               <div className="w-6 h-6 rounded-full bg-slate-900 text-white flex items-center justify-center text-[10px] font-extrabold">
@@ -1434,6 +1544,185 @@ export default function AdminDashboard({
           </div>
         )}
       </div>
+
+      {/* ------------------- CREATE NEW USER & ASSIGN ROLE MODAL (ADMIN) ------------------- */}
+      {isCreateUserOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-[#0057B8] text-white flex items-center justify-center font-bold shadow-xs">
+                  <User className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-900">Provision Bank User & Role</h3>
+                  <p className="text-[11px] text-slate-500">Create new user account and assign governance permissions</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCreateUserOpen(false);
+                  setUserErrorMessage('');
+                  setUserSuccessMessage('');
+                }}
+                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 flex items-center justify-center transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleCreateUserSubmit} className="p-5 space-y-4 text-xs">
+              {userSuccessMessage && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl font-bold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                  <span>{userSuccessMessage}</span>
+                </div>
+              )}
+
+              {userErrorMessage && (
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl font-medium">
+                  {userErrorMessage}
+                </div>
+              )}
+
+              {/* Full Name */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Full Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newUserData.name}
+                  onChange={(e) => setNewUserData(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g. Alex Morgan"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 outline-none focus:bg-white focus:border-blue-500 font-medium"
+                />
+              </div>
+
+              {/* Work Email */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Work Email Address *
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={newUserData.email}
+                  onChange={(e) => setNewUserData(prev => ({ ...prev, email: e.target.value }))}
+                  placeholder="e.g. alex.morgan@cba.com.au"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 outline-none focus:bg-white focus:border-blue-500 font-mono"
+                />
+              </div>
+
+              {/* Bank Selection & Role Type */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    Bank Tenant
+                  </label>
+                  <select
+                    value={newUserData.bank_id}
+                    onChange={(e) => setNewUserData(prev => ({ ...prev, bank_id: e.target.value }))}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 outline-none focus:bg-white focus:border-blue-500 font-bold"
+                  >
+                    <option value="cba">Commonwealth Bank (CBA)</option>
+                    <option value="nab">National Australia Bank (NAB)</option>
+                    <option value="wbc">Westpac Banking Corp (WBC)</option>
+                    <option value="anz">ANZ Banking Group (ANZ)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    Access Level
+                  </label>
+                  <select
+                    value={newUserData.role_type}
+                    onChange={(e) => {
+                      const type = e.target.value;
+                      const defaultRoleMap = {
+                        manager: 'Bank Owner',
+                        employee: 'Bank Employee (Maker)',
+                        admin: 'Platform Super Admin'
+                      };
+                      setNewUserData(prev => ({
+                        ...prev,
+                        role_type: type,
+                        role: defaultRoleMap[type] || 'Bank Employee'
+                      }));
+                    }}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 outline-none focus:bg-white focus:border-blue-500 font-bold"
+                  >
+                    <option value="employee">Bank Employee (Maker / Checker)</option>
+                    <option value="manager">Bank Owner (Executive Approver)</option>
+                    <option value="admin">Platform Super Admin</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Specific Role Title */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Designation / Role Title
+                </label>
+                <input
+                  type="text"
+                  value={newUserData.role}
+                  onChange={(e) => setNewUserData(prev => ({ ...prev, role: e.target.value }))}
+                  placeholder="e.g. Senior Credit Risk Assessor"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 outline-none focus:bg-white focus:border-blue-500"
+                />
+              </div>
+
+              {/* Department / Squad */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Department Squad
+                </label>
+                <input
+                  type="text"
+                  value={newUserData.department}
+                  onChange={(e) => setNewUserData(prev => ({ ...prev, department: e.target.value }))}
+                  placeholder="e.g. Credit Operations Squad"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 outline-none focus:bg-white focus:border-blue-500"
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="pt-2 border-t border-slate-200 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateUserOpen(false)}
+                  className="px-4 py-2 border border-slate-300 hover:bg-slate-100 rounded-lg text-slate-700 font-bold transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingUser}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-[#0057B8] hover:bg-[#004EA6] text-white rounded-lg font-bold shadow-xs transition cursor-pointer disabled:opacity-50"
+                >
+                  {isSubmittingUser ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Provisioning...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Create User & Assign Role</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

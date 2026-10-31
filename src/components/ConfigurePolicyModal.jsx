@@ -131,8 +131,10 @@ export default function ConfigurePolicyModal({
     setSections(prev => [...prev, newPara]);
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const isDraft = policy?.status === 'draft';
+
+  const handleSubmit = async (e, publishImmediately = false, submitForSignoff = false) => {
+    if (e && e.preventDefault) e.preventDefault();
     setIsSubmitting(true);
     setStatusMessage(null);
 
@@ -165,10 +167,36 @@ export default function ConfigurePolicyModal({
         parameters: updatedParams,
         user_name: currentUser?.name || 'Marcus Vance',
         user_role: currentUser?.roleType || 'employee',
-        justification: justification || 'Operational parameters revised'
+        justification: justification || (isDraft ? 'Draft updated' : 'Operational parameters revised')
       });
 
-      if (res.maker_checker) {
+      if (publishImmediately && isChecker) {
+        await apiService.publishDraft(policy.id, currentUser?.name || 'Marcus Vance (Bank Owner)');
+        setStatusMessage({
+          type: 'success',
+          text: `Policy "${title}" saved and published as ACTIVE!`
+        });
+      } else if (submitForSignoff && isEmployee) {
+        await apiService.createMakerCheckerItem({
+          policy_id: policy.id,
+          policy_title: title,
+          department_name: policy.department_name || 'Retail Banking',
+          maker_name: currentUser?.name || 'Bank Employee',
+          requested_by: `${currentUser?.name || 'Bank Employee'} (Bank Employee)`,
+          change_details: justification || `Draft policy "${title}" submitted for sign-off.`,
+          status: 'pending',
+          proposed_changes: { 
+            title, 
+            content: compiledContent, 
+            parameters: updatedParams,
+            submission_note: justification || 'Updated draft specifications.'
+          }
+        });
+        setStatusMessage({
+          type: 'success',
+          text: 'Draft saved and submitted to Department Manager for Maker-Checker review.'
+        });
+      } else if (res.maker_checker) {
         setStatusMessage({
           type: 'success',
           text: 'Proposed amendments submitted to Department Manager for Maker-Checker review.'
@@ -176,7 +204,9 @@ export default function ConfigurePolicyModal({
       } else {
         setStatusMessage({
           type: 'success',
-          text: `Policy updated directly to version ${res.version} with audit logging.`
+          text: isDraft 
+            ? 'Draft policy updated and saved successfully in database.' 
+            : `Policy updated directly to version ${res.version} with audit logging.`
         });
       }
 
@@ -473,13 +503,47 @@ export default function ConfigurePolicyModal({
           >
             Cancel
           </button>
-          <button
-            onClick={handleSubmit}
-            disabled={isSubmitting}
-            className="px-5 py-2 text-[13px] font-semibold text-white bg-[#0057B8] hover:bg-[#004EA6] rounded-lg shadow-xs transition cursor-pointer"
-          >
-            {isSubmitting ? 'Saving Configuration...' : (isChecker ? 'Update Policy Immediately' : 'Submit for Maker-Checker Sign-off')}
-          </button>
+
+          {isDraft ? (
+            <>
+              <button
+                type="button"
+                onClick={(e) => handleSubmit(e, false)}
+                disabled={isSubmitting}
+                className="px-4 py-2 text-[13px] font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg shadow-2xs transition cursor-pointer"
+              >
+                {isSubmitting ? 'Saving...' : 'Save Updated Draft'}
+              </button>
+
+              {isChecker ? (
+                <button
+                  type="button"
+                  onClick={(e) => handleSubmit(e, true)}
+                  disabled={isSubmitting}
+                  className="px-5 py-2 text-[13px] font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-xs transition cursor-pointer"
+                >
+                  {isSubmitting ? 'Publishing...' : 'Save & Publish to Active'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={(e) => handleSubmit(e, false, true)}
+                  disabled={isSubmitting}
+                  className="px-5 py-2 text-[13px] font-semibold text-white bg-[#0057B8] hover:bg-[#004EA6] rounded-lg shadow-xs transition cursor-pointer flex items-center gap-1.5"
+                >
+                  {isSubmitting ? 'Submitting...' : 'Save & Submit Draft for Sign-off'}
+                </button>
+              )}
+            </>
+          ) : (
+            <button
+              onClick={(e) => handleSubmit(e, false)}
+              disabled={isSubmitting}
+              className="px-5 py-2 text-[13px] font-semibold text-white bg-[#0057B8] hover:bg-[#004EA6] rounded-lg shadow-xs transition cursor-pointer"
+            >
+              {isSubmitting ? 'Saving Configuration...' : (isChecker ? 'Update Policy Immediately' : 'Submit for Maker-Checker Sign-off')}
+            </button>
+          )}
         </div>
       </div>
     </div>
