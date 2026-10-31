@@ -1,0 +1,8 @@
+.loading-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 50vh;
+  font-family: sans-serif;
+  color: #374151;
+}

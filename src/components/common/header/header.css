@@ -1,0 +1,486 @@
+ 
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+* {
+  box-sizing: border-box;
+}
+
+.app-header {
+  width: 100%;
+  height: 56px;
+  padding: 0 16px;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  background: #ffffff;
+  border-bottom: 1px solid #e5eaf1;
+
+  font-family: 'Inter', sans-serif;
+  color: #173454;
+}
+
+/* LEFT SECTION */
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-shrink: 0;
+}
+
+.sidebar-toggle,
+.header-icon-button {
+  width: 34px;
+  height: 34px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border: 1px solid #e1e7ef;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #344761;
+  cursor: pointer;
+}
+
+.sidebar-toggle {
+  border-color: #25364b;
+}
+
+.bank-info {
+  height: 34px;
+  padding: 0 10px;
+
+  display: flex;
+  align-items: center;
+  gap: 7px;
+
+  border: 1px solid #dce5f1;
+  border-radius: 8px;
+  background: #fbfcff;
+  white-space: nowrap;
+}
+
+.bank-icon {
+  color: #075bb9;
+  flex-shrink: 0;
+}
+
+.bank-name {
+  font-size: 13px;
+  font-weight: 650;
+  color: #173454;
+}
+
+.bank-code {
+  padding: 3px 6px;
+  border: 1px solid #a8cafa;
+  border-radius: 4px;
+
+  color: #075bb9;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* SEARCH */
+
+.header-search {
+  height: 36px;
+  width: min(450px, 35%);
+  min-width: 180px;
+
+  padding: 0 10px;
+
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  border: 1.5px solid #a7c8f4;
+  border-radius: 10px;
+  background: #ffffff;
+
+  margin: 0 auto;
+}
+
+.search-icon {
+  color: #075bb9;
+  flex-shrink: 0;
+}
+
+.header-search input {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+
+  border: none;
+  outline: none;
+  background: transparent;
+
+  font-family: inherit;
+  font-size: 12px;
+  color: #173454;
+}
+
+.header-search input::placeholder {
+  color: #8b9bb5;
+}
+
+.search-shortcut {
+  padding: 3px 5px;
+  border: 1px solid #a8cafa;
+  border-radius: 4px;
+
+  color: #075bb9;
+  background: #f5f9ff;
+
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+/* RIGHT SECTION */
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+}
+
+.access-button {
+  height: 36px;
+  padding: 0 11px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+
+  border: 1.5px solid #a7c8f4;
+  border-radius: 9px;
+
+  background: #f8fbff;
+  color: #075bb9;
+
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.header-icon-button {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.notification-count {
+  position: absolute;
+  top: -5px;
+  right: -4px;
+
+  width: 16px;
+  height: 16px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 50%;
+  background: #ff9d00;
+  color: #ffffff;
+
+  font-size: 9px;
+  font-weight: 700;
+}
+
+/* USER PROFILE */
+
+.profile-dropdown {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.user-profile {
+  height: 42px;
+  min-width: 160px;
+  padding: 0 9px;
+
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  border: 1px solid #e1e7ef;
+  border-radius: 9px;
+
+  background: #ffffff;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.user-avatar {
+  width: 28px;
+  height: 28px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  flex-shrink: 0;
+  border-radius: 50%;
+
+  background: #075bb9;
+  color: #ffffff;
+
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.user-details {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 2px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.user-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #173454;
+}
+
+.user-role {
+  font-size: 10px;
+  color: #8290a4;
+}
+
+.profile-arrow {
+  color: #8290a4;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.profile-arrow.rotate {
+  transform: rotate(180deg);
+}
+
+/* DROPDOWN MENU */
+
+.profile-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+
+  width: 235px;
+  padding: 7px;
+
+  background: #ffffff;
+  border: 1px solid #e5eaf1;
+  border-radius: 11px;
+
+  box-shadow: 0 10px 35px rgba(15, 35, 65, 0.12);
+
+  z-index: 1000;
+  animation: dropdownShow 0.18s ease-out;
+}
+
+@keyframes dropdownShow {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.profile-menu-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+}
+
+.user-avatar.large {
+  width: 36px;
+  height: 36px;
+  font-size: 12px;
+}
+
+.profile-info h4 {
+  margin: 0;
+  color: #173454;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.profile-info p {
+  margin: 3px 0 0;
+  color: #8290a4;
+  font-size: 11px;
+}
+
+.profile-menu-divider {
+  height: 1px;
+  margin: 5px 0;
+  background: #edf0f4;
+}
+
+.profile-menu-item {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  border: none;
+  border-radius: 6px;
+
+  background: transparent;
+  color: #45566d;
+
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.profile-menu-item:hover {
+  background: #f2f6fc;
+  color: #075bb9;
+}
+
+.logout-item {
+  color: #dc4444;
+}
+
+.logout-item:hover {
+  background: #fff2f2;
+  color: #dc2626;
+}
+
+/* TABLET */
+
+@media (max-width: 1100px) {
+  .bank-name {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .header-search {
+    width: 30%;
+    min-width: 150px;
+  }
+
+  .user-profile {
+    width: 42px;
+    min-width: 42px;
+    justify-content: center;
+  }
+
+  .user-details,
+  .profile-arrow {
+    display: none;
+  }
+}
+
+/* MOBILE */
+
+@media (max-width: 700px) {
+  .app-header {
+    height: 54px;
+    padding: 0 10px;
+    gap: 7px;
+  }
+
+  .bank-code,
+  .panel-button,
+  .search-shortcut,
+  .access-button span {
+    display: none;
+  }
+
+  .bank-info {
+    max-width: 175px;
+  }
+
+  .bank-name {
+    max-width: 125px;
+    font-size: 11px;
+  }
+
+  .header-search {
+    flex: 1;
+    width: auto;
+    min-width: 36px;
+    padding: 0 9px;
+  }
+
+  .header-search input {
+    display: none;
+  }
+
+  .header-right {
+    gap: 5px;
+  }
+
+  .access-button {
+    width: 32px;
+    padding: 0;
+  }
+
+  .sidebar-toggle,
+  .header-icon-button,
+  .access-button {
+    width: 32px;
+    height: 32px;
+  }
+
+  .user-profile {
+    width: 34px;
+    min-width: 34px;
+    height: 36px;
+    padding: 0;
+    border: none;
+  }
+
+  .user-avatar {
+    width: 29px;
+    height: 29px;
+  }
+}
+
+/* SMALL MOBILE */
+
+@media (max-width: 420px) {
+  .bank-info {
+    max-width: 125px;
+    padding: 0 7px;
+    gap: 5px;
+  }
+
+  .bank-name {
+    max-width: 90px;
+    font-size: 10px;
+  }
+
+  .header-left {
+    gap: 5px;
+  }
+
+  .header-search {
+    flex: 1;
+  }
+}
