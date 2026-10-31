@@ -1,4 +1,5 @@
-export const API_BASE = import.meta.env.VITE_API_URL || 'https://liblistbackend.vercel.app/api';
+const rawApiUrl = (import.meta.env.VITE_API_URL || 'https://liblistbackend.vercel.app/api').trim();
+export const API_BASE = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl.replace(/\/+$/, '')}/api`;
 
 /**
  * Standard fetch helper with error handling and JSON parsing

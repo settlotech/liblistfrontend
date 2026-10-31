@@ -1,4 +1,5 @@
-const API_URL = import.meta.env.VITE_API_URL || 'https://liblistbackend.vercel.app/api';
+const rawApiUrl = (import.meta.env.VITE_API_URL || 'https://liblistbackend.vercel.app/api').trim();
+const API_URL = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl.replace(/\/+$/, '')}/api`;
 
  
 let accessToken = null;
