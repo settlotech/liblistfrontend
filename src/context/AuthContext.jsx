@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useState, useEffect } from 'react';
-import { loginApi, logoutApi, refreshSession, getUser as getStoredUser } from '../services/auth.service';
+import { loginApi, logoutApi, refreshSession, getUser as getStoredUser, checkemailavailability } from '../services/auth.service';
 
 export const AuthContext = createContext(null);
 
@@ -50,9 +50,30 @@ export const AuthProvider = ({ children }) => {
             setIsAuthenticated(false);
         }
     };
- 
+
+
+    const hasPermission = (moduleName, operationName = 'read') => {
+        if (!user) return false;
+        if (user.isSuperAdmin) return true;
+        const required = `${moduleName.toLowerCase()}:${operationName.toLowerCase()}`;
+        return (user.permissions || []).includes(required);
+    };
+
+
+    const hasRole = (...roles) => {
+        if (!user) return false;
+        if (user.isSuperAdmin) return true;
+        const userRoles = (user.roles || []).map(r => (typeof r === 'string' ? r : r.role_name).toLowerCase());
+        if (user.role) userRoles.push(user.role.toLowerCase());
+        return roles.some(role => userRoles.includes(role.toLowerCase()));
+    };
+
+    const checkuserEmailAvailability = async (email) => {
+        const response = await checkemailavailability(email);
+        return response;
+    }
     return (
-        <AuthContext.Provider value={{ user, isAuthenticated, isLoading, login, logout }}>
+        <AuthContext.Provider value={{ user, isAuthenticated, isLoading, checkuserEmailAvailability, login, logout, hasPermission, hasRole }}>
             {children}
         </AuthContext.Provider>
     );

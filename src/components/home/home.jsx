@@ -1,29 +1,16 @@
 import './home.css';
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import Header from '../common/header/header';
+import { useTheme } from '../../context/ThemeContext';
+import { LayoutDashboard, TrendingUp, FileText, Users, Activity } from 'lucide-react';
 
 export default function Home() {
-    const { user, logout } = useAuth();
-    const [isLoggingOut, setIsLoggingOut] = useState(false);
-    const navigate = useNavigate();
+    const { user } = useAuth(); 
+    console.log("user ==> ", user);
 
-    const onLogout = async () => {
-        setIsLoggingOut(true);
-        try {
-            await logout();
-            navigate('/login', { replace: true });
-        } catch (error) {
-            console.error('Logout failed:', error);
-        } finally {
-            setIsLoggingOut(false);
-        }
-    };
-
+   
     return (
-        <div>
-             <Header></Header>
+        <div className="home-page">
+             
         </div>
     );
 }

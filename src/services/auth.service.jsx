@@ -1,6 +1,6 @@
 const API_URL = 'http://localhost:5000/api';
 
- 
+
 let accessToken = null;
 let refreshPromise = null;
 
@@ -87,7 +87,7 @@ export const refreshSession = async () => {
     return refreshPromise;
 };
 
- 
+
 export const loginApi = async (payload) => {
     const response = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
@@ -172,11 +172,11 @@ export const apiFetch = async (endpoint, options = {}) => {
 };
 
 export const getProfileApi = async () => {
-    const response = await apiFetch('/auth/profile'); 
-    const data = await response.json(); 
+    const response = await apiFetch('/auth/profile');
+    const data = await response.json();
     if (!response.ok) {
         throw new Error(data.message || 'Unable to get profile');
-    } 
+    }
     const user = data?.data?.user || data?.user;
     if (user) {
         setUser(user);
@@ -213,22 +213,23 @@ export const changePasswordApi = async (payload) => {
         method: 'PATCH',
         body: JSON.stringify(payload)
     });
-
     const data = await response.json();
-
     if (!response.ok) {
         throw new Error(data.message || 'Password change failed');
     }
-
     clearAuth();
-
     return data;
 };
 
 export const logoutApi = async () => {
     try {
+        const headers = {};
+        if (accessToken) {
+            headers['Authorization'] = `Bearer ${accessToken}`;
+        }
         const response = await fetch(`${API_URL}/auth/logout`, {
             method: 'POST',
+            headers,
             credentials: 'include'
         });
 
@@ -238,6 +239,7 @@ export const logoutApi = async () => {
             throw new Error(data.message || 'Logout failed');
         }
 
+        console.log("data ==> ", data);
         return data;
 
     } finally {
@@ -263,3 +265,15 @@ export const logoutAllApi = async () => {
         clearAuth();
     }
 };
+
+export const checkemailavailability = async (email) => {
+    const response = await apiFetch('/users/checkemailid', {
+        method: 'POST',
+        body: JSON.stringify({ email })
+    });
+    const data = await response.json();
+    if (!response.ok) {
+        throw new Error(data.message || 'Failed to send reset email');
+    }
+    return data;
+}

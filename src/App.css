@@ -1,8 +1,213 @@
+/* ── App Shell Layout ── */
+.app-shell {
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+    background: var(--bg-primary);
+    font-family: var(--font-sans);
+}
+
+/* ── Sidebar ── */
+.sidebar {
+    width: var(--sidebar-width);
+    flex-shrink: 0;
+    background: var(--bg-surface);
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+    transition: width 0.2s ease;
+    z-index: 200;
+}
+
+.sidebar.collapsed {
+    width: var(--sidebar-collapsed-width);
+}
+
+/* ── Sidebar Header / Logo ── */
+.sidebar-logo-area {
+    height: var(--header-height);
+    padding: 0 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.sidebar-logo-icon {
+    width: 32px;
+    height: 32px;
+    background: var(--btn-primary-bg);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: #ffffff;
+}
+
+.sidebar-logo-text {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    transition: opacity 0.15s, width 0.2s;
+}
+
+.sidebar.collapsed .sidebar-logo-text {
+    opacity: 0;
+    width: 0;
+}
+
+/* ── Sidebar Navigation ── */
+.sidebar-nav {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 10px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.sidebar-nav::-webkit-scrollbar { width: 4px; }
+.sidebar-nav::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
+
+.sidebar-section-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    padding: 8px 10px 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    transition: opacity 0.15s;
+}
+
+.sidebar.collapsed .sidebar-section-label {
+    opacity: 0;
+    padding-bottom: 0;
+    height: 0;
+}
+
+.sidebar-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 10px;
+    border-radius: 8px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    font-family: var(--font-sans);
+    transition: all 0.15s;
+    position: relative;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.sidebar-nav-item:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.sidebar-nav-item.active {
+    background: rgba(7, 91, 185, 0.1);
+    color: var(--btn-primary-bg);
+    font-weight: 600;
+}
+
+/* Use CSS variable for active background so button color affects sidebar active */
+.sidebar-nav-item.active {
+    background: color-mix(in srgb, var(--btn-primary-bg) 12%, transparent);
+    color: var(--btn-primary-bg);
+}
+
+.sidebar-nav-item svg {
+    flex-shrink: 0;
+    min-width: 18px;
+}
+
+.nav-item-label {
+    overflow: hidden;
+    transition: opacity 0.15s, width 0.2s;
+    flex: 1;
+}
+
+.sidebar.collapsed .nav-item-label {
+    opacity: 0;
+    width: 0;
+}
+
+.nav-item-badge {
+    margin-left: auto;
+    background: var(--danger-text);
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 10px;
+    flex-shrink: 0;
+}
+
+.sidebar.collapsed .nav-item-badge {
+    display: none;
+}
+
+/* Tooltip for collapsed sidebar */
+.sidebar.collapsed .sidebar-nav-item {
+    justify-content: center;
+}
+
+/* ── Sidebar Footer ── */
+.sidebar-footer {
+    padding: 10px 8px;
+    border-top: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+/* ── Main Content Area ── */
+.main-content-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+    min-width: 0;
+}
+
+/* ── Main Header (top bar) ── */
+.main-header-row {
+    height: var(--header-height);
+    flex-shrink: 0;
+}
+
+/* ── Page Body ── */
+.page-body {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ── Loading Spinner Full Page ── */
 .loading-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 50vh;
-  font-family: sans-serif;
-  color: #374151;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-family: var(--font-sans);
+    color: var(--text-secondary);
+    font-size: 14px;
+    background: var(--bg-primary);
 }
