@@ -5,8 +5,8 @@ import { useAuth } from './AuthContext';
 
 export const ThemeContext = createContext(null);
 
-const DEFAULT_THEME = 'system';
-const DEFAULT_BUTTON_COLOR = '#075bb9';
+const DEFAULT_THEME = 'light';
+const DEFAULT_BUTTON_COLOR = '#0057B8';
 
 // Helper to generate a slightly darker hover shade for buttons
 const getHoverColor = (hex) => {

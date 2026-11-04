@@ -42,7 +42,6 @@ const PublicRoute = ({ children }) => {
     return isAuthenticated ? <Navigate to="/home" replace /> : children;
 };
 
- 
 /* ── App ── */
 function App() {
     const { isLoading } = useAuth();
@@ -57,10 +56,15 @@ function App() {
             <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
             <Route path="/reset/:id" element={<PublicRoute><Resetpassword /></PublicRoute>} />
 
-            {/* Protected */}
-            <Route path="/home" element={<ProtectedRoute><Home /></ProtectedRoute>} />
+            {/* Protected Australian Banking Hub & Modules */}
+            <Route path="/home" element={<ProtectedRoute><Home initialView="policy" /></ProtectedRoute>} />
+            <Route path="/documents" element={<ProtectedRoute><Home initialView="policy" /></ProtectedRoute>} />
+            <Route path="/changelogs" element={<ProtectedRoute><Home initialView="change_management" /></ProtectedRoute>} />
+            <Route path="/tasks" element={<ProtectedRoute><Home initialView="tasks" /></ProtectedRoute>} />
+            <Route path="/templates" element={<ProtectedRoute><Home initialView="templates" /></ProtectedRoute>} />
+
+            {/* Protected System Settings & RBAC */}
             <Route path="/settings" element={<ProtectedRoute><Setting /></ProtectedRoute>} />
-             
 
             {/* Redirects */}
             <Route path="/" element={<Navigate to="/home" replace />} />

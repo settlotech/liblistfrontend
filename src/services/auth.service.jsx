@@ -1,30 +1,50 @@
-const API_URL = 'http://localhost:5000/api';
+const rawApiUrl = (import.meta.env.VITE_API_URL || 'https://liblistbackend.vercel.app/api').trim();
+const API_URL = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl.replace(/\/+$/, '')}/api`;
 
-
-let accessToken = null;
+let accessToken = typeof localStorage !== 'undefined' ? localStorage.getItem('libtrak_access_token') : null;
 let refreshPromise = null;
 
 export const setAccessToken = (token) => {
     accessToken = token;
+    if (typeof localStorage !== 'undefined') {
+        if (token) {
+            localStorage.setItem('libtrak_access_token', token);
+        } else {
+            localStorage.removeItem('libtrak_access_token');
+        }
+    }
 };
 
 export const getAccessToken = () => {
+    if (!accessToken && typeof localStorage !== 'undefined') {
+        accessToken = localStorage.getItem('libtrak_access_token') || null;
+    }
     return accessToken;
 };
 
 export const clearAccessToken = () => {
     accessToken = null;
+    if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('libtrak_access_token');
+    }
 };
 
 const setUser = (user) => {
     if (user) {
         sessionStorage.setItem('user', JSON.stringify(user));
+        if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('libtrak_authenticated_user', JSON.stringify(user));
+        }
     }
 };
 
 export const getUser = () => {
     try {
-        return JSON.parse(sessionStorage.getItem('user'));
+        const sessionUser = sessionStorage.getItem('user');
+        if (sessionUser) return JSON.parse(sessionUser);
+        const localUser = typeof localStorage !== 'undefined' ? localStorage.getItem('libtrak_authenticated_user') : null;
+        if (localUser) return JSON.parse(localUser);
+        return null;
     } catch {
         return null;
     }
@@ -32,6 +52,9 @@ export const getUser = () => {
 
 const clearUser = () => {
     sessionStorage.removeItem('user');
+    if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('libtrak_authenticated_user');
+    }
 };
 
 export const clearAuth = () => {
@@ -47,27 +70,38 @@ export const refreshSession = async () => {
 
     refreshPromise = (async () => {
         try {
-            const response = await fetch(`${API_URL}/auth/refresh`, {
-                method: 'POST',
-                credentials: 'include'
-            });
-
-            if (response.status === 401) {
-                clearAuth();
-                return false;
+            const storedRefreshToken = typeof localStorage !== 'undefined' ? localStorage.getItem('libtrak_refresh_token') : null;
+            const headers = { 'Content-Type': 'application/json' };
+            if (storedRefreshToken) {
+                headers['x-refresh-token'] = storedRefreshToken;
             }
 
-            if (!response.ok) {
+            const response = await fetch(`${API_URL}/auth/refresh`, {
+                method: 'POST',
+                headers,
+                credentials: 'include',
+                body: JSON.stringify({ refreshToken: storedRefreshToken })
+            });
+
+            if (response.status === 401 || !response.ok) {
                 clearAuth();
                 return false;
             }
 
             const data = await response.json();
             const token = data?.data?.accessToken || data?.accessToken;
+        const refreshToken = data?.data?.refreshToken || data?.refreshToken;
+        if (refreshToken && typeof localStorage !== 'undefined') {
+            localStorage.setItem('libtrak_refresh_token', refreshToken);
+        }
+            const newRefreshToken = data?.data?.refreshToken || data?.refreshToken;
             const user = data?.data?.user || data?.user;
 
             if (token) {
                 setAccessToken(token);
+            }
+            if (newRefreshToken && typeof localStorage !== 'undefined') {
+                localStorage.setItem('libtrak_refresh_token', newRefreshToken);
             }
 
             if (user) {
@@ -87,7 +121,6 @@ export const refreshSession = async () => {
     return refreshPromise;
 };
 
-
 export const loginApi = async (payload) => {
     const response = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
@@ -105,6 +138,10 @@ export const loginApi = async (payload) => {
     }
 
     const token = data?.data?.accessToken || data?.accessToken;
+        const refreshToken = data?.data?.refreshToken || data?.refreshToken;
+        if (refreshToken && typeof localStorage !== 'undefined') {
+            localStorage.setItem('libtrak_refresh_token', refreshToken);
+        }
     const user = data?.data?.user || data?.user;
 
     setAccessToken(token);
@@ -135,11 +172,12 @@ export const registerApi = async (payload) => {
 export const apiFetch = async (endpoint, options = {}) => {
     const makeRequest = () => {
         const headers = new Headers(options.headers || {});
+        const token = getAccessToken();
 
-        if (accessToken) {
+        if (token) {
             headers.set(
                 'Authorization',
-                `Bearer ${accessToken}`
+                `Bearer ${token}`
             );
         }
 
@@ -172,11 +210,11 @@ export const apiFetch = async (endpoint, options = {}) => {
 };
 
 export const getProfileApi = async () => {
-    const response = await apiFetch('/auth/profile');
-    const data = await response.json();
+    const response = await apiFetch('/auth/profile'); 
+    const data = await response.json(); 
     if (!response.ok) {
         throw new Error(data.message || 'Unable to get profile');
-    }
+    } 
     const user = data?.data?.user || data?.user;
     if (user) {
         setUser(user);
@@ -213,23 +251,22 @@ export const changePasswordApi = async (payload) => {
         method: 'PATCH',
         body: JSON.stringify(payload)
     });
+
     const data = await response.json();
+
     if (!response.ok) {
         throw new Error(data.message || 'Password change failed');
     }
+
     clearAuth();
+
     return data;
 };
 
 export const logoutApi = async () => {
     try {
-        const headers = {};
-        if (accessToken) {
-            headers['Authorization'] = `Bearer ${accessToken}`;
-        }
         const response = await fetch(`${API_URL}/auth/logout`, {
             method: 'POST',
-            headers,
             credentials: 'include'
         });
 
@@ -239,7 +276,6 @@ export const logoutApi = async () => {
             throw new Error(data.message || 'Logout failed');
         }
 
-        console.log("data ==> ", data);
         return data;
 
     } finally {
@@ -276,4 +312,4 @@ export const checkemailavailability = async (email) => {
         throw new Error(data.message || 'Failed to send reset email');
     }
     return data;
-}
+};

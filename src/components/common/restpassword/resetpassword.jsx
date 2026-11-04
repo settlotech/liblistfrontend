@@ -3,6 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Lock, CheckCircle2 } from 'lucide-react';
 import './resetpassword.css';
 
+const rawApiUrl = (import.meta.env.VITE_API_URL || 'https://liblistbackend.vercel.app/api').trim();
+const API_URL = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl.replace(/\/+$/, '')}/api`;
+
 const OTP_LENGTH = 6;
 const RESEND_SECONDS = 27;
 
@@ -36,7 +39,7 @@ export default function Resetpassword() {
     // Fetch user email if available
     useEffect(() => {
         if (!id) return;
-        fetch(`http://localhost:5000/api/users/resetinfo/${id}`)
+        fetch(`${API_URL}/users/resetinfo/${id}`)
             .then((res) => res.json())
             .then((data) => {
                 if (data?.success && data?.email) {
@@ -116,7 +119,7 @@ export default function Resetpassword() {
             setIsVerifying(true);
             setStatus(null);
             try {
-                const res = await fetch(`http://localhost:5000/api/users/verifyotp/${id}`, {
+                const res = await fetch(`${API_URL}/users/verifyotp/${id}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ otp: code }),
@@ -146,7 +149,7 @@ export default function Resetpassword() {
         setIsResending(true);
         setStatus(null);
         try {
-            const res = await fetch(`http://localhost:5000/api/users/resendotp/${id}`, {
+            const res = await fetch(`${API_URL}/users/resendotp/${id}`, {
                 method: 'POST',
             });
             const data = await res.json();
@@ -186,7 +189,7 @@ export default function Resetpassword() {
         setIsResetting(true);
         setStatus(null);
         try {
-            const res = await fetch(`http://localhost:5000/api/users/resetpassword/${id}`, {
+            const res = await fetch(`${API_URL}/users/resetpassword/${id}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ resetToken, newPassword: newPassword.trim() }),

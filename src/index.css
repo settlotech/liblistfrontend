@@ -12,7 +12,7 @@
   
   /* Layout */
   --header-height: 56px;
-  --sidebar-width: 240px;
+  --sidebar-width: 270px;
   --sidebar-collapsed-width: 68px;
 }
 
@@ -377,3 +377,4 @@ html, body {
   font-size: 13px;
   margin-bottom: 16px;
 }
+

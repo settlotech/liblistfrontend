@@ -1,32 +1,45 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useState, useEffect } from 'react';
-import { loginApi, logoutApi, refreshSession, getUser as getStoredUser, checkemailavailability } from '../services/auth.service';
+import { loginApi, logoutApi, refreshSession, getUser as getStoredUser, getAccessToken, clearAuth, checkemailavailability } from '../services/auth.service';
 
 export const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-    const [user, setUser] = useState(null);
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [user, setUser] = useState(() => {
+        try {
+            return getStoredUser() || (typeof localStorage !== 'undefined' ? JSON.parse(localStorage.getItem('libtrak_authenticated_user') || 'null') : null);
+        } catch (_) {
+            return null;
+        }
+    });
+
+    const [isAuthenticated, setIsAuthenticated] = useState(() => {
+        try {
+            const token = getAccessToken();
+            const stored = getStoredUser() || (typeof localStorage !== 'undefined' ? JSON.parse(localStorage.getItem('libtrak_authenticated_user') || 'null') : null);
+            return Boolean(token && stored);
+        } catch (_) {
+            return false;
+        }
+    });
+
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
         const checkAuth = async () => {
-            try {
-                const refreshed = await refreshSession();
-                if (refreshed) {
-                    setIsAuthenticated(true);
-                    setUser(getStoredUser());
-                } else {
-                    setIsAuthenticated(false);
-                    setUser(null);
-                }
-            } catch (error) {
-                console.error('Session check failed:', error);
-                setIsAuthenticated(false);
+            const token = getAccessToken();
+            const stored = getStoredUser() || (typeof localStorage !== 'undefined' ? JSON.parse(localStorage.getItem('libtrak_authenticated_user') || 'null') : null);
+
+            if (token && stored) {
+                // Active session found from storage
+                setUser(stored);
+                setIsAuthenticated(true);
+            } else {
+                // No active credentials; start unauthenticated
                 setUser(null);
-            } finally {
-                setIsLoading(false);
+                setIsAuthenticated(false);
             }
+            setIsLoading(false);
         };
 
         checkAuth();
@@ -44,36 +57,38 @@ export const AuthProvider = ({ children }) => {
         try {
             await logoutApi();
         } catch (error) {
-            console.error('Logout failed:', error);
+            console.error('Logout error:', error);
         } finally {
+            clearAuth();
             setUser(null);
             setIsAuthenticated(false);
         }
     };
 
+    const checkuserEmailAvailability = async (email) => {
+        return await checkemailavailability(email);
+    };
 
     const hasPermission = (moduleName, operationName = 'read') => {
         if (!user) return false;
-        if (user.isSuperAdmin) return true;
+        if (user.isSuperAdmin || user.roleType === 'admin') return true;
         const required = `${moduleName.toLowerCase()}:${operationName.toLowerCase()}`;
         return (user.permissions || []).includes(required);
     };
 
-
-    const hasRole = (...roles) => {
-        if (!user) return false;
-        if (user.isSuperAdmin) return true;
-        const userRoles = (user.roles || []).map(r => (typeof r === 'string' ? r : r.role_name).toLowerCase());
-        if (user.role) userRoles.push(user.role.toLowerCase());
-        return roles.some(role => userRoles.includes(role.toLowerCase()));
-    };
-
-    const checkuserEmailAvailability = async (email) => {
-        const response = await checkemailavailability(email);
-        return response;
-    }
     return (
-        <AuthContext.Provider value={{ user, isAuthenticated, isLoading, checkuserEmailAvailability, login, logout, hasPermission, hasRole }}>
+        <AuthContext.Provider
+            value={{
+                user,
+                isAuthenticated,
+                isLoading,
+                login,
+                logout,
+                refreshSession,
+                checkuserEmailAvailability,
+                hasPermission
+            }}
+        >
             {children}
         </AuthContext.Provider>
     );
