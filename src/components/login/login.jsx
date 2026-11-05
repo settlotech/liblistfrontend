@@ -47,7 +47,7 @@ export default function Login() {
         setErrors({});
     };
 
-    // Handle Login Submit
+    // Handle Login Submit  
     const handleLoginSubmit = async (e) => {
         e.preventDefault();
         const newErrors = {};
@@ -69,7 +69,7 @@ export default function Login() {
         if (Object.keys(newErrors).length === 0) {
             setIsSubmitting(true);
             try {
-                const res = await login({ email: email.trim(), password });
+                const res = await login({ email: email.trim(), password,rememberMe });
                 if (res?.success) {
                     navigate('/dashboard', { replace: true });
                 }

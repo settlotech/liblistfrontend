@@ -1,48 +1,84 @@
-const rawApiUrl = (import.meta.env.VITE_API_URL || 'https://liblistbackend.vercel.app/api').trim();
+﻿const rawApiUrl = (import.meta.env.VITE_API_URL || 'https://liblistbackend.vercel.app/api').trim();
 const API_URL = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl.replace(/\/+$/, '')}/api`;
 
-let accessToken = typeof localStorage !== 'undefined' ? localStorage.getItem('libtrak_access_token') : null;
+let accessToken = null;
 let refreshPromise = null;
 
-export const setAccessToken = (token) => {
-    accessToken = token;
+ 
+let _rememberMe = typeof localStorage !== 'undefined' ? localStorage.getItem('libtrak_remember_me') === '1': false;
+
+export const setRememberMe = (val) => {
+    _rememberMe = Boolean(val);
     if (typeof localStorage !== 'undefined') {
-        if (token) {
-            localStorage.setItem('libtrak_access_token', token);
+        if (_rememberMe) {
+            localStorage.setItem('libtrak_remember_me', '1');
         } else {
-            localStorage.removeItem('libtrak_access_token');
+            localStorage.removeItem('libtrak_remember_me');
         }
     }
 };
 
+export const getRememberMe = () => {
+    if (typeof localStorage !== 'undefined') {
+        return localStorage.getItem('libtrak_remember_me') === '1';
+    }
+    return false;
+};
+
+// --- Access Token ------------------------------------------------------------
+export const setAccessToken = (token) => {
+    accessToken = token;
+    if (token) {
+        if (_rememberMe) {
+            localStorage.setItem('libtrak_access_token', token);
+            sessionStorage.removeItem('libtrak_access_token');
+        } else {
+            sessionStorage.setItem('libtrak_access_token', token);
+            localStorage.removeItem('libtrak_access_token');
+        }
+    } else {
+        localStorage.removeItem('libtrak_access_token');
+        sessionStorage.removeItem('libtrak_access_token');
+    }
+};
+
 export const getAccessToken = () => {
-    if (!accessToken && typeof localStorage !== 'undefined') {
-        accessToken = localStorage.getItem('libtrak_access_token') || null;
+    if (!accessToken) {
+        // sessionStorage first (tab-local), then localStorage (remembered session)
+        accessToken = sessionStorage.getItem('libtrak_access_token')
+            || localStorage.getItem('libtrak_access_token')
+            || null;
     }
     return accessToken;
 };
 
 export const clearAccessToken = () => {
     accessToken = null;
-    if (typeof localStorage !== 'undefined') {
-        localStorage.removeItem('libtrak_access_token');
-    }
+    localStorage.removeItem('libtrak_access_token');
+    sessionStorage.removeItem('libtrak_access_token');
 };
 
+// --- User -------------------------------------------------------------------
 const setUser = (user) => {
     if (user) {
-        sessionStorage.setItem('user', JSON.stringify(user));
-        if (typeof localStorage !== 'undefined') {
-            localStorage.setItem('libtrak_authenticated_user', JSON.stringify(user));
+        const json = JSON.stringify(user);
+        if (_rememberMe) {
+            localStorage.setItem('libtrak_authenticated_user', json);
+            sessionStorage.removeItem('libtrak_authenticated_user');
+        } else {
+            sessionStorage.setItem('libtrak_authenticated_user', json);
+            localStorage.removeItem('libtrak_authenticated_user');
         }
     }
 };
 
 export const getUser = () => {
     try {
-        const sessionUser = sessionStorage.getItem('user');
+        const sessionUser = sessionStorage.getItem('libtrak_authenticated_user');
         if (sessionUser) return JSON.parse(sessionUser);
-        const localUser = typeof localStorage !== 'undefined' ? localStorage.getItem('libtrak_authenticated_user') : null;
+        const localUser = typeof localStorage !== 'undefined'
+            ? localStorage.getItem('libtrak_authenticated_user')
+            : null;
         if (localUser) return JSON.parse(localUser);
         return null;
     } catch {
@@ -51,17 +87,17 @@ export const getUser = () => {
 };
 
 const clearUser = () => {
-    sessionStorage.removeItem('user');
-    if (typeof localStorage !== 'undefined') {
-        localStorage.removeItem('libtrak_authenticated_user');
-    }
+    sessionStorage.removeItem('libtrak_authenticated_user');
+    localStorage.removeItem('libtrak_authenticated_user');
 };
 
 export const clearAuth = () => {
     clearAccessToken();
     clearUser();
+    // Clear the remember-me flag on explicit logout
+    localStorage.removeItem('libtrak_remember_me');
+    _rememberMe = false;
 };
-
 export const refreshSession = async () => {
     // Prevent multiple simultaneous refresh requests 
     if (refreshPromise) {
@@ -138,12 +174,10 @@ export const loginApi = async (payload) => {
     }
 
     const token = data?.data?.accessToken || data?.accessToken;
-        const refreshToken = data?.data?.refreshToken || data?.refreshToken;
-        if (refreshToken && typeof localStorage !== 'undefined') {
-            localStorage.setItem('libtrak_refresh_token', refreshToken);
-        }
     const user = data?.data?.user || data?.user;
 
+    // Set rememberMe flag BEFORE storing tokens so storage destination is correct
+    setRememberMe(payload.rememberMe);
     setAccessToken(token);
     setUser(user);
 

@@ -1,44 +1,57 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useState, useEffect } from 'react';
-import { loginApi, logoutApi, refreshSession, getUser as getStoredUser, getAccessToken, clearAuth, checkemailavailability } from '../services/auth.service';
+import {
+    loginApi,
+    logoutApi,
+    refreshSession,
+    getUser as getStoredUser,
+    getAccessToken,
+    getRememberMe,
+    clearAuth,
+    checkemailavailability
+} from '../services/auth.service';
 
 export const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-    const [user, setUser] = useState(() => {
-        try {
-            return getStoredUser() || (typeof localStorage !== 'undefined' ? JSON.parse(localStorage.getItem('libtrak_authenticated_user') || 'null') : null);
-        } catch (_) {
-            return null;
-        }
-    });
-
-    const [isAuthenticated, setIsAuthenticated] = useState(() => {
-        try {
-            const token = getAccessToken();
-            const stored = getStoredUser() || (typeof localStorage !== 'undefined' ? JSON.parse(localStorage.getItem('libtrak_authenticated_user') || 'null') : null);
-            return Boolean(token && stored);
-        } catch (_) {
-            return false;
-        }
-    });
-
+    const [user, setUser] = useState(null);
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
         const checkAuth = async () => {
+            const isRemembered = getRememberMe();
             const token = getAccessToken();
-            const stored = getStoredUser() || (typeof localStorage !== 'undefined' ? JSON.parse(localStorage.getItem('libtrak_authenticated_user') || 'null') : null);
+            const stored = getStoredUser();
 
             if (token && stored) {
-                // Active session found from storage
+                // Valid session found in storage (sessionStorage or localStorage depending on rememberMe)
                 setUser(stored);
                 setIsAuthenticated(true);
-            } else {
-                // No active credentials; start unauthenticated
+            } else if (token && !stored) {
+                // Token exists but no user data — clear stale state
+                clearAuth();
                 setUser(null);
                 setIsAuthenticated(false);
+            } else if (!isRemembered) {
+                // Not remembered + no active session → force login
+                clearAuth();
+                setUser(null);
+                setIsAuthenticated(false);
+            } else {
+                // Remembered but no token — try silent refresh via cookie
+                const refreshed = await refreshSession();
+                if (refreshed) {
+                    const freshUser = getStoredUser();
+                    setUser(freshUser);
+                    setIsAuthenticated(true);
+                } else {
+                    clearAuth();
+                    setUser(null);
+                    setIsAuthenticated(false);
+                }
             }
+
             setIsLoading(false);
         };
 
@@ -69,10 +82,10 @@ export const AuthProvider = ({ children }) => {
         return await checkemailavailability(email);
     };
 
-    const hasPermission = (moduleName, operationName = 'read') => { 
+    const hasPermission = (moduleName, operationName = 'read') => {
         if (!user) return false;
         if (user.isSuperAdmin) return true;
-        const required = `${moduleName.toLowerCase()}:${operationName.toLowerCase()}`; 
+        const required = `${moduleName.toLowerCase()}:${operationName.toLowerCase()}`;
         return (user.permissions || []).includes(required);
     };
 
