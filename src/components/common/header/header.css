@@ -352,3 +352,208 @@
     .bank-info { max-width: 140px; }
     .bank-name { font-size: 11px; max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
 }
+
+
+/* ── Notification Dropdown & Popover ── */
+.notification-dropdown {
+    position: relative;
+    flex-shrink: 0;
+}
+
+.notification-popover {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    width: 380px;
+    max-width: calc(100vw - 32px);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: var(--dropdown-shadow, 0 10px 25px -5px rgba(0, 0, 0, 0.1));
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: dropdownFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.notif-popover-header {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-surface);
+}
+
+.notif-header-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.notif-count-pill {
+    font-size: 11px;
+    font-weight: 700;
+    background: var(--btn-primary-bg, #075bb9);
+    color: #ffffff;
+    padding: 2px 7px;
+    border-radius: 12px;
+}
+
+.notif-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-notif-action {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.btn-notif-action:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.btn-notif-action.demo {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+    color: #1d4ed8;
+}
+
+.btn-notif-action.demo:hover {
+    background: #dbeafe;
+}
+
+/* ── Permission Prompt Banner ── */
+.notif-permission-banner {
+    background: #eff6ff;
+    border-bottom: 1px solid #dbeafe;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 12px;
+    color: #1e40af;
+}
+
+.btn-enable-push {
+    background: #1d4ed8;
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s;
+}
+
+.btn-enable-push:hover {
+    background: #1e40af;
+}
+
+/* ── Notifications List Body ── */
+.notif-list-body {
+    max-height: 380px;
+    overflow-y: auto;
+    padding: 4px 0;
+}
+
+.notif-empty-state {
+    padding: 36px 20px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.notif-item-row {
+    padding: 10px 14px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border-color-subtle, #f1f5f9);
+    transition: background 0.15s;
+}
+
+.notif-item-row:hover {
+    background: var(--bg-hover);
+}
+
+.notif-item-row.unread {
+    background: var(--bg-muted, #f8fafc);
+}
+
+.notif-item-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #eff6ff;
+    color: #2563eb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.notif-item-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.notif-item-title {
+    font-size: 12.5px;
+    font-weight: 650;
+    color: var(--text-primary);
+    margin: 0 0 2px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+}
+
+.notif-unread-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #2563eb;
+    flex-shrink: 0;
+}
+
+.notif-item-body {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    margin: 0 0 4px 0;
+    word-break: break-word;
+}
+
+.notif-item-time {
+    font-size: 10.5px;
+    color: var(--text-muted);
+}
+
+

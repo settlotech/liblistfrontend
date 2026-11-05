@@ -69,10 +69,10 @@ export const AuthProvider = ({ children }) => {
         return await checkemailavailability(email);
     };
 
-    const hasPermission = (moduleName, operationName = 'read') => {
+    const hasPermission = (moduleName, operationName = 'read') => { 
         if (!user) return false;
-        if (user.isSuperAdmin || user.roleType === 'admin') return true;
-        const required = `${moduleName.toLowerCase()}:${operationName.toLowerCase()}`;
+        if (user.isSuperAdmin) return true;
+        const required = `${moduleName.toLowerCase()}:${operationName.toLowerCase()}`; 
         return (user.permissions || []).includes(required);
     };
 

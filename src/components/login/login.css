@@ -32,7 +32,8 @@
 .login-left-pane {
   flex: 0 0 58%;
   width: 58%;
-  background: #f8fafc;
+  /* background: #f8fafc; */
+  background: #ffff;
   border-right: 1px solid #e2e8f0;
   padding: 48px 64px;
   display: flex;
@@ -60,9 +61,9 @@
   font-size: 11.5px;
   font-weight: 600;
   color: #64748b;
-  font-family: monospace; 
+  font-family: monospace;
   padding: 4px 10px;
-  border-radius: 6px; 
+  border-radius: 6px;
 }
 
 .left-pane-desc-box {
@@ -100,13 +101,12 @@
   max-height: 320px;
   object-fit: contain;
   border-radius: 14px;
-  filter: drop-shadow(0 8px 28px rgba(30, 58, 138, 0.10));
+  /* filter: drop-shadow(0 8px 28px rgba(30, 58, 138, 0.10)); */
 }
 
-/* ── Why Liblist Section ── */
+
 .why-liblist-section {
   padding-top: 16px;
-  border-top: 1px solid #e2e8f0;
 }
 
 .why-liblist-heading {
@@ -149,7 +149,7 @@
 .login-right-pane {
   flex: 0 0 42%;
   width: 42%;
-  background: #ffffff;
+  background: #f8fafc;
   padding: 44px 48px;
   display: flex;
   flex-direction: column;
@@ -238,7 +238,7 @@
 .quick-superadmin-card {
   display: flex;
   align-items: center;
-  justify-content: space-between; 
+  justify-content: space-between;
   border-radius: 10px;
   padding: 9px 12px;
   margin-bottom: 18px;
@@ -246,17 +246,20 @@
   transition: all 0.2s ease;
 }
 
- 
+
 .quick-superadmin-left {
   display: flex;
   align-items: center;
   gap: 10px;
+  border-radius: 5px;
+  border: 1px dashed black;
+  padding: 10px;
 }
 
 .quick-icon-wrap {
   width: 26px;
   height: 26px;
-  border-radius: 50%; 
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -266,19 +269,10 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 11.5px; 
+  font-size: 11.5px;
 }
 
-.auto-pill {
-  font-size: 9.5px;
-  font-weight: 700; 
-  padding: 1px 6px;
-  border-radius: 10px;
-}
 
- 
-
- 
 
 /* ══════════════════════════════════════════════════
    MODALS
@@ -306,8 +300,15 @@
 }
 
 @keyframes modal-pop {
-  from { opacity: 0; transform: scale(0.96) translateY(-8px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .forgot-modal-header {

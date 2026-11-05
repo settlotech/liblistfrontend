@@ -197,7 +197,6 @@ export const apiFetch = async (endpoint, options = {}) => {
     // Access token expired
     if (response.status === 401) {
         const refreshed = await refreshSession();
-
         if (refreshed) {
             // Retry original API request
             response = await makeRequest();
@@ -224,7 +223,7 @@ export const getProfileApi = async () => {
 
 export const updateProfileApi = async (payload) => {
     const response = await apiFetch('/auth/profile', {
-        method: 'PUT',
+        method: 'PATCH',
         body: JSON.stringify(payload)
     });
 

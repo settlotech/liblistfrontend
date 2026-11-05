@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useAuth } from '../../context/AuthContext';
 import {
     fetchRolesApi,
     createRoleApi,
@@ -21,6 +22,16 @@ import {
 } from 'lucide-react';
 
 export default function RoleManagement({ onSelectRoleForPermissions }) {
+    const { hasPermission } = useAuth();
+    const canReadRoles = hasPermission('roles', 'read');
+    const canCreateRole = hasPermission('roles', 'create');
+    const canUpdateRole = hasPermission('roles', 'update');
+    const canDeleteRole = hasPermission('roles', 'delete');
+
+    if (!canReadRoles) {
+        return null;
+    }
+
     const [roles, setRoles] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -55,8 +66,10 @@ export default function RoleManagement({ onSelectRoleForPermissions }) {
     };
 
     useEffect(() => {
-        loadRoles();
-    }, []);
+        if (canReadRoles) {
+            loadRoles();
+        }
+    }, [canReadRoles]);
 
     const handleOpenCreate = () => {
         setFormData({ role_name: '', description: '', is_active: true });
@@ -157,9 +170,11 @@ export default function RoleManagement({ onSelectRoleForPermissions }) {
                     >
                         <RefreshCw size={13} className={loading ? 'spin' : ''} /> Refresh
                     </button>
-                    <button className="btn btn-primary btn-sm" onClick={handleOpenCreate}>
-                        <Plus size={14} /> Create Role
-                    </button>
+                    {canCreateRole && (
+                        <button className="btn btn-primary btn-sm" onClick={handleOpenCreate}>
+                            <Plus size={14} /> Create Role
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -281,15 +296,17 @@ export default function RoleManagement({ onSelectRoleForPermissions }) {
                                                     <KeyRound size={14} />
                                                 </button>
 
-                                                <button
-                                                    className="btn-icon"
-                                                    title="Edit Role"
-                                                    onClick={() => handleOpenEdit(role)}
-                                                >
-                                                    <Edit3 size={14} />
-                                                </button>
+                                                {canUpdateRole && (
+                                                    <button
+                                                        className="btn-icon"
+                                                        title="Edit Role"
+                                                        onClick={() => handleOpenEdit(role)}
+                                                    >
+                                                        <Edit3 size={14} />
+                                                    </button>
+                                                )}
 
-                                                {!isSuperAdmin && (
+                                                {!isSuperAdmin && canDeleteRole && (
                                                     deleteConfirmId === role.id ? (
                                                         <div className="inline-delete-confirm">
                                                             <button

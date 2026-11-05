@@ -6,6 +6,7 @@ import Home from './components/home/home';
 import Login from './components/login/login';
 import Setting from './components/setting/Setting';
 import Resetpassword from './components/common/restpassword/resetpassword';
+import Signup from './components/signup/signup';
 import './App.css';
 
 /* ── App Shell: Sidebar + Header + Page Body ── */
@@ -55,6 +56,7 @@ function App() {
             {/* Public */}
             <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
             <Route path="/reset/:id" element={<PublicRoute><Resetpassword /></PublicRoute>} />
+            <Route path="/signup" element={<PublicRoute><Signup /></PublicRoute>} />
 
             {/* Protected Australian Banking Hub & Modules */}
             <Route path="/home" element={<ProtectedRoute><Home initialView="policy" /></ProtectedRoute>} />

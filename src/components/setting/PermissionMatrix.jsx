@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useAuth } from '../../context/AuthContext';
 import {
     fetchPermissionMatrixApi,
     assignRolePermissionsApi
@@ -14,6 +15,14 @@ import {
 } from 'lucide-react';
 
 export default function PermissionMatrix({ initialRoleId }) {
+    const { hasPermission } = useAuth();
+    const canReadRoles = hasPermission('roles', 'read') || hasPermission('permissions', 'read');
+    const canUpdatePermissions = hasPermission('roles', 'update') || hasPermission('permissions', 'update');
+
+    if (!canReadRoles) {
+        return null;
+    }
+
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
@@ -33,7 +42,7 @@ export default function PermissionMatrix({ initialRoleId }) {
         setError(null);
         try {
             const data = await fetchPermissionMatrixApi();
-            setRoles(data.roles || []);
+            setRoles(data.roles.filter((val) => !['Super Admin', 'Super_admin','Super Admin'].includes(val.role_name)));
             setModules(data.modules || []);
             setOperations(data.operations || []);
 
@@ -60,8 +69,10 @@ export default function PermissionMatrix({ initialRoleId }) {
     };
 
     useEffect(() => {
-        loadMatrix(initialRoleId);
-    }, [initialRoleId]);
+        if (canReadRoles) {
+            loadMatrix(initialRoleId);
+        }
+    }, [initialRoleId, canReadRoles]);
 
     // When user changes role in dropdown
     const handleRoleChange = (newRoleId) => {
@@ -146,9 +157,9 @@ export default function PermissionMatrix({ initialRoleId }) {
     };
 
     const currentRole = roles.find(r => r.id === selectedRoleId);
-    const isSuperAdmin =
-        currentRole?.role_name?.toLowerCase() === 'super admin' ||
-        currentRole?.role_name?.toLowerCase() === 'super_admin';
+    console.log("currentRole ==> ", currentRole);
+    const isSuperAdmin = currentRole?.role_name?.toLowerCase() === 'super admin' || currentRole?.role_name?.toLowerCase() === 'super_admin';
+    console.log("isSuperAdmin ==> ", isSuperAdmin);
 
     return (
         <div className="setting-subtab-container">

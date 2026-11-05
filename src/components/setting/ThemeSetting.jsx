@@ -71,7 +71,7 @@ export default function ThemeSetting() {
                 <div className="setting-header-actions">
                     {savedNotice && (
                         <span className="save-badge saved">
-                            <Check size={13} /> Saved to Database
+                            <Check size={13} /> Saved
                         </span>
                     )}
                     {isSaving && (
@@ -171,10 +171,7 @@ export default function ThemeSetting() {
                         <label className="setting-group-label">Button & Accent Color</label>
                         <p className="setting-group-sub">Choose a brand color for buttons, active tabs, and primary action items.</p>
                     </div>
-                    <div className="color-hex-tag">
-                        <span className="color-dot" style={{ backgroundColor: buttonColor }}></span>
-                        <code>{buttonColor.toUpperCase()}</code>
-                    </div>
+                     
                 </div>
 
                 {/* Preset Palettes */}
