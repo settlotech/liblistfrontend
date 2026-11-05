@@ -9,6 +9,7 @@ import {
   usersApi,
   templatesApi,
   tasksApi,
+  taskApi,
   authApi,
   aiApi
 } from './api/index';
@@ -68,6 +69,7 @@ export const apiService = {
   createTask: tasksApi.createTask,
   updateTask: tasksApi.updateTask,
   deleteTask: tasksApi.deleteTask,
+  taskApi,
 
   // 9. Institutional Authentication & JWT Session
   login: authApi.login,

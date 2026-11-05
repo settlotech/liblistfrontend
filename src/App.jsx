@@ -1,4 +1,4 @@
-﻿import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import Sidebar from './components/common/Sidebar';
 import Header from './components/common/header/header';
@@ -9,6 +9,7 @@ import Resetpassword from './components/common/restpassword/resetpassword';
 import Signup from './components/signup/signup';
 import Dashboard from './components/dashboard/dashboard';
 import './App.css';
+import Task from './components/demotask/task';
 
 /* ── App Shell: Sidebar + Header + Page Body ── */
 const AppShell = ({ children }) => (
@@ -83,6 +84,7 @@ function App() {
             <Route path="/dashboard" element={<PermissionRoute module="dashboard"><Dashboard /></PermissionRoute>} />
             <Route path="/home" element={<ProtectedRoute><Home initialView="policy" /></ProtectedRoute>} />
             <Route path="/documents" element={<ProtectedRoute><Home initialView="policy" /></ProtectedRoute>} />
+            <Route path="/demotask" element={<ProtectedRoute><Task /></ProtectedRoute>} />
             <Route path="/changelogs" element={<PermissionRoute module="changelogs"><Home initialView="change_management" /></PermissionRoute>} />
             <Route path="/tasks" element={<PermissionRoute module="tasks"><Home initialView="tasks" /></PermissionRoute>} />
             <Route path="/templates" element={<PermissionRoute module="templates"><Home initialView="templates" /></PermissionRoute>} />

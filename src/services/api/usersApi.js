@@ -3,15 +3,15 @@ import { API_BASE, apiFetch } from './baseApi';
 export const usersApi = {
   async getUsers(bankId = 'all', roleType = '') {
     try {
-      const url = new URL(`${API_BASE}/users`);
-      if (bankId && bankId !== 'all') url.searchParams.append('bank_id', bankId);
-      if (roleType) url.searchParams.append('role_type', roleType);
+      const params = new URLSearchParams();
+      if (bankId && bankId !== 'all') params.append('bank_id', bankId);
+      if (roleType) params.append('role_type', roleType);
+      const qs = params.toString();
+      const endpoint = qs ? `/users?${qs}` : '/users';
 
-      const res = await fetch(url);
-      if (!res.ok) throw new Error('Network error');
-      const data = await res.json();
-      console.log(`%c📡 [DB FETCH] Successfully loaded ${data.length} Institutional Bank Users from PostgreSQL DB:`, 'color: #06B6D4; font-weight: bold; font-size: 12px;', data);
-      return data;
+      const res = await apiFetch(endpoint);
+      const data = res?.data || res || [];
+      return Array.isArray(data) ? data : [];
     } catch (e) {
       console.warn('API error fetching users, using fallback:', e);
       return [];
@@ -42,4 +42,3 @@ export const usersApi = {
     });
   }
 };
-

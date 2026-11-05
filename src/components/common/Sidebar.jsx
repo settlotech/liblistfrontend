@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -26,7 +26,9 @@ import {
     Wrench,
     Megaphone,
     Laptop,
-    FolderKanban
+    FolderKanban,
+    ListChecks,
+    Pencil, Trash2, Copy
 } from 'lucide-react';
 import { apiService } from '../../services/apiService';
 import { DEFAULT_DEPARTMENTS, DEFAULT_POLICIES } from '../../data/defaultPolicies';
@@ -64,7 +66,8 @@ export default function Sidebar() {
     const navigate = useNavigate();
     const location = useLocation();
     const [searchParams] = useSearchParams();
-    const { logout, user, hasPermission } = useAuth(); 
+    const { logout, user, hasPermission } = useAuth();
+ 
 
     // Active selected policy ID (tracked from URL or events)
     const [selectedPolicyId, setSelectedPolicyId] = useState(
@@ -91,6 +94,7 @@ export default function Sidebar() {
             section: 'Governance Hub',
             items: [
                 { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', module: 'dashboard' },
+                { id: 'task', label: 'Tasks Workspace', icon: ListChecks, path: '/demotask' },
                 { id: 'changelogs', label: 'Change Management', icon: ShieldCheck, path: '/changelogs', module: 'changelogs' },
                 { id: 'tasks', label: 'APRA CPS 234 Tasks', icon: BarChart3, path: '/tasks', module: 'tasks' },
                 { id: 'templates', label: 'Policy Templates', icon: FileText, path: '/templates', module: 'templates' }
@@ -252,7 +256,7 @@ export default function Sidebar() {
         ...group,
         items: group.items.filter((item) => !item.module || hasPermission(item.module, 'read'))
     })).filter((group) => group.items.length > 0);
-    
+
     // Active primary categories
     const activeDepartments = useMemo(() => {
         return departments.filter(d => PRIMARY_DEPT_IDS.includes(d.id) || (d.count && d.count > 0));
@@ -296,7 +300,7 @@ export default function Sidebar() {
                                     key={item.id}
                                     className={`sidebar-nav-item ${isActive(item.path) ? 'active' : ''}`}
                                     onClick={() => handleNavClick(item.path)}
-                                    title={collapsed ? item.label : undefined}
+                                    title={collapsed ? item.label : undefined} 
                                 >
                                     <Icon size={18} />
                                     <span className="nav-item-label">{item.label}</span>
@@ -305,6 +309,8 @@ export default function Sidebar() {
                         })}
                     </div>
                 ))}
+
+             
 
                 {/* 2. PINNED LIBRARIES */}
                 <div className="sidebar-section-header">
