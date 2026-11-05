@@ -48,19 +48,12 @@ const PermissionRoute = ({ children, module }) => {
 };
 
 const PublicRoute = ({ children }) => {
-    const { isAuthenticated, isLoading, hasPermission } = useAuth();
+    const { isAuthenticated, isLoading } = useAuth();
     if (isLoading) {
         return <div className="loading-container"><span>Checking session...</span></div>;
     }
     if (isAuthenticated) {
-        const modules = [
-            { module: 'dashboard', path: '/dashboard' },
-            { module: 'changelogs', path: '/changelogs' },
-            { module: 'tasks', path: '/tasks' },
-            { module: 'templates', path: '/templates' },
-        ];
-        const first = modules.find((m) => hasPermission(m.module, 'read'));
-        return <Navigate to={first ? first.path : '/settings'} replace />;
+        return <Navigate to="/dashboard" replace />;
     }
     return children;
 };
@@ -80,14 +73,14 @@ function App() {
             <Route path="/reset/:id" element={<PublicRoute><Resetpassword /></PublicRoute>} />
             <Route path="/signup" element={<PublicRoute><Signup /></PublicRoute>} />
 
-            {/* Protected Australian Banking Hub & Modules */}
-            <Route path="/dashboard" element={<PermissionRoute module="dashboard"><Dashboard /></PermissionRoute>} />
+            {/* Protected Australian Banking Hub & Modules (Common to all users) */}
+            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/home" element={<ProtectedRoute><Home initialView="policy" /></ProtectedRoute>} />
             <Route path="/documents" element={<ProtectedRoute><Home initialView="policy" /></ProtectedRoute>} />
             <Route path="/demotask" element={<ProtectedRoute><Task /></ProtectedRoute>} />
-            <Route path="/changelogs" element={<PermissionRoute module="changelogs"><Home initialView="change_management" /></PermissionRoute>} />
-            <Route path="/tasks" element={<PermissionRoute module="tasks"><Home initialView="tasks" /></PermissionRoute>} />
-            <Route path="/templates" element={<PermissionRoute module="templates"><Home initialView="templates" /></PermissionRoute>} />
+            <Route path="/changelogs" element={<ProtectedRoute><Home initialView="change_management" /></ProtectedRoute>} />
+            <Route path="/tasks" element={<ProtectedRoute><Home initialView="tasks" /></ProtectedRoute>} />
+            <Route path="/templates" element={<ProtectedRoute><Home initialView="templates" /></ProtectedRoute>} />
 
             {/* Protected System Settings & RBAC */}
             <Route path="/settings" element={<ProtectedRoute><Setting /></ProtectedRoute>} />

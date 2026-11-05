@@ -93,11 +93,11 @@ export default function Sidebar() {
         {
             section: 'Governance Hub',
             items: [
-                { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', module: 'dashboard' },
+                { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
                 { id: 'task', label: 'Tasks Workspace', icon: ListChecks, path: '/demotask' },
-                { id: 'changelogs', label: 'Change Management', icon: ShieldCheck, path: '/changelogs', module: 'changelogs' },
-                { id: 'tasks', label: 'APRA CPS 234 Tasks', icon: BarChart3, path: '/tasks', module: 'tasks' },
-                { id: 'templates', label: 'Policy Templates', icon: FileText, path: '/templates', module: 'templates' }
+                { id: 'changelogs', label: 'Change Management', icon: ShieldCheck, path: '/changelogs' },
+                { id: 'tasks', label: 'APRA CPS 234 Tasks', icon: BarChart3, path: '/tasks' },
+                { id: 'templates', label: 'Policy Templates', icon: FileText, path: '/templates' }
             ]
         },
         {
