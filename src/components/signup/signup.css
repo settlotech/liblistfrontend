@@ -1,0 +1,664 @@
+/* ══════════════════════════════════════════════════════════
+   Signup Component Styles - Compact Full Screen UI
+   Grid-based Form, No Box Enclosure, No Box Shadows
+   ══════════════════════════════════════════════════════════ */
+
+.signup-page-container {
+  min-height: 100vh;
+  width: 100%;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: #0f172a;
+  box-sizing: border-box;
+  padding: 24px 20px 48px;
+  margin: 0;
+}
+
+/* ── Top Header Navigation Bar ── */
+.signup-top-header {
+  width: 100%;
+  max-width: 580px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0 24px 0;
+  box-sizing: border-box;
+}
+
+.signup-brand-logo {
+  height: 32px;
+  width: auto;
+  object-fit: contain;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.signup-brand-logo:hover {
+  opacity: 0.85;
+}
+
+.signup-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.signup-login-prompt {
+  font-size: 13px;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-link-login {
+  background: none;
+  border: 1px solid #cbd5e1;
+  color: #0b57d0;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-link-login:hover {
+  background: #eff6ff;
+  border-color: #0b57d0;
+}
+
+/* ── Main Content Area (Unboxed, compact, full-screen canvas) ── */
+.signup-main-content {
+  width: 100%;
+  max-width: 580px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+/* ══════════════════════════════════════════════════
+   STEPPER PROGRESS BAR (Compact, flat, no shadows)
+   ══════════════════════════════════════════════════ */
+.signup-stepper-wrapper {
+  position: relative;
+  width: 100%;
+  margin-bottom: 30px;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.signup-stepper-track-bg {
+  position: absolute;
+  top: 16px;
+  left: 38px;
+  right: 38px;
+  height: 2px;
+  background-color: #e2e8f0;
+  z-index: 1;
+}
+
+.signup-stepper-track-fill {
+  position: absolute;
+  top: 16px;
+  left: 38px;
+  height: 2px;
+  background-color: #0b57d0;
+  z-index: 2;
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.signup-stepper-nodes {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  z-index: 3;
+}
+
+.signup-step-node {
+  width: 76px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.2s ease;
+  user-select: none;
+}
+
+.signup-step-node:focus-visible {
+  outline: 2px solid #0b57d0;
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+.signup-step-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  background: #ffffff;
+  border: 2px solid #cbd5e1;
+  color: #64748b;
+  box-shadow: none;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.signup-step-node.completed .signup-step-circle {
+  background: #0b57d0;
+  border-color: #0b57d0;
+  color: #ffffff;
+}
+
+.signup-step-node.active .signup-step-circle {
+  background: #0b57d0;
+  border-color: #0b57d0;
+  color: #ffffff;
+}
+
+.signup-step-node.upcoming .signup-step-circle {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  color: #94a3b8;
+}
+
+.signup-step-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  text-align: center;
+  transition: color 0.3s ease;
+  white-space: nowrap;
+}
+
+.signup-step-node.completed .signup-step-title,
+.signup-step-node.active .signup-step-title {
+  color: #0f172a;
+  font-weight: 700;
+}
+
+/* ══════════════════════════════════════════════════
+   STEP VIEW CONTENT & TRANSITIONS
+   ══════════════════════════════════════════════════ */
+.signup-step-content-anim {
+  width: 100%;
+  animation: slideFadeIn 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes slideFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Headings ── */
+.signup-card-heading {
+  font-size: 25px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.025em;
+  margin: 0 0 6px 0;
+  line-height: 1.25;
+}
+
+.signup-card-subheading {
+  font-size: 13.5px;
+  color: #475569;
+  line-height: 1.45;
+  margin: 0 0 20px 0;
+}
+
+ 
+ 
+.email-banner-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: #eff6ff;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 20px;
+  gap: 12px;
+  box-shadow: none;
+  flex-wrap: wrap;
+}
+
+.email-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.email-icon-box {
+  width: 28px;
+  height: 28px;
+  border-radius: 5px;
+  border: 1.5px solid #2563eb;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #2563eb;
+  flex-shrink: 0;
+}
+
+.email-address-text {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: -0.01em;
+}
+
+.email-edit-btn {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  padding: 3px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  font-size: 11px;
+}
+
+.email-edit-btn:hover {
+  color: #0b57d0;
+  background: #dbeafe;
+}
+
+.email-banner-divider {
+  width: 1px;
+  height: 20px;
+  background-color: #cbd5e1;
+  flex-shrink: 0;
+}
+
+.email-banner-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #475569;
+  flex-shrink: 0;
+}
+
+.code-expiry-timer {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0b57d0;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+}
+
+/* ══════════════════════════════════════════════════
+   OTP INPUT GRID & CONTROLS (Compact)
+   ══════════════════════════════════════════════════ */
+.otp-section-wrapper {
+  margin-bottom: 20px;
+}
+
+.otp-field-label {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 10px;
+}
+
+.otp-required-star {
+  color: #dc2626;
+  margin-left: 2px;
+}
+
+.otp-boxes-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: flex-start;
+  margin-bottom: 8px;
+}
+
+.otp-digit-input {
+  width: 46px;
+  height: 50px;
+  text-align: center;
+  font-size: 21px;
+  font-weight: 700;
+  color: #0f172a;
+  background: #ffffff;
+  border: 1.5px solid #d1d5db;
+  border-radius: 6px;
+  outline: none;
+  box-shadow: none;
+  transition: border-color 0.2s ease;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+.otp-digit-input:hover {
+  border-color: #9ca3af;
+}
+
+.otp-digit-input:focus {
+  border-color: #0b57d0;
+  border-width: 2px;
+  box-shadow: none;
+}
+
+.otp-digit-input.filled {
+  border-color: #93c5fd;
+  background-color: #f8fafc;
+}
+
+/* ── Buttons Row (Resend + Verify - Compact) ── */
+.signup-buttons-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.btn-otp-resend {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 18px;
+  background-color: #ffffff;
+  border: 1.5px solid #0b57d0;
+  color: #0b57d0;
+  font-size: 13.5px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  height: 40px;
+  box-shadow: none;
+  box-sizing: border-box;
+}
+
+.btn-otp-resend:hover:not(:disabled) {
+  background-color: #eff6ff;
+  border-color: #0949b3;
+  color: #0949b3;
+}
+
+.btn-otp-resend:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  border-color: #cbd5e1;
+  color: #94a3b8;
+}
+
+.btn-otp-verify {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 22px;
+  background-color: #0b57d0;
+  border: 1.5px solid #0b57d0;
+  color: #ffffff;
+  font-size: 13.5px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  height: 40px;
+  box-shadow: none;
+  box-sizing: border-box;
+}
+
+.btn-otp-verify:hover {
+  background-color: #0848a6;
+  border-color: #0848a6;
+}
+
+/* ══════════════════════════════════════════════════
+   BOTTOM INFO BANNER (Compact)
+   ══════════════════════════════════════════════════ */
+.signup-info-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background-color: #eff6ff;
+  border-radius: 8px;
+  padding: 12px 14px;
+  box-sizing: border-box;
+  box-shadow: none;
+}
+
+.signup-info-icon-wrapper {
+  color: #0b57d0;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.signup-info-text {
+  font-size: 12.5px;
+  color: #334155;
+  line-height: 1.45;
+  margin: 0;
+}
+
+/* ══════════════════════════════════════════════════
+   STEP 3: SUCCESS & ADMIN APPROVAL (Compact)
+   ══════════════════════════════════════════════════ */
+.success-view-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 4px 0;
+}
+
+.success-badge-circle {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #ecfdf5;
+  border: 2px solid #a7f3d0;
+  color: #059669;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 14px;
+  box-shadow: none;
+  animation: successPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes successPop {
+  0% { transform: scale(0.4); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.success-heading {
+  font-size: 23px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.02em;
+  margin: 0 0 6px;
+}
+
+.success-lead-text {
+  font-size: 13.5px;
+  color: #475569;
+  line-height: 1.5;
+  max-width: 480px;
+  margin: 0 0 20px;
+}
+ 
+ 
+ 
+.success-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.btn-back-login {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 22px;
+  background-color: #0b57d0;
+  color: #ffffff;
+  font-size: 13.5px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  height: 40px;
+  box-shadow: none;
+  transition: background-color 0.2s ease;
+}
+
+.btn-back-login:hover {
+  background-color: #0848a6;
+}
+
+.btn-reset-flow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 16px;
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  height: 40px;
+  box-shadow: none;
+  transition: background-color 0.2s ease;
+}
+
+.btn-reset-flow:hover {
+  background-color: #f8fafc;
+  border-color: #94a3b8;
+}
+
+/* ── Toast Banner ── */
+.signup-toast-msg {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background-color: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #065f46;
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-bottom: 14px;
+  box-shadow: none;
+  animation: slideFadeIn 0.3s ease;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 0.75s linear infinite;
+}
+
+/* ── Responsive adjustments ── */
+@media (max-width: 560px) {
+  .signup-page-container {
+    padding: 16px 14px 36px;
+  }
+
+  .signup-card-heading {
+    font-size: 22px;
+  }
+
+  .otp-boxes-row {
+    gap: 6px;
+  }
+
+  .otp-digit-input {
+    width: 40px;
+    height: 44px;
+    font-size: 18px;
+  }
+
+  .signup-stepper-track-bg,
+  .signup-stepper-track-fill {
+    left: 20px;
+    right: 20px;
+  }
+
+  .email-banner-chip {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .email-banner-divider {
+    display: none;
+  }
+
+  .signup-buttons-row {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .btn-otp-resend,
+  .btn-otp-verify {
+    width: 100%;
+  }
+
+  .success-action-row {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .btn-back-login,
+  .btn-reset-flow {
+    width: 100%;
+  }
+}

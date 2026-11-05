@@ -52,10 +52,10 @@ export const AuthProvider = ({ children }) => {
     };
 
 
-    const hasPermission = (moduleName, operationName = 'read') => {
+    const hasPermission = (moduleName, operationName = 'read') => { 
         if (!user) return false;
         if (user.isSuperAdmin) return true;
-        const required = `${moduleName.toLowerCase()}:${operationName.toLowerCase()}`;
+        const required = `${moduleName.toLowerCase()}:${operationName.toLowerCase()}`; 
         return (user.permissions || []).includes(required);
     };
 

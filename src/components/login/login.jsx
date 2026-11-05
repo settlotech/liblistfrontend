@@ -33,7 +33,7 @@ export default function Login() {
     const [isSendingReset, setIsSendingReset] = useState(false);
 
     // Signup Notice Modal State
-    const [signupNoticeOpen, setSignupNoticeOpen] = useState(false);
+ 
 
     const { login, checkuserEmailAvailability } = useAuth();
     const navigate = useNavigate();
@@ -102,6 +102,11 @@ export default function Login() {
             setIsSendingReset(false);
         }
     };
+    
+    const SignupComponentsOpen = (e)=>{
+          e.preventDefault();
+          navigate('/signup');
+    }
 
     return (
         <div className="login-page-root">
@@ -148,7 +153,7 @@ export default function Login() {
                             <button
                                 type="button"
                                 className="btn-switch-pill"
-                                onClick={() => setSignupNoticeOpen(true)}
+                                onClick={SignupComponentsOpen}
                             >
                                 Sign up
                             </button>
@@ -162,7 +167,7 @@ export default function Login() {
                                 <User size={24} className="user-avatar-icon" />
                             </div>
 
-                            <h2 className="auth-form-title">Login to your Liblist portal</h2>
+                            <h2 className="auth-form-title">Login to your Liblist.</h2>
                             <p className="auth-form-subtitle">Welcome back, you've been missed!</p>
 
                             {errors.general && (
@@ -183,8 +188,7 @@ export default function Login() {
                                     </div>
                                     <div>
                                         <div className="quick-admin-label">
-                                            <strong>Default Super Admin</strong>
-                                            <span className="auto-pill">1-Click Fill</span>
+                                            <strong>Default Super Admin</strong> 
                                         </div>
                                     </div>
                                 </div>

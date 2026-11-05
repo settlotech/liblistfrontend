@@ -30,7 +30,17 @@ import {
 } from 'lucide-react';
 
 export default function UserManagement() {
-    const { user: currentUser } = useAuth();
+    const { user: currentUser, hasPermission } = useAuth();
+    const canReadUsers = hasPermission('users', 'read');
+    const canCreateUser = hasPermission('users', 'create');
+    const canUpdateUser = hasPermission('users', 'update');
+    const canDeleteUser = hasPermission('users', 'delete');
+    const canReadRoles = hasPermission('roles', 'read');
+    const canManageRoles = hasPermission('roles', 'update') || hasPermission('userrole', 'update');
+
+    if (!canReadUsers) {
+        return null;
+    }
 
     // Data states
     const [users, setUsers] = useState([]);
@@ -82,9 +92,14 @@ export default function UserManagement() {
         setLoading(true);
         setError(null);
         try {
+            const usersPromise = fetchUsersWithRolesApi();
+            const rolesPromise = canReadRoles
+                ? fetchRolesApi().catch(() => [])
+                : Promise.resolve([]);
+
             const [usersData, rolesData] = await Promise.all([
-                fetchUsersWithRolesApi(),
-                fetchRolesApi()
+                usersPromise,
+                rolesPromise
             ]);
             setUsers(usersData || []);
             setAllRoles(rolesData || []);
@@ -96,8 +111,10 @@ export default function UserManagement() {
     };
 
     useEffect(() => {
-        loadData();
-    }, []);
+        if (canReadUsers) {
+            loadData();
+        }
+    }, [canReadUsers]);
 
     const showSuccess = (msg) => {
         setSuccessNotice(msg);
@@ -309,12 +326,14 @@ export default function UserManagement() {
                     >
                         <RefreshCw size={13} className={loading ? 'spin' : ''} /> Refresh
                     </button>
-                    <button
-                        className="btn btn-primary btn-sm"
-                        onClick={handleOpenCreate}
-                    >
-                        <Plus size={14} /> Add User
-                    </button>
+                    {canCreateUser && (
+                        <button
+                            className="btn btn-primary btn-sm"
+                            onClick={handleOpenCreate}
+                        >
+                            <Plus size={14} /> Add User
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -462,40 +481,46 @@ export default function UserManagement() {
                                         </td>
                                         <td>
                                             <div className="table-actions-cell">
-                                                <button
-                                                    className="btn btn-secondary btn-xs"
-                                                    onClick={() => handleOpenAssign(user)}
-                                                    title="Assign Roles"
-                                                >
-                                                    <UserCheck size={13} />
-                                                    <span>Roles</span>
-                                                </button>
-                                                <button
-                                                    className="btn-icon"
-                                                    onClick={() => handleOpenEdit(user)}
-                                                    title="Edit User Details"
-                                                >
-                                                    <Edit3 size={15} />
-                                                </button>
-                                                <button
-                                                    className="btn-icon"
-                                                    onClick={() => handleOpenDelete(user)}
-                                                    disabled={isDefaultSuperAdmin || isSelf}
-                                                    title={
-                                                        isDefaultSuperAdmin
-                                                            ? 'Default Super Admin cannot be deleted'
-                                                            : isSelf
-                                                            ? 'Cannot delete your own account'
-                                                            : 'Delete User'
-                                                    }
-                                                    style={{
-                                                        color: isDefaultSuperAdmin || isSelf ? 'var(--text-muted)' : '#ef4444',
-                                                        opacity: isDefaultSuperAdmin || isSelf ? 0.4 : 1,
-                                                        cursor: isDefaultSuperAdmin || isSelf ? 'not-allowed' : 'pointer'
-                                                    }}
-                                                >
-                                                    <Trash2 size={15} />
-                                                </button>
+                                                {canManageRoles && (
+                                                    <button
+                                                        className="btn btn-secondary btn-xs"
+                                                        onClick={() => handleOpenAssign(user)}
+                                                        title="Assign Roles"
+                                                    >
+                                                        <UserCheck size={13} />
+                                                        <span>Roles</span>
+                                                    </button>
+                                                )}
+                                                {canUpdateUser && (
+                                                    <button
+                                                        className="btn-icon"
+                                                        onClick={() => handleOpenEdit(user)}
+                                                        title="Edit User Details"
+                                                    >
+                                                        <Edit3 size={15} />
+                                                    </button>
+                                                )}
+                                                {canDeleteUser && (
+                                                    <button
+                                                        className="btn-icon"
+                                                        onClick={() => handleOpenDelete(user)}
+                                                        disabled={isDefaultSuperAdmin || isSelf}
+                                                        title={
+                                                            isDefaultSuperAdmin
+                                                                ? 'Default Super Admin cannot be deleted'
+                                                                : isSelf
+                                                                ? 'Cannot delete your own account'
+                                                                : 'Delete User'
+                                                        }
+                                                        style={{
+                                                            color: isDefaultSuperAdmin || isSelf ? 'var(--text-muted)' : '#ef4444',
+                                                            opacity: isDefaultSuperAdmin || isSelf ? 0.4 : 1,
+                                                            cursor: isDefaultSuperAdmin || isSelf ? 'not-allowed' : 'pointer'
+                                                        }}
+                                                    >
+                                                        <Trash2 size={15} />
+                                                    </button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
@@ -575,33 +600,35 @@ export default function UserManagement() {
                                     </label>
                                 </div>
 
-                                <div className="form-group" style={{ marginTop: '6px' }}>
-                                    <label className="form-label">Assign Initial Roles</label>
-                                    <div className="roles-checklist-grid" style={{ maxHeight: '180px', overflowY: 'auto' }}>
-                                        {allRoles.map((role) => {
-                                            const isChecked = createForm.roleIds.includes(role.id);
-                                            return (
-                                                <div
-                                                    key={role.id}
-                                                    className={`role-check-card ${isChecked ? 'selected' : ''}`}
-                                                    onClick={() => handleToggleCreateRole(role.id)}
-                                                >
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={isChecked}
-                                                        onChange={() => handleToggleCreateRole(role.id)}
-                                                        className="role-native-checkbox"
-                                                        onClick={(e) => e.stopPropagation()}
-                                                    />
-                                                    <div className="role-card-text">
-                                                        <span className="role-card-name">{role.role_name}</span>
-                                                        <span className="role-card-desc">{role.description || 'No description'}</span>
+                                {canReadRoles && allRoles.length > 0 && (
+                                    <div className="form-group" style={{ marginTop: '6px' }}>
+                                        <label className="form-label">Assign Initial Roles</label>
+                                        <div className="roles-checklist-grid" style={{ maxHeight: '180px', overflowY: 'auto' }}>
+                                            {allRoles.map((role) => {
+                                                const isChecked = createForm.roleIds.includes(role.id);
+                                                return (
+                                                    <div
+                                                        key={role.id}
+                                                        className={`role-check-card ${isChecked ? 'selected' : ''}`}
+                                                        onClick={() => handleToggleCreateRole(role.id)}
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isChecked}
+                                                            onChange={() => handleToggleCreateRole(role.id)}
+                                                            className="role-native-checkbox"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                        />
+                                                        <div className="role-card-text">
+                                                            <span className="role-card-name">{role.role_name}</span>
+                                                            <span className="role-card-desc">{role.description || 'No description'}</span>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            );
-                                        })}
+                                                );
+                                            })}
+                                        </div>
                                     </div>
-                                </div>
+                                )}
                             </div>
                             <div className="modal-footer">
                                 <button
@@ -698,33 +725,35 @@ export default function UserManagement() {
                                     </label>
                                 </div>
 
-                                <div className="form-group" style={{ marginTop: '6px' }}>
-                                    <label className="form-label">Assigned Roles</label>
-                                    <div className="roles-checklist-grid" style={{ maxHeight: '180px', overflowY: 'auto' }}>
-                                        {allRoles.map((role) => {
-                                            const isChecked = editForm.roleIds.includes(role.id);
-                                            return (
-                                                <div
-                                                    key={role.id}
-                                                    className={`role-check-card ${isChecked ? 'selected' : ''}`}
-                                                    onClick={() => handleToggleEditRole(role.id)}
-                                                >
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={isChecked}
-                                                        onChange={() => handleToggleEditRole(role.id)}
-                                                        className="role-native-checkbox"
-                                                        onClick={(e) => e.stopPropagation()}
-                                                    />
-                                                    <div className="role-card-text">
-                                                        <span className="role-card-name">{role.role_name}</span>
-                                                        <span className="role-card-desc">{role.description || 'No description'}</span>
+                                {canReadRoles && allRoles.length > 0 && (
+                                    <div className="form-group" style={{ marginTop: '6px' }}>
+                                        <label className="form-label">Assigned Roles</label>
+                                        <div className="roles-checklist-grid" style={{ maxHeight: '180px', overflowY: 'auto' }}>
+                                            {allRoles.map((role) => {
+                                                const isChecked = editForm.roleIds.includes(role.id);
+                                                return (
+                                                    <div
+                                                        key={role.id}
+                                                        className={`role-check-card ${isChecked ? 'selected' : ''}`}
+                                                        onClick={() => handleToggleEditRole(role.id)}
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isChecked}
+                                                            onChange={() => handleToggleEditRole(role.id)}
+                                                            className="role-native-checkbox"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                        />
+                                                        <div className="role-card-text">
+                                                            <span className="role-card-name">{role.role_name}</span>
+                                                            <span className="role-card-desc">{role.description || 'No description'}</span>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            );
-                                        })}
+                                                );
+                                            })}
+                                        </div>
                                     </div>
-                                </div>
+                                )}
                             </div>
                             <div className="modal-footer">
                                 <button
