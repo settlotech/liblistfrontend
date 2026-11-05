@@ -71,7 +71,7 @@ export default function Login() {
             try {
                 const res = await login({ email: email.trim(), password });
                 if (res?.success) {
-                    navigate('/home', { replace: true });
+                    navigate('/dashboard', { replace: true });
                 }
             } catch (err) {
                 setErrors({ general: err.message || 'Login failed. Please check your credentials.' });

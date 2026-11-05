@@ -204,8 +204,7 @@ export default function Header({
             {isRightOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
           </button>
         )}
-
-        {/* System Settings & RBAC Toggle */}
+ 
         {onToggleSettings && (
           <button
             onClick={onToggleSettings}
@@ -340,7 +339,7 @@ export default function Header({
                     className="w-full flex items-center gap-2 py-1.5 px-2.5 rounded-lg text-xs font-semibold text-slate-700 hover:text-slate-900 hover:bg-slate-100 transition cursor-pointer"
                   >
                     <SettingsIcon className="w-3.5 h-3.5 text-slate-500" />
-                    <span>System Settings & RBAC</span>
+                    <span>System Settings</span>
                   </button>
                 </div>
               )}

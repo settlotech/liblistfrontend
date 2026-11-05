@@ -43,11 +43,9 @@ const Header = () => {
     const {
         notifications,
         unreadCount,
-        permissionStatus,
-        enableNotifications,
+        permissionStatus, 
         markAsRead,
-        markAllAsRead,
-        sendTestNotification
+        markAllAsRead, 
     } = useNotifications();
 
     const navigate = useNavigate();
@@ -258,7 +256,7 @@ const Header = () => {
 
                             <button className="profile-menu-item" onClick={handleSettingsClick}>
                                 <Settings size={15} />
-                                <span>Settings &amp; RBAC</span>
+                                <span>Settings</span>
                             </button>
 
                             <button className="profile-menu-item" onClick={() => { setProfileOpen(false); navigate('/changelogs'); }}>

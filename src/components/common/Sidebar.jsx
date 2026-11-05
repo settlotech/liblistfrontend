@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+﻿import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import {
     Settings,
+    LayoutDashboard,
     BarChart3,
     FileText,
     Building2,
@@ -54,22 +55,7 @@ const getDeptIcon = (iconName) => {
     }
 };
 
-const NAV_ITEMS = [
-    {
-        section: 'Governance Hub',
-        items: [
-            { id: 'changelogs', label: 'Change Management', icon: ShieldCheck, path: '/changelogs' },
-            { id: 'tasks', label: 'APRA CPS 234 Tasks', icon: BarChart3, path: '/tasks' },
-            { id: 'templates', label: 'Policy Templates', icon: FileText, path: '/templates' }
-        ]
-    },
-    {
-        section: 'Administration',
-        items: [
-            { id: 'settings', label: 'Settings & RBAC', icon: Settings, path: '/settings' }
-        ]
-    }
-];
+
 
 const PRIMARY_DEPT_IDS = ['credit-cards', 'retail-lending', 'onboarding', 'security', 'legal-compliance'];
 
@@ -78,7 +64,7 @@ export default function Sidebar() {
     const navigate = useNavigate();
     const location = useLocation();
     const [searchParams] = useSearchParams();
-    const { logout, user, hasPermission } = useAuth();
+    const { logout, user, hasPermission } = useAuth(); 
 
     // Active selected policy ID (tracked from URL or events)
     const [selectedPolicyId, setSelectedPolicyId] = useState(
@@ -99,12 +85,32 @@ export default function Sidebar() {
         'legal-compliance'
     ]);
 
+
+    const NAV_ITEMS = [
+        {
+            section: 'Governance Hub',
+            items: [
+                { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', module: 'dashboard' },
+                { id: 'changelogs', label: 'Change Management', icon: ShieldCheck, path: '/changelogs', module: 'changelogs' },
+                { id: 'tasks', label: 'APRA CPS 234 Tasks', icon: BarChart3, path: '/tasks', module: 'tasks' },
+                { id: 'templates', label: 'Policy Templates', icon: FileText, path: '/templates', module: 'templates' }
+            ]
+        },
+        {
+            section: 'Administration',
+            items: [
+                { id: 'settings', label: 'Settings', icon: Settings, path: '/settings' }
+            ]
+        }
+    ];
+
+    const availableTabs = useMemo(() => [NAV_ITEMS]);
     // Pinned libraries state (persisted in localStorage)
     const [pinnedPolicyIds, setPinnedPolicyIds] = useState(() => {
         try {
             const saved = localStorage.getItem('liblist_pinned_policies');
             if (saved) return JSON.parse(saved);
-        } catch (_) {}
+        } catch (_) { }
         return ['personal-loans-assessment-sop', 'aml-ctf-screening-policy'];
     });
 
@@ -198,7 +204,7 @@ export default function Sidebar() {
                 : [...prev, policyId];
             try {
                 localStorage.setItem('liblist_pinned_policies', JSON.stringify(next));
-            } catch (_) {}
+            } catch (_) { }
             window.dispatchEvent(new CustomEvent('liblist:pinned-updated', { detail: next }));
             return next;
         });
@@ -246,7 +252,7 @@ export default function Sidebar() {
         ...group,
         items: group.items.filter((item) => !item.module || hasPermission(item.module, 'read'))
     })).filter((group) => group.items.length > 0);
-
+    
     // Active primary categories
     const activeDepartments = useMemo(() => {
         return departments.filter(d => PRIMARY_DEPT_IDS.includes(d.id) || (d.count && d.count > 0));

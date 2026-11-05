@@ -17,7 +17,14 @@ export async function apiFetch(endpoint, options = {}) {
     delete headers['Content-Type'];
   }
 
+  // Attach Authorization Bearer token from stored session
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('libtrak_access_token') : null;
+  if (token && !headers['Authorization']) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   const response = await fetch(url, {
+    credentials: 'include',
     ...options,
     headers
   });
