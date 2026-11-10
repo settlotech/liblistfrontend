@@ -10,6 +10,7 @@ import { tasksApi } from './tasksApi';
 import { taskApi } from './taskApi';
 import { authApi } from './authApi';
 import { aiApi } from './aiApi';
+import { documentManagementApi } from './documentManagementApi';
 
 export {
   API_BASE,
@@ -24,7 +25,8 @@ export {
   tasksApi,
   taskApi,
   authApi,
-  aiApi
+  aiApi,
+  documentManagementApi
 };
 
 export const api = {
@@ -37,8 +39,8 @@ export const api = {
   ...templatesApi,
   ...tasksApi,
   ...authApi,
-  ...aiApi
+  ...aiApi,
+  ...documentManagementApi
 };
 
 export default api;
-
