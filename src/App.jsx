@@ -9,6 +9,7 @@ import Resetpassword from './components/common/restpassword/resetpassword';
 import Signup from './components/signup/signup';
 import Dashboard from './components/dashboard/dashboard';
 import DocumentManagementView from './components/documents/DocumentManagementView';
+import PdfComparisonPage from './components/policy/PdfComparisonPage';
 import './App.css';
 import Task from './components/demotask/task';
 
@@ -77,6 +78,7 @@ function App() {
             {/* Protected Australian Banking Hub & Modules (Common to all users) */}
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/home" element={<ProtectedRoute><Home initialView="policy" /></ProtectedRoute>} />
+            <Route path="/compare-policy" element={<ProtectedRoute><PdfComparisonPage /></ProtectedRoute>} />
             {/* Document Management System (DMS) & Notes */}
             <Route path="/notes" element={<ProtectedRoute><DocumentManagementView /></ProtectedRoute>} />
             <Route path="/notes/:id" element={<ProtectedRoute><DocumentManagementView /></ProtectedRoute>} />

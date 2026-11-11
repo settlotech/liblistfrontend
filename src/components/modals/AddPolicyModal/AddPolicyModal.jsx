@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { 
   X, 
@@ -44,6 +45,42 @@ export default function AddPolicyModal({
   // 3 Policy Creation Modes: 'direct' | 'library' | 'upload'
   const [creationMode, setCreationMode] = useState('direct');
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const navigate = useNavigate();
+
+  // Navigation Helper for Comparison Page Route (/compare-policy)
+  const navigateToComparisonPage = (overrides = {}) => {
+    const payload = {
+      docName: overrides.docName || ingestedDocuments[activeIngestedIndex]?.document_name || uploadedFileName || 'hl_valuation.pdf',
+      pdfUrl: overrides.pdfUrl !== undefined ? overrides.pdfUrl : (uploadedPdfUrl || uploadedPdfUrlsMap[activeIngestedIndex] || uploadedPdfUrlsMap[ingestedDocuments[activeIngestedIndex]?.document_name] || null),
+      title: overrides.title || title || 'Extracted Operational Policy',
+      departmentId: overrides.departmentId || departmentId,
+      summary: overrides.summary || summary,
+      turnaroundSla: overrides.turnaroundSla || turnaroundSla,
+      dailyLimit: overrides.dailyLimit || dailyLimit,
+      officerCap: overrides.officerCap || officerCap,
+      complianceTags: overrides.complianceTags || complianceTags,
+      sections: overrides.sections || sections,
+      ingestedDocuments: overrides.ingestedDocuments || ingestedDocuments,
+      activeDocIndex: overrides.activeDocIndex !== undefined ? overrides.activeDocIndex : activeIngestedIndex
+    };
+
+    try {
+      sessionStorage.setItem('libtrak_comparison_draft', JSON.stringify(payload));
+    } catch (_) {}
+
+    // Navigate to comparison page route FIRST
+    navigate('/compare-policy', { state: payload });
+
+    // Close modal cleanly
+    if (typeof onClose === 'function') {
+      onClose();
+    }
+  };
+
+  // Large Side-by-Side Comparison Modal for Tab 3 (Document Upload AI)
+  const [isComparisonModalOpen, setIsComparisonModalOpen] = useState(false);
+  const [uploadedPdfUrl, setUploadedPdfUrl] = useState(null);
+  const [uploadedPdfUrlsMap, setUploadedPdfUrlsMap] = useState({});
 
   // Direct In-System Template Selection State
   const [selectedDirectTemplateId, setSelectedDirectTemplateId] = useState(null);
@@ -72,6 +109,9 @@ export default function AddPolicyModal({
   const [showEvidence, setShowEvidence] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  // Preserve Blob URLs across modal closing so /compare-policy page can render the exact source PDF
+
 
   // 5 Core Client-Demanded Sections: Summary, Details, Reports, Dependencies, Operational Events
   const [sections, setSections] = useState([
@@ -1150,12 +1190,59 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
     setSections(valuationDoc.sections);
     const rlMatch = departments.find(d => d.id === 'retail-lending');
     if (rlMatch) setDepartmentId(rlMatch.id);
+
+    navigateToComparisonPage({
+      docName: valuationDoc.document_name,
+      pdfUrl: null,
+      title: valuationDoc.title,
+      departmentId: 'retail-lending',
+      summary: valuationDoc.summary,
+      turnaroundSla: valuationDoc.turnaround_sla,
+      dailyLimit: valuationDoc.daily_limit,
+      officerCap: valuationDoc.officer_cap,
+      complianceTags: valuationDoc.compliance_tags,
+      sections: valuationDoc.sections,
+      ingestedDocuments: [valuationDoc],
+      activeDocIndex: 0
+    });
   };
 
   // AI-Assisted Document Ingestion (Groq AI + Neon pgvector) - Independent multi-document processing
   const handleUploadMultipleDocumentsWithAi = async (e) => {
     const files = Array.from(e.target.files || []);
     if (!files || files.length === 0) return;
+
+    // Capture exact uploaded PDF file
+    const exactFile = files.find(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')) || files[0];
+    const exactPdfUrl = exactFile ? URL.createObjectURL(exactFile) : null;
+    const exactDocName = exactFile?.name || 'Uploaded Document.pdf';
+
+    // Persist exact file data in sessionStorage for refresh resiliency
+    if (exactFile) {
+      try {
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const stored = sessionStorage.getItem('libtrak_comparison_draft');
+            const parsed = stored ? JSON.parse(stored) : {};
+            parsed.pdfUrl = reader.result;
+            sessionStorage.setItem('libtrak_comparison_draft', JSON.stringify(parsed));
+          } catch (_) {}
+        };
+        reader.readAsDataURL(exactFile);
+      } catch (_) {}
+    }
+
+    const newPdfUrls = {};
+    files.forEach((file, fIdx) => {
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        const objUrl = URL.createObjectURL(file);
+        newPdfUrls[fIdx] = objUrl;
+        newPdfUrls[file.name] = objUrl;
+      }
+    });
+    setUploadedPdfUrlsMap(prev => ({ ...prev, ...newPdfUrls }));
+    setUploadedPdfUrl(exactPdfUrl);
 
     setIsAiThinking(true);
     setUploadedFileName(files.length === 1 ? files[0].name : `${files.length} Documents Selected`);
@@ -1175,12 +1262,17 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
       setAiStep(`2/3: Parsing ${files.length} document(s) into Summary, Details, Reports, Dependencies...`);
 
       const res = await apiService.ingestDocuments(formData);
+      console.log("res ==> ", res);
 
-      if (res && res.documents && res.documents.length > 0) {
+      const rawDocs = res?.documents ||
+        (Array.isArray(res) ? res : null) ||
+        (res && typeof res === 'object' ? Object.keys(res).filter(k => !isNaN(k)).map(k => res[k]) : null);
+
+      if (rawDocs && rawDocs.length > 0) {
         setAiStep(`3/3: Indexing semantic sections into RAG vector repository...`);
 
         // Cleanse and sanitize documents to ensure no unreadable binary stream data leaks through
-        const sanitizedDocs = res.documents.map((doc, dIdx) => {
+        const sanitizedDocs = rawDocs.map((doc, dIdx) => {
           const isValuation = doc.document_name?.toLowerCase().includes('valuation') || 
                               doc.document_name?.toLowerCase().includes('hl_') || 
                               doc.title?.toLowerCase().includes('valuation');
@@ -1335,7 +1427,27 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
         if (firstDoc.suggested_department && departments.some(d => d.id === firstDoc.suggested_department)) {
           setDepartmentId(firstDoc.suggested_department);
         }
+
+        setIsAiThinking(false);
+        navigateToComparisonPage({
+          pdfUrl: exactPdfUrl,
+          docName: exactDocName,
+          ingestedDocuments: sanitizedDocs,
+          activeDocIndex: 0,
+          title: firstDoc.title,
+          summary: firstDoc.summary,
+          turnaroundSla: cleanSla,
+          dailyLimit: cleanDaily,
+          officerCap: cleanCap,
+          complianceTags: firstDoc.compliance_tags || ['APRA APS 220', 'Independent Valuers', 'LVR Limits'],
+          sections: firstDoc.sections || [],
+          departmentId: firstDoc.suggested_department || departmentId
+        });
+        return;
       }
+
+      // If backend responded without parsed docs, trigger fallback parser
+      throw new Error('Backend returned empty documents array.');
     } catch (err) {
       console.warn('Backend Groq AI ingestion error, applying local banking AI parser fallback:', err);
       // Fallback extraction
@@ -1520,8 +1632,28 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
       if (firstDoc.suggested_department && departments.some(d => d.id === firstDoc.suggested_department)) {
         setDepartmentId(firstDoc.suggested_department);
       }
+
+      setIsAiThinking(false);
+      navigateToComparisonPage({
+        pdfUrl: exactPdfUrl,
+        docName: exactDocName,
+        ingestedDocuments: parsedDocs,
+        activeDocIndex: 0,
+        title: firstDoc.title,
+        summary: firstDoc.summary,
+        turnaroundSla: firstDoc.turnaround_sla || '2 Business Days',
+        dailyLimit: firstDoc.daily_limit || '$100,000 AUD',
+        officerCap: firstDoc.officer_cap || '$250,000 AUD',
+        complianceTags: firstDoc.compliance_tags || [],
+        sections: firstDoc.sections || [],
+        departmentId: firstDoc.suggested_department || departmentId
+      });
+      return;
     } finally {
       setIsAiThinking(false);
+      try {
+        if (e?.target) e.target.value = '';
+      } catch (_) {}
     }
   };
 
@@ -1549,6 +1681,9 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
 
     setActiveIngestedIndex(index);
     const doc = ingestedDocuments[index];
+    const matchUrl = uploadedPdfUrlsMap[index] || uploadedPdfUrlsMap[doc?.document_name] || null;
+    setUploadedPdfUrl(matchUrl);
+
     setTitle(doc.title);
     setSummary(doc.summary);
     setTurnaroundSla((doc.turnaround_sla && doc.turnaround_sla !== 'Not specified') ? doc.turnaround_sla : '2 Business Days');
@@ -1563,9 +1698,10 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
     }
   };
 
-  const handleAddComplianceTag = () => {
-    if (!newTagInput.trim()) return;
-    const clean = newTagInput.trim();
+  const handleAddComplianceTag = (customTag) => {
+    const raw = typeof customTag === 'string' ? customTag : newTagInput;
+    if (!raw || !raw.trim()) return;
+    const clean = raw.trim();
     if (!complianceTags.includes(clean)) {
       setComplianceTags(prev => [...prev, clean]);
     }
@@ -2736,6 +2872,16 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                       </div>
 
                       <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => navigateToComparisonPage()}
+                          className="text-[11px] font-bold text-white bg-gradient-to-r from-[#0057B8] to-blue-600 hover:from-[#004EA6] hover:to-blue-700 px-3 py-1 rounded-lg shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                          title="Open dedicated comparison page route (/compare-policy)"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-amber-300" />
+                          <span>Compare with Uploaded PDF</span>
+                        </button>
+
                         <input
                           type="file"
                           multiple
@@ -2799,15 +2945,27 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                         </p>
                       </div>
 
-                      {/* Toggle Evidence Button */}
-                      <button
-                        type="button"
-                        onClick={() => setShowEvidence(!showEvidence)}
-                        className="px-3 py-1.5 rounded-xl border border-blue-200 bg-blue-50/70 hover:bg-blue-100/60 text-[#0057B8] text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                      >
-                        <Search className="w-3.5 h-3.5" />
-                        <span>{showEvidence ? 'Hide Source Evidence' : 'Show Source Evidence'}</span>
-                      </button>
+                      {/* Comparison and Evidence Buttons */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => navigateToComparisonPage()}
+                          className="px-3 py-1.5 rounded-xl border border-[#0057B8] bg-[#0057B8] hover:bg-[#004EA6] text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                          title="Open dedicated side-by-side comparison page"
+                        >
+                          <Maximize2 className="w-3.5 h-3.5" />
+                          <span>Side-by-Side Comparison</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setShowEvidence(!showEvidence)}
+                          className="px-3 py-1.5 rounded-xl border border-blue-200 bg-blue-50/70 hover:bg-blue-100/60 text-[#0057B8] text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                        >
+                          <Search className="w-3.5 h-3.5" />
+                          <span>{showEvidence ? 'Hide Source Evidence' : 'Show Source Evidence'}</span>
+                        </button>
+                      </div>
                     </div>
 
                     {/* AI DISCOVERY & SOURCE EVIDENCE (HOW IT WAS FOUND OUT) */}

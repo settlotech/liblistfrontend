@@ -12,7 +12,7 @@
   box-sizing: border-box;
 }
 
-/* ── Full Screen Split Container (Edge-to-edge, No box-shadow) ── */
+ 
 .login-split-card {
   display: flex;
   width: 100%;
@@ -25,13 +25,10 @@
   overflow: hidden;
 }
 
-/* ══════════════════════════════════════════════════
-   LEFT PANE: More prominent (58% width)
-   Product Details, Logo, Illustration & Features
-   ══════════════════════════════════════════════════ */
+ 
 .login-left-pane {
-  flex: 0 0 58%;
-  width: 58%;
+  flex: 0 0 65%;
+  width: 65%;
   /* background: #f8fafc; */
   background: #ffff;
   border-right: 1px solid #e2e8f0;
@@ -147,8 +144,8 @@
    Existing User Login
    ══════════════════════════════════════════════════ */
 .login-right-pane {
-  flex: 0 0 42%;
-  width: 42%;
+  flex: 0 0 35%;
+  width: 35%;
   background: #f8fafc;
   padding: 44px 48px;
   display: flex;

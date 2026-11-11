@@ -35,7 +35,7 @@ export default function Login() {
     const [isSendingReset, setIsSendingReset] = useState(false);
 
     // Signup Notice Modal State
- 
+
 
     const { login, checkuserEmailAvailability } = useAuth();
     const navigate = useNavigate();
@@ -83,7 +83,7 @@ export default function Login() {
         if (Object.keys(newErrors).length === 0) {
             setIsSubmitting(true);
             try {
-                const res = await login({ email: email.trim(), password,rememberMe });
+                const res = await login({ email: email.trim(), password, rememberMe });
                 if (res?.success) {
                     navigate('/dashboard', { replace: true });
                 }
@@ -116,10 +116,10 @@ export default function Login() {
             setIsSendingReset(false);
         }
     };
-    
-    const SignupComponentsOpen = (e)=>{
-          e.preventDefault();
-          navigate('/signup');
+
+    const SignupComponentsOpen = (e) => {
+        e.preventDefault();
+        navigate('/signup');
     }
 
     return (
@@ -158,7 +158,7 @@ export default function Login() {
                         </ul>
                     </div>
                 </div>
-
+                
                 <div className="login-right-pane">
 
                     <div className="right-pane-top-bar">
