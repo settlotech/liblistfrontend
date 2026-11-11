@@ -18,7 +18,7 @@ import {
     Info,
 } from "lucide-react";
 import BankUserManagerModal from "../../governance/BankUserManagerModal";
-import "./Header.css";
+import "./header.css";
 
 const formatTimeAgo = (dateStr) => {
     if (!dateStr) return '';
