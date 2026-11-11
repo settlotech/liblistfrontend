@@ -566,7 +566,9 @@ export default function Home({ initialView = 'policy' }) {
           const pId = typeof newPolicy === 'string' ? newPolicy : (newPolicy && newPolicy.id);
           if (pId) {
             setSelectedPolicyId(pId);
-            setActiveWorkspaceView('policy');
+            if (newPolicy?.status !== 'draft') {
+              setActiveWorkspaceView('policy');
+            }
           }
           if (newPolicy && typeof newPolicy === 'object' && newPolicy.id) {
             setAllPolicies(prev => {
