@@ -81,80 +81,38 @@ export default function DraftCommentsFeed({
     let isMounted = true;
     const storageKey = `liblist_doc_comments_${docKey}`;
 
-    // 1. Fetch persistent comments from PostgreSQL backend DB
+    // Retrieve cached comments if non-seed
+    let localComments = [];
+    try {
+      const stored = localStorage.getItem(storageKey);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        localComments = Array.isArray(parsed)
+          ? parsed.filter(c => !String(c.id).startsWith('c-seed'))
+          : [];
+      }
+    } catch (_) {}
+
+    // Fetch persistent comments from PostgreSQL backend DB (starts empty/none for clean real chat)
     apiService.getPolicyComments(docKey)
       .then(remoteComments => {
         if (!isMounted) return;
-        if (Array.isArray(remoteComments) && remoteComments.length > 0) {
-          setComments(remoteComments);
-          try { localStorage.setItem(storageKey, JSON.stringify(remoteComments)); } catch (_) {}
-          return;
+        const filtered = Array.isArray(remoteComments)
+          ? remoteComments.filter(c => !String(c.id).startsWith('c-seed'))
+          : [];
+        if (filtered.length > 0) {
+          setComments(filtered);
+          try { localStorage.setItem(storageKey, JSON.stringify(filtered)); } catch (_) {}
+        } else if (localComments.length > 0) {
+          setComments(localComments);
+        } else {
+          setComments([]);
+          try { localStorage.setItem(storageKey, JSON.stringify([])); } catch (_) {}
         }
-
-        // Check local cache if DB had no comments yet
-        const stored = localStorage.getItem(storageKey);
-        if (stored) {
-          try {
-            const parsed = JSON.parse(stored);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              setComments(parsed);
-              return;
-            }
-          } catch (_) {}
-        }
-
-        // Initialize default seed comments
-        const defaultComments = [
-          {
-            id: `c-seed-1`,
-            author: openedDocument?.created_by || 'Marcus Vance',
-            authorRole: 'Bank Administrator',
-            avatar: (openedDocument?.created_by || 'Marcus').slice(0, 2).toUpperCase(),
-            avatarColor: 'bg-indigo-600',
-            text: `${openedDocument?.status === 'draft' ? 'Draft revision' : 'Master policy'} ${openedDocument?.version || 'v1.0'} opened for review. Please check the statutory thresholds, SLA turnaround, and delegated officer caps.`,
-            time: '1h ago',
-            likes: 3,
-            likedByMe: false,
-            isTask: false,
-            replies: []
-          },
-          {
-            id: `c-seed-2`,
-            author: 'Sarah Jenkins',
-            authorRole: 'Senior Credit Risk Officer',
-            avatar: 'SJ',
-            avatarColor: 'bg-emerald-600',
-            text: '@David Miller verify Clause 2 underwriting limits and ensure 4-hour SLA aligns with APRA CPS 234.',
-            time: '25m ago',
-            likes: 2,
-            likedByMe: true,
-            isTask: true,
-            taskAssignee: 'David Miller',
-            taskStatus: 'in_progress',
-            replies: [
-              {
-                id: `rep-seed-1`,
-                author: 'David Miller',
-                authorRole: 'Credit Underwriter',
-                avatar: 'DM',
-                avatarColor: 'bg-blue-600',
-                text: '@Sarah Jenkins Underwriting limits and 4-hour buffer verified.',
-                time: '15m ago',
-                likes: 1
-              }
-            ]
-          }
-        ];
-        setComments(defaultComments);
-        try { localStorage.setItem(storageKey, JSON.stringify(defaultComments)); } catch (_) {}
       })
-      .catch(err => {
+      .catch(() => {
         if (!isMounted) return;
-        console.warn('Could not load comments from DB:', err);
-        const stored = localStorage.getItem(storageKey);
-        if (stored) {
-          try { setComments(JSON.parse(stored)); } catch (_) {}
-        }
+        setComments(localComments);
       });
 
     return () => { isMounted = false; };
@@ -518,7 +476,18 @@ export default function DraftCommentsFeed({
 
       {/* COMMENTS STREAM */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
-        {comments.map((comment) => {
+        {comments.length === 0 ? (
+          <div className="text-center py-12 px-4 bg-white/70 rounded-2xl border border-dashed border-slate-200">
+            <div className="w-10 h-10 rounded-full bg-blue-50 text-[#0057B8] flex items-center justify-center mx-auto mb-2.5">
+              <MessageSquare className="w-5 h-5" />
+            </div>
+            <h4 className="font-bold text-slate-800 text-xs">No comments yet</h4>
+            <p className="text-[11px] text-slate-500 mt-1 max-w-xs mx-auto leading-relaxed">
+              Start the discussion by typing a message below. Use <span className="font-semibold text-[#0057B8]">@name</span> to assign an operational task to a squad member.
+            </p>
+          </div>
+        ) : (
+          comments.map((comment) => {
           const isTask = comment.isTask;
           const isResolved = comment.taskStatus === 'completed';
           const isInProgress = comment.taskStatus === 'in_progress';
@@ -662,8 +631,9 @@ export default function DraftCommentsFeed({
 
             </div>
           );
-        })}
-        <div ref={commentsEndRef} />
+        })
+      )}
+      <div ref={commentsEndRef} />
       </div>
 
       {/* Mention Dropdown Floating Menu */}

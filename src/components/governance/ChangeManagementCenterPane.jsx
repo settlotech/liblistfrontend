@@ -315,7 +315,7 @@ export function ChangeManagementCenterPane({
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-[#0057B8] animate-pulse"></span>
               <h1 className="text-base font-bold text-slate-900">
-                Change Management & Governance Hub
+                Change Management
               </h1>
             </div>
           </div>
@@ -507,7 +507,7 @@ export function ChangeManagementCenterPane({
                           <div className="col-span-6 sm:col-span-2 text-xs text-slate-600">
                             <div className="flex items-center gap-1 font-semibold text-slate-800 text-[11.5px]">
                               <User className="w-3 h-3 text-slate-400" />
-                              <span className="truncate">{draft.created_by || 'Current User'}</span>
+                              <span className="truncate">{draft.created_by && !draft.created_by.toLowerCase().includes('sarah') ? draft.created_by : 'Draft Revision'}</span>
                             </div>
                             <p className="text-[10.5px] text-slate-400 mt-0.5 flex items-center gap-1">
                               <Clock className="w-3 h-3 text-slate-300" />
@@ -593,76 +593,89 @@ export function ChangeManagementCenterPane({
                         </div>
 
                         {/* Expandable Version History Accordion */}
-                        {expandedVersionDraftId === draft.id && (
-                          <div className="px-5 py-3.5 bg-blue-50/40 border-t border-blue-100 text-xs space-y-2">
-                            <div className="flex items-center justify-between">
-                              <h4 className="font-bold text-blue-900 text-xs flex items-center gap-1.5">
-                                <Layers className="w-3.5 h-3.5 text-blue-600" />
-                                <span>Version History & User Draft Revisions ({params.versions ? params.versions.length : 1})</span>
-                              </h4>
-                              <button
-                                type="button"
-                                onClick={() => setExpandedVersionDraftId(null)}
-                                className="text-slate-400 hover:text-slate-600 text-[11px]"
-                              >
-                                Close
-                              </button>
-                            </div>
-                            <div className="space-y-1.5">
-                              {(draftVersionsCache[draft.id] || (params.versions && params.versions.length > 0 ? params.versions : null) || [
-                                {
-                                  version: draft.version || 'v1.0',
-                                  version_author: draft.created_by || 'Current User',
-                                  timestamp: draft.updated_at || draft.created_at || new Date().toISOString(),
-                                  sections: clauses,
-                                  notes: 'Initial version draft'
-                                }
-                              ]).map((ver, vIdx) => (
-                                <div key={vIdx} className="p-2.5 rounded-xl bg-white border border-blue-200/80 flex items-center justify-between gap-3 shadow-2xs">
-                                  <div className="flex items-center gap-2.5 min-w-0">
-                                    <span className="font-mono font-bold text-xs bg-blue-100 text-blue-800 px-2.5 py-1 rounded-md">
-                                      {ver.version || `v1.${vIdx}`}
-                                    </span>
-                                    <div className="min-w-0">
-                                      <p className="font-bold text-slate-800 text-xs truncate">
-                                        {ver.title || draft.title}
-                                        <span className="font-normal text-slate-500 text-[11px] ml-2">• by {ver.version_author || draft.created_by || 'Staff'}</span>
-                                      </p>
-                                      <p className="text-[10.5px] text-slate-400 mt-0.5">
-                                        {new Date(ver.timestamp || Date.now()).toLocaleString()} • {(ver.sections || []).length} Sections • {ver.notes || 'User draft'}
-                                      </p>
+                        {expandedVersionDraftId === draft.id && (() => {
+                          const localList = (params.versions && params.versions.length > 0) ? params.versions : [];
+                          const dbList = draftVersionsCache[draft.id] || [];
+                          const seen = new Set();
+                          const verList = [];
+                          for (const v of [...localList, ...dbList]) {
+                            const key = String(v.version || v.version_number || '').trim();
+                            if (key && !seen.has(key)) {
+                              seen.add(key);
+                              verList.push(v);
+                            }
+                          }
+                          const finalVerList = verList.length > 0 ? verList : [
+                            {
+                              version: draft.version || '1.0',
+                              timestamp: draft.updated_at || draft.created_at || new Date().toISOString(),
+                              sections: clauses,
+                              notes: 'Initial version draft'
+                            }
+                          ];
+
+                          return (
+                            <div className="px-5 py-3.5 bg-blue-50/40 border-t border-blue-100 text-xs space-y-2">
+                              <div className="flex items-center justify-between">
+                                <h4 className="font-bold text-blue-900 text-xs flex items-center gap-1.5">
+                                  <Layers className="w-3.5 h-3.5 text-blue-600" />
+                                  <span>Version History & User Draft Revisions ({finalVerList.length})</span>
+                                </h4>
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedVersionDraftId(null)}
+                                  className="text-slate-400 hover:text-slate-600 text-[11px]"
+                                >
+                                  Close
+                                </button>
+                              </div>
+                              <div className="space-y-1.5">
+                                {finalVerList.map((ver, vIdx) => (
+                                  <div key={vIdx} className="p-2.5 rounded-xl bg-white border border-blue-200/80 flex items-center justify-between gap-3 shadow-2xs">
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                      <span className="font-mono font-bold text-xs bg-blue-100 text-blue-800 px-2.5 py-1 rounded-md">
+                                        {ver.version || `v1.${vIdx}`}
+                                      </span>
+                                      <div className="min-w-0">
+                                        <p className="font-bold text-slate-800 text-xs truncate">
+                                          {ver.title || draft.title}
+                                        </p>
+                                        <p className="text-[10.5px] text-slate-400 mt-0.5">
+                                          {new Date(ver.timestamp || Date.now()).toLocaleString()} • {(ver.sections || []).length} Sections • {ver.notes || 'User draft'}
+                                        </p>
+                                      </div>
                                     </div>
-                                  </div>
-                                  {onEditDraft && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        onEditDraft({
-                                          ...draft,
-                                          title: ver.title || draft.title,
-                                          summary: ver.summary || draft.summary,
-                                          version: ver.version || ver.version_number,
-                                          content: ver.content || draft.content,
-                                          parameters: {
-                                            ...params,
+                                    {onEditDraft && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          onEditDraft({
+                                            ...draft,
+                                            title: ver.title || draft.title,
+                                            summary: ver.summary || draft.summary,
                                             version: ver.version || ver.version_number,
-                                            sections: ver.sections || params.sections || []
-                                          }
-                                        });
-                                        apiService.restorePolicyVersion(draft.id, ver.id || ver.version, currentUser?.name).catch(() => {});
-                                      }}
-                                      className="px-2.5 py-1 bg-white hover:bg-blue-50 text-[#0057B8] border border-blue-300 rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-2xs cursor-pointer flex-shrink-0"
-                                      title="Restore and edit this specific version"
-                                    >
-                                      <FileEdit className="w-3 h-3" />
-                                      <span>Restore & Edit</span>
-                                    </button>
-                                  )}
-                                </div>
-                              ))}
+                                            content: ver.content || draft.content,
+                                            parameters: {
+                                              ...params,
+                                              version: ver.version || ver.version_number,
+                                              sections: ver.sections || params.sections || []
+                                            }
+                                          });
+                                          apiService.restorePolicyVersion(draft.id, ver.id || ver.version, currentUser?.name).catch(() => {});
+                                        }}
+                                        className="px-2.5 py-1 bg-white hover:bg-blue-50 text-[#0057B8] border border-blue-300 rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-2xs cursor-pointer flex-shrink-0"
+                                        title="Restore and edit this specific version"
+                                      >
+                                        <FileEdit className="w-3 h-3" />
+                                        <span>Restore & Edit</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          );
+                        })()}
 
                         {/* Inline Expandable Clause Preview */}
                         {isExpanded && (

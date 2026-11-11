@@ -529,12 +529,12 @@ export default function AddPolicyModal({
       const existingVersions = existingParams.versions || [];
       const currentVerStr = editingPolicy?.version || existingParams.version || 'v1.0';
       const numVer = parseFloat(String(currentVerStr).replace(/[^0-9.]/g, '')) || 1.0;
-      const nextVer = `v${(numVer + 0.1).toFixed(1)}`;
+      const nextVer = `${(numVer + 0.1).toFixed(1)}`;
 
       const newVersionSnapshot = {
         version: nextVer,
-        version_author: currentUser?.name || 'Marcus Vance',
-        author: currentUser?.name || 'Marcus Vance',
+        version_author: currentUser?.name || 'Bank Staff',
+        author: currentUser?.name || 'Bank Staff',
         title: draftTitle,
         summary: summary.trim() || draftTitle,
         content: finalContent,
@@ -544,6 +544,24 @@ export default function AddPolicyModal({
         timestamp: new Date().toISOString(),
         notes: `Draft revision saved with ${sections.length} clauses (${turnaroundSla} SLA, ${dailyLimit} Daily Limit)`
       };
+
+      const baselineVersion = {
+        version: '1.0',
+        version_author: editingPolicy?.created_by || currentUser?.name || 'Bank Staff',
+        author: editingPolicy?.created_by || currentUser?.name || 'Bank Staff',
+        title: editingPolicy?.title || draftTitle,
+        summary: editingPolicy?.summary || summary.trim() || draftTitle,
+        content: editingPolicy?.content || finalContent,
+        sections: (existingParams.sections || sections).map(s => ({ ...s })),
+        turnaround_sla: existingParams.turnaround_sla || turnaroundSla,
+        daily_limit: existingParams.daily_limit || dailyLimit,
+        timestamp: editingPolicy?.created_at || new Date().toISOString(),
+        notes: 'Initial draft baseline'
+      };
+
+      const allVersions = existingVersions.length > 0
+        ? [newVersionSnapshot, ...existingVersions]
+        : [newVersionSnapshot, baselineVersion];
 
       const payload = {
         department_id: departmentId || 'company-policies',
@@ -558,7 +576,7 @@ export default function AddPolicyModal({
           mandatory_dvs: true,
           sections: sections,
           version: nextVer,
-          versions: [newVersionSnapshot, ...existingVersions]
+          versions: allVersions
         },
         created_by: currentUser?.name || 'Marcus Vance',
         creation_mode: creationMode,

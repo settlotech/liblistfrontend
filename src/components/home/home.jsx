@@ -217,7 +217,11 @@ export default function Home({ initialView = 'policy' }) {
       loadPolicies();
       if (e.detail?.id) {
         setSelectedPolicyId(e.detail.id);
-        setActiveWorkspaceView('policy');
+        if (e.detail?.status !== 'draft') {
+          setActiveWorkspaceView('policy');
+        } else {
+          setActiveWorkspaceView('change_management');
+        }
       }
     };
 
@@ -552,7 +556,11 @@ export default function Home({ initialView = 'policy' }) {
         isOpen={isAddPolicyModalOpen}
         onClose={() => {
           setIsAddPolicyModalOpen(false);
+          const wasDraft = editingPolicy?.status === 'draft';
           setEditingPolicy(null);
+          if (wasDraft) {
+            setActiveWorkspaceView('change_management');
+          }
         }}
         editingPolicy={editingPolicy}
         preselectedDepartmentId={preselectedDept.id}
@@ -568,6 +576,8 @@ export default function Home({ initialView = 'policy' }) {
             setSelectedPolicyId(pId);
             if (newPolicy?.status !== 'draft') {
               setActiveWorkspaceView('policy');
+            } else {
+              setActiveWorkspaceView('change_management');
             }
           }
           if (newPolicy && typeof newPolicy === 'object' && newPolicy.id) {
