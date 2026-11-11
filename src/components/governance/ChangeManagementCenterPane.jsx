@@ -24,7 +24,8 @@ import {
   Sliders,
   ShieldCheck,
   CheckCircle2,
-  ExternalLink
+  ExternalLink,
+  History as HistoryIcon
 } from 'lucide-react';
 import { apiService } from '../../services/apiService';
 
@@ -533,7 +534,7 @@ export function ChangeManagementCenterPane({
                               }`}
                               title="Inspect Version History & Commit Snapshots for this Draft"
                             >
-                              <History className="w-3.5 h-3.5" />
+                              <HistoryIcon className="w-3.5 h-3.5" />
                               <span>History</span>
                             </button>
 

@@ -89,7 +89,19 @@ export default function TaskPane() {
 
     useEffect(() => {
         loadTasks();
-    }, [currentPage, pageSize, searchQuery]);
+
+        const handleRealtimeTaskEvent = () => {
+            loadTasks();
+        };
+
+        window.addEventListener('liblist:task_created', handleRealtimeTaskEvent);
+        window.addEventListener('liblist:task_updated', handleRealtimeTaskEvent);
+
+        return () => {
+            window.removeEventListener('liblist:task_created', handleRealtimeTaskEvent);
+            window.removeEventListener('liblist:task_updated', handleRealtimeTaskEvent);
+        };
+    }, [currentPage, pageSize, searchQuery, loadTasks]);
 
     // Handle Right Click on Task Pane
     const handleContextMenu = (e) => {

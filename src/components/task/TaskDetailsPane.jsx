@@ -35,9 +35,9 @@ export default function TaskDetailsPane({ task: initialTask, onClose, onTaskUpda
     const navigate = useNavigate();
 
     const handleNavigateToPolicy = () => {
-        const policyId = task?.library_id || 'credit-card-limits-policy';
+        const policyId = task?.library_id || task?.linked_policy_id || 'credit-card-limits-policy';
         const sectionParam = task?.section_id ? `&section=${encodeURIComponent(task.section_id)}` : '';
-        navigate(`/dashboard?policy=${encodeURIComponent(policyId)}&edit=true${sectionParam}`);
+        navigate(`/home?policy=${encodeURIComponent(policyId)}${sectionParam}`);
     };
 
     const isCreator = user?.id === task?.created_by;

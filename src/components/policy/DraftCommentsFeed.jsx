@@ -17,13 +17,14 @@ import {
   FileEdit
 } from 'lucide-react';
 import { apiService } from '../../services/apiService';
+import { taskApi } from '../../services/api/taskApi';
 
 const BANK_SQUAD = [
-  { id: 'usr-1', name: 'Marcus Vance', role: 'Bank Administrator', avatar: 'MV', color: 'bg-indigo-600' },
-  { id: 'usr-2', name: 'Sarah Jenkins', role: 'Senior Credit Risk Officer', avatar: 'SJ', color: 'bg-emerald-600' },
-  { id: 'usr-3', name: 'David Miller', role: 'Credit Underwriter', avatar: 'DM', color: 'bg-blue-600' },
-  { id: 'usr-4', name: 'Settlo Admin', role: 'APRA Compliance Lead', avatar: 'SA', color: 'bg-purple-600' },
-  { id: 'usr-5', name: 'Alex Morgan', role: 'Operations Squad Lead', avatar: 'AM', color: 'bg-amber-600' }
+  { id: 'u_cba_marcus', name: 'Marcus Vance', role: 'Bank Administrator', avatar: 'MV', color: 'bg-indigo-600' },
+  { id: 'u_cba_sarah', name: 'Sarah Jenkins', role: 'Senior Credit Risk Officer', avatar: 'SJ', color: 'bg-emerald-600' },
+  { id: 'u_cba_david', name: 'David Miller', role: 'Credit Underwriter', avatar: 'DM', color: 'bg-blue-600' },
+  { id: 'u_cba_settlo_lead', name: 'Settlo Admin', role: 'APRA Compliance Lead', avatar: 'SA', color: 'bg-purple-600' },
+  { id: 'u_cba_alex', name: 'Alex Morgan', role: 'Operations Squad Lead', avatar: 'AM', color: 'bg-amber-600' }
 ];
 
 export default function DraftCommentsFeed({
@@ -196,8 +197,9 @@ export default function DraftCommentsFeed({
     updateCommentsState(updated);
   };
 
-  // Update Task Status
-  const handleUpdateTaskStatus = (commentId, nextStatus) => {
+  // Update Task Status with backend sync and cross-module broadcast
+  const handleUpdateTaskStatus = async (commentId, nextStatus) => {
+    const comment = comments.find(c => c.id === commentId);
     const updated = comments.map(c => {
       if (c.id === commentId) {
         return { ...c, taskStatus: nextStatus };
@@ -205,18 +207,100 @@ export default function DraftCommentsFeed({
       return c;
     });
     updateCommentsState(updated);
+
+    if (comment?.taskId) {
+      const statusForBackend = (nextStatus === 'completed' || nextStatus === 'resolved') ? 'completed' : nextStatus;
+      try {
+        await taskApi.updateTaskStatus(comment.taskId, { status: statusForBackend });
+      } catch (_) {
+        try {
+          await apiService.updateTask(comment.taskId, { status: statusForBackend });
+        } catch (err) {
+          console.warn('Task status update warning:', err);
+        }
+      }
+      window.dispatchEvent(new CustomEvent('liblist:task_updated', {
+        detail: { id: comment.taskId, status: statusForBackend }
+      }));
+    }
   };
 
-  // Post a new comment or reply
-  const handlePostComment = () => {
+  // Post a new comment or reply with real Task Creation in Task Management
+  const handlePostComment = async () => {
     const text = inputText.trim();
     if (!text) return;
 
-    const mentionMatch = text.match(/@(\w+(\s+\w+)?)/);
+    // Support @First Last or @First
+    const mentionMatch = text.match(/@([a-zA-Z0-9_\s]+?)(?=\s|$|[.,!?])/);
     const mentionedName = mentionMatch ? mentionMatch[1].trim() : null;
-    const mentionedUser = squadUsers.find(u => u.name.toLowerCase() === mentionedName?.toLowerCase());
+    const mentionedUser = squadUsers.find(u =>
+      u.name.toLowerCase() === mentionedName?.toLowerCase() ||
+      (mentionedName && u.name.toLowerCase().startsWith(mentionedName.toLowerCase()))
+    );
 
     const isTask = isTaskCommand || Boolean(mentionedUser);
+    const originPolicyId = openedDocument?.id || 'credit-card-limits-policy';
+    const originPolicyTitle = openedDocument?.title || 'Operational Policy';
+
+    let backendTaskId = null;
+    let targetAssigneeName = mentionedUser ? mentionedUser.name : (mentionedName || null);
+    let targetAssigneeId = mentionedUser?.id || (mentionedName ? `u_cba_${mentionedName.toLowerCase().replace(/\s+/g, '_')}` : null);
+
+    if (isTask) {
+      const cleanTaskTitle = text.replace(/@([a-zA-Z0-9_\s]+?)(?=\s|$|[.,!?])/g, '').trim() || 'Review Policy & Operational Specifications';
+      const taskTitle = `[Task] ${cleanTaskTitle.length > 55 ? cleanTaskTitle.slice(0, 55) + '...' : cleanTaskTitle}`;
+
+      try {
+        const res = await taskApi.createTask({
+          title: taskTitle,
+          description: text,
+          category: 'general',
+          assigned_to: targetAssigneeId,
+          library_id: originPolicyId,
+          section_id: openedDocument?.version ? `Draft v${openedDocument.version}` : null
+        });
+        if (res?.success && res.data?.id) {
+          backendTaskId = res.data.id;
+        }
+      } catch (err) {
+        console.warn('taskApi.createTask note:', err);
+      }
+
+      try {
+        const legacyRes = await apiService.createTask({
+          id: backendTaskId,
+          title: taskTitle,
+          description: text,
+          assigned_to: targetAssigneeName || 'David Miller',
+          assigned_by: `${currentUserName} (${currentUser?.roleType === 'manager' ? 'Bank Administrator' : 'Staff Officer'})`,
+          priority: 'high',
+          status: 'pending',
+          due_date: 'Today, EOD',
+          category: 'Draft Review Task',
+          linked_policy_id: originPolicyId,
+          policy_title: originPolicyTitle
+        });
+        if (!backendTaskId && legacyRes?.id) {
+          backendTaskId = legacyRes.id;
+        }
+      } catch (legacyErr) {
+        console.warn('apiService.createTask note:', legacyErr);
+      }
+
+      window.dispatchEvent(new CustomEvent('liblist:task_created', {
+        detail: {
+          id: backendTaskId,
+          title: taskTitle,
+          description: text,
+          assigned_to: targetAssigneeName,
+          assigned_by: currentUserName,
+          linked_policy_id: originPolicyId,
+          policy_id: originPolicyId,
+          library_id: originPolicyId,
+          status: 'pending'
+        }
+      }));
+    }
 
     if (replyingTo) {
       const replyObj = {
@@ -254,8 +338,12 @@ export default function DraftCommentsFeed({
         likes: 0,
         likedByMe: false,
         isTask: isTask,
-        taskAssignee: mentionedUser ? mentionedUser.name : (mentionedName || null),
+        taskId: backendTaskId || `TASK-${Date.now().toString().slice(-5)}`,
+        taskAssignee: targetAssigneeName,
+        taskAssigneeId: targetAssigneeId,
         taskStatus: isTask ? 'pending' : null,
+        linkedPolicyId: originPolicyId,
+        policyTitle: originPolicyTitle,
         replies: []
       };
 

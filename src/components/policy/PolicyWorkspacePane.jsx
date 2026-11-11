@@ -3,7 +3,7 @@ import {
   FileEdit, 
   Lock, 
   Unlock, 
-  History, 
+  History as HistoryIcon, 
   FileText,
   GraduationCap,
   FileCheck,
@@ -1370,7 +1370,7 @@ export default function PolicyWorkspacePane({
         <div className="p-5 rounded-xl border border-[#e5e7eb] bg-white space-y-2.5">
           <div className="flex items-center justify-between">
             <h4 className="text-[12px] font-bold text-slate-700 flex items-center gap-1.5 uppercase tracking-wider">
-              <History className="w-3.5 h-3.5 text-slate-500" />
+              <HistoryIcon className="w-3.5 h-3.5 text-slate-500" />
               Version Control Timeline
             </h4>
             <span className="text-[11.5px] text-slate-400">

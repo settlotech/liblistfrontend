@@ -23,13 +23,14 @@ import {
 } from 'lucide-react';
 import { askShidneyAI } from '../../services/shidneyAiService';
 import { apiService } from '../../services/apiService';
+import { taskApi } from '../../services/api/taskApi';
 
 const DEFAULT_BANK_MEMBERS = [
-  { id: 'usr-1', name: 'Marcus Vance', role: 'Bank Administrator', department: 'Executive Governance', avatar: 'MV', color: 'bg-indigo-600' },
-  { id: 'usr-2', name: 'Sarah Jenkins', role: 'Senior Credit Risk Officer', department: 'Retail Lending', avatar: 'SJ', color: 'bg-emerald-600' },
-  { id: 'usr-3', name: 'David Miller', role: 'Credit Underwriter', department: 'Credit Cards', avatar: 'DM', color: 'bg-blue-600' },
-  { id: 'usr-4', name: 'Settlo Admin', role: 'APRA Compliance Lead', department: 'Risk & Compliance', avatar: 'SA', color: 'bg-purple-600' },
-  { id: 'usr-5', name: 'Alex Morgan', role: 'Operations Squad Lead', department: 'Commercial Banking', avatar: 'AM', color: 'bg-amber-600' }
+  { id: 'u_cba_marcus', name: 'Marcus Vance', role: 'Bank Administrator', department: 'Executive Governance', avatar: 'MV', color: 'bg-indigo-600' },
+  { id: 'u_cba_sarah', name: 'Sarah Jenkins', role: 'Senior Credit Risk Officer', department: 'Retail Lending', avatar: 'SJ', color: 'bg-emerald-600' },
+  { id: 'u_cba_david', name: 'David Miller', role: 'Credit Underwriter', department: 'Credit Cards', avatar: 'DM', color: 'bg-blue-600' },
+  { id: 'u_cba_settlo_lead', name: 'Settlo Admin', role: 'APRA Compliance Lead', department: 'Risk & Compliance', avatar: 'SA', color: 'bg-purple-600' },
+  { id: 'u_cba_alex', name: 'Alex Morgan', role: 'Operations Squad Lead', department: 'Commercial Banking', avatar: 'AM', color: 'bg-amber-600' }
 ];
 
 export default function ShidneyAIChat({
@@ -286,9 +287,30 @@ export default function ShidneyAIChat({
         .trim() || 'Review Policy & Modular Clause Specifications';
 
       let createdTaskObj = null;
+      const cleanTaskTitle = `[Task] ${taskTitle.length > 60 ? taskTitle.slice(0, 60) + '...' : taskTitle}`;
+      const originPolicyId = activePolicy?.id || 'credit-card-limits-policy';
+      const targetUserObj = bankMembers.find(m => m.name.toLowerCase() === assignedUser.toLowerCase());
+
       try {
-        createdTaskObj = await apiService.createTask({
-          title: `[Task] ${taskTitle.length > 60 ? taskTitle.slice(0, 60) + '...' : taskTitle}`,
+        const primaryRes = await taskApi.createTask({
+          title: cleanTaskTitle,
+          description: text,
+          category: 'general',
+          assigned_to: targetUserObj?.id || null,
+          library_id: originPolicyId,
+          section_id: activePolicy?.version ? `Policy v${activePolicy.version}` : null
+        });
+        if (primaryRes?.success && primaryRes.data?.id) {
+          createdTaskObj = primaryRes.data;
+        }
+      } catch (primaryErr) {
+        console.warn('taskApi.createTask note:', primaryErr);
+      }
+
+      try {
+        const fallbackRes = await apiService.createTask({
+          id: createdTaskObj?.id,
+          title: cleanTaskTitle,
           description: text,
           assigned_to: assignedUser,
           assigned_by: `${currentUser?.name || 'Marcus Vance'} (${currentUser?.roleType === 'manager' ? 'Bank Administrator' : 'Staff'})`,
@@ -296,14 +318,29 @@ export default function ShidneyAIChat({
           status: 'pending',
           due_date: 'Today, EOD',
           category: 'Chat Task',
-          linked_policy_id: activePolicy?.id || null
+          linked_policy_id: originPolicyId
         });
-
-        // Notify right-hand Requests tab
-        window.dispatchEvent(new CustomEvent('liblist:task_created', { detail: createdTaskObj }));
+        if (!createdTaskObj && fallbackRes) {
+          createdTaskObj = fallbackRes;
+        }
       } catch (taskErr) {
-        console.warn('Task creation note:', taskErr);
+        console.warn('apiService.createTask note:', taskErr);
       }
+
+      // Broadcast task creation across application workspaces
+      window.dispatchEvent(new CustomEvent('liblist:task_created', {
+        detail: {
+          ...(createdTaskObj || {}),
+          id: createdTaskObj?.id || `TASK-${Date.now().toString().slice(-5)}`,
+          title: cleanTaskTitle,
+          description: text,
+          assigned_to: assignedUser,
+          assigned_by: currentUser?.name || 'Marcus Vance',
+          linked_policy_id: originPolicyId,
+          library_id: originPolicyId,
+          status: 'pending'
+        }
+      }));
 
       const taskMessage = {
         id: `task-msg-${Date.now()}`,
