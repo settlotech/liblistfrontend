@@ -265,6 +265,99 @@
   justify-content: center;
 }
 
+
+/* ── Multi-Persona Quick Login Selector ── */
+.quick-roles-container {
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quick-roles-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #0369a1;
+}
+
+.quick-sparkle-icon {
+  color: #0284c7;
+}
+
+.quick-roles-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.quick-role-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.quick-role-pill:hover {
+  border-color: #0284c7;
+  background: #f0f9ff;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 6px rgba(2, 132, 199, 0.12);
+}
+
+.quick-role-pill.active {
+  border-color: #0284c7;
+  background: #e0f2fe;
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.2);
+}
+
+.role-btn-texts {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.role-btn-texts .role-name {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+}
+
+.role-btn-texts .role-sub {
+  font-size: 9.5px;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.icon-admin {
+  color: #4f46e5;
+  flex-shrink: 0;
+}
+
+.icon-owner {
+  color: #d97706;
+  flex-shrink: 0;
+}
+
+.icon-employee {
+  color: #059669;
+  flex-shrink: 0;
+}
+
 .quick-admin-label {
   display: flex;
   align-items: center;

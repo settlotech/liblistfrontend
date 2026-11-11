@@ -57,6 +57,11 @@ export default function TaskCard({ task, onClick, onPin, onUnpin, isSelected }) 
                         <span className={`w-1.5 h-1.5 rounded-full ${status.dot}`} />
                         {status.label}
                     </span>
+                    {task.section_id && (
+                        <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-blue-50 text-[#0057B8] border border-blue-200/70 max-w-[150px] truncate" title={`Policy Section: ${task.section_id}`}>
+                            § {task.section_id}
+                        </span>
+                    )}
                 </div>
 
                 {/* Pin button */}

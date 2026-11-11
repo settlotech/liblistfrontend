@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   RefreshCw, 
   FileText, 
@@ -38,7 +39,9 @@ export function ChangeManagementCenterPane({
   onBackToPolicy,
   onOpenAddPolicyModal,
   initialTab = 'drafts',
-  focusedItemId = null
+  focusedItemId = null,
+  onSelectDraft = null,
+  selectedDraftId = null
 }) {
   const isBankOwner = currentUser?.roleType === 'manager' || currentUser?.roleType === 'admin' || currentUser?.roleType === 'owner';
   const isEmployee = !isBankOwner;
@@ -46,6 +49,8 @@ export function ChangeManagementCenterPane({
   const [activeTab, setActiveTab] = useState(initialTab || (isBankOwner ? 'in_review' : 'drafts'));
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedDraftId, setExpandedDraftId] = useState(null);
+  const [draftScope, setDraftScope] = useState('all'); // 'all' | 'my'
+  const [expandedVersionDraftId, setExpandedVersionDraftId] = useState(null);
   const [selectedReviewItemId, setSelectedReviewItemId] = useState(focusedItemId || null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -58,6 +63,18 @@ export function ChangeManagementCenterPane({
 
   // Quick view drawer/modal for clauses
   const [viewingDraftClauses, setViewingDraftClauses] = useState(null);
+
+  const handleViewDraft = async (draft) => {
+    setViewingDraftClauses(draft);
+    if (draft && draft.id) {
+      try {
+        const full = await apiService.getPolicyDetails(draft.id, currentUser?.roleType || 'employee');
+        if (full) {
+          setViewingDraftClauses(prev => (prev && prev.id === draft.id ? { ...prev, ...full } : full));
+        }
+      } catch (_) {}
+    }
+  };
 
   // Sync initialTab and focused item if passed
   useEffect(() => {
@@ -412,11 +429,11 @@ export function ChangeManagementCenterPane({
               <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
                 {/* Table Header */}
                 <div className="grid grid-cols-12 gap-3 px-5 py-3 bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                  <div className="col-span-12 sm:col-span-4">Draft Document</div>
-                  <div className="col-span-6 sm:col-span-2">Department</div>
+                  <div className="col-span-12 sm:col-span-5">Draft Document</div>
+                  <div className="col-span-6 sm:col-span-3">Department</div>
                   <div className="col-span-6 sm:col-span-2">Author & Date</div>
-                  <div className="col-span-6 sm:col-span-2">Thresholds / SLA</div>
-                  <div className="col-span-6 sm:col-span-2 text-right">Actions</div>
+
+                  <div className="col-span-12 sm:col-span-2 text-right">Actions</div>
                 </div>
 
                 {/* Table Rows */}
@@ -429,12 +446,21 @@ export function ChangeManagementCenterPane({
                     const isExpanded = expandedDraftId === draft.id;
 
                     return (
-                      <div key={draft.id} className="transition hover:bg-slate-50/80">
+                      <div 
+                        key={draft.id} 
+                        onClick={() => onSelectDraft && onSelectDraft(draft)}
+                        className={`transition cursor-pointer ${
+                          selectedDraftId === draft.id 
+                            ? 'bg-blue-50/80 border-l-4 border-l-[#0057B8] shadow-2xs' 
+                            : 'hover:bg-slate-50/80'
+                        }`}
+                        title="Click to open this draft's comments"
+                      >
                         {/* Primary Row */}
                         <div className="grid grid-cols-12 gap-3 px-5 py-4 items-center">
                           
                           {/* Col 1: Draft Title & Summary */}
-                          <div className="col-span-12 sm:col-span-4 min-w-0 pr-2">
+                          <div className="col-span-12 sm:col-span-5 min-w-0 pr-2">
                             <div className="flex items-center gap-2">
                               <span className="w-2 h-2 rounded-full bg-amber-500 flex-shrink-0"></span>
                               <h3 className="font-bold text-slate-900 text-[13.5px] truncate">
@@ -453,7 +479,7 @@ export function ChangeManagementCenterPane({
                           </div>
 
                           {/* Col 2: Department */}
-                          <div className="col-span-6 sm:col-span-2 text-xs">
+                          <div className="col-span-6 sm:col-span-3 text-xs">
                             <span className="px-2.5 py-1 rounded-md bg-blue-50 text-[#0057B8] font-bold text-[11px] border border-blue-200/60 inline-block truncate max-w-full">
                               {draft.department_name || draft.department_id || 'Retail Banking'}
                             </span>
@@ -471,25 +497,12 @@ export function ChangeManagementCenterPane({
                             </p>
                           </div>
 
-                          {/* Col 4: Thresholds & SLA */}
-                          <div className="col-span-6 sm:col-span-2 text-[11px] text-slate-600 space-y-0.5">
-                            <p className="font-semibold text-slate-700">
-                              SLA: <span className="font-mono text-[#0057B8]">{params.turnaround_sla || '4 Hours'}</span>
-                            </p>
-                            <p className="text-slate-500 text-[10.5px]">
-                              Cap: <span className="font-mono">{params.approval_limits?.officer_cap || params.daily_limit || '$100,000 AUD'}</span>
-                            </p>
-                            <p className="text-[10px] text-slate-400">
-                              {clauses.length} Clauses • {(draft.content || '').length} chars
-                            </p>
-                          </div>
-
-                          {/* Col 5: Actions Toolbar */}
-                          <div className="col-span-6 sm:col-span-2 flex items-center justify-end gap-1.5 flex-wrap">
+                          {/* Col 4: Actions Toolbar */}
+                          <div className="col-span-12 sm:col-span-2 flex items-center justify-end gap-1.5 flex-wrap">
                             {/* 1. Quick View Clauses */}
                             <button
                               type="button"
-                              onClick={() => setViewingDraftClauses(draft)}
+                              onClick={() => handleViewDraft(draft)}
                               className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 transition cursor-pointer"
                               title="Quick View Draft Clauses"
                             >
@@ -508,6 +521,21 @@ export function ChangeManagementCenterPane({
                                 <span>Edit</span>
                               </button>
                             )}
+
+                            {/* 2.5. Version History & Commit Snapshots */}
+                            <button
+                              type="button"
+                              onClick={() => setExpandedVersionDraftId(expandedVersionDraftId === draft.id ? null : draft.id)}
+                              className={`px-2.5 py-1.5 rounded-lg border text-[11px] font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs ${
+                                expandedVersionDraftId === draft.id
+                                  ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                                  : 'border-slate-300 hover:border-[#0057B8] bg-white hover:bg-blue-50/50 text-[#0057B8]'
+                              }`}
+                              title="Inspect Version History & Commit Snapshots for this Draft"
+                            >
+                              <History className="w-3.5 h-3.5" />
+                              <span>History</span>
+                            </button>
 
                             {/* 3. Submit for Approval (Blue per user request) */}
                             {isEmployee ? (
@@ -545,6 +573,76 @@ export function ChangeManagementCenterPane({
                             </button>
                           </div>
                         </div>
+
+                        {/* Expandable Version History Accordion */}
+                        {expandedVersionDraftId === draft.id && (
+                          <div className="px-5 py-3.5 bg-blue-50/40 border-t border-blue-100 text-xs space-y-2">
+                            <div className="flex items-center justify-between">
+                              <h4 className="font-bold text-blue-900 text-xs flex items-center gap-1.5">
+                                <Layers className="w-3.5 h-3.5 text-blue-600" />
+                                <span>Version History & User Draft Revisions ({params.versions ? params.versions.length : 1})</span>
+                              </h4>
+                              <button
+                                type="button"
+                                onClick={() => setExpandedVersionDraftId(null)}
+                                className="text-slate-400 hover:text-slate-600 text-[11px]"
+                              >
+                                Close
+                              </button>
+                            </div>
+                            <div className="space-y-1.5">
+                              {(params.versions && params.versions.length > 0 ? params.versions : [
+                                {
+                                  version: draft.version || 'v1.0',
+                                  version_author: draft.created_by || 'Current User',
+                                  timestamp: draft.updated_at || draft.created_at || new Date().toISOString(),
+                                  sections: clauses,
+                                  notes: 'Initial version draft'
+                                }
+                              ]).map((ver, vIdx) => (
+                                <div key={vIdx} className="p-2.5 rounded-xl bg-white border border-blue-200/80 flex items-center justify-between gap-3 shadow-2xs">
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    <span className="font-mono font-bold text-xs bg-blue-100 text-blue-800 px-2.5 py-1 rounded-md">
+                                      {ver.version || `v1.${vIdx}`}
+                                    </span>
+                                    <div className="min-w-0">
+                                      <p className="font-bold text-slate-800 text-xs truncate">
+                                        {ver.title || draft.title}
+                                        <span className="font-normal text-slate-500 text-[11px] ml-2">• by {ver.version_author || draft.created_by || 'Staff'}</span>
+                                      </p>
+                                      <p className="text-[10.5px] text-slate-400 mt-0.5">
+                                        {new Date(ver.timestamp || Date.now()).toLocaleString()} • {(ver.sections || []).length} Sections • {ver.notes || 'User draft'}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  {onEditDraft && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        onEditDraft({
+                                          ...draft,
+                                          title: ver.title || draft.title,
+                                          summary: ver.summary || draft.summary,
+                                          version: ver.version,
+                                          parameters: {
+                                            ...params,
+                                            version: ver.version,
+                                            sections: ver.sections || params.sections || []
+                                          }
+                                        });
+                                      }}
+                                      className="px-2.5 py-1 bg-white hover:bg-blue-50 text-[#0057B8] border border-blue-300 rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-2xs cursor-pointer flex-shrink-0"
+                                      title="Restore and edit this specific version"
+                                    >
+                                      <FileEdit className="w-3 h-3" />
+                                      <span>Restore & Edit</span>
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
 
                         {/* Inline Expandable Clause Preview */}
                         {isExpanded && (
@@ -1005,8 +1103,8 @@ export function ChangeManagementCenterPane({
       {/* ========================================================= */}
       {/* MODAL 2: QUICK VIEW DRAFT CLAUSES MODAL                   */}
       {/* ========================================================= */}
-      {viewingDraftClauses && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+      {viewingDraftClauses && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
             <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
               <div>
@@ -1020,7 +1118,7 @@ export function ChangeManagementCenterPane({
               <button
                 type="button"
                 onClick={() => setViewingDraftClauses(null)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200 transition"
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200 transition cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1051,6 +1149,21 @@ export function ChangeManagementCenterPane({
               </span>
 
               <div className="flex items-center gap-2">
+                {onSelectDraft && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const d = viewingDraftClauses;
+                      setViewingDraftClauses(null);
+                      onSelectDraft(d);
+                    }}
+                    className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                    title="Open draft in reader view"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Reader View</span>
+                  </button>
+                )}
                 {onEditDraft && (
                   <button
                     type="button"
@@ -1059,22 +1172,24 @@ export function ChangeManagementCenterPane({
                       setViewingDraftClauses(null);
                       onEditDraft(d);
                     }}
-                    className="px-4 py-1.5 bg-[#0057B8] text-white font-bold text-xs rounded-xl shadow-xs transition"
+                    className="px-4 py-1.5 bg-[#0057B8] hover:bg-[#004EA6] text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
                   >
-                    Open in Full Editor
+                    <FileEdit className="w-3.5 h-3.5" />
+                    <span>Open in Full Editor</span>
                   </button>
                 )}
                 <button
                   type="button"
                   onClick={() => setViewingDraftClauses(null)}
-                  className="px-4 py-1.5 text-slate-600 hover:bg-slate-100 rounded-xl text-xs font-semibold"
+                  className="px-4 py-1.5 text-slate-600 hover:bg-slate-100 rounded-xl text-xs font-semibold cursor-pointer"
                 >
                   Close
                 </button>
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
     </div>

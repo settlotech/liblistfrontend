@@ -28,7 +28,7 @@ import {
     Laptop,
     FolderKanban,
     ListChecks,
-    Pencil, Trash2, Copy
+    Pencil, Trash2, Copy, FileEdit
 } from 'lucide-react';
 import { apiService } from '../../services/apiService';
 import { DEFAULT_DEPARTMENTS, DEFAULT_POLICIES } from '../../data/defaultPolicies';
@@ -91,12 +91,13 @@ export default function Sidebar() {
 
     const NAV_ITEMS = [
         {
-            section: 'Governance Hub',
+            section: 'Personal wrokspace',
             items: [
                 { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
                 { id: 'task', label: 'Tasks Workspace', icon: ListChecks, path: '/demotask' },
                 { id: 'changelogs', label: 'Change Management', icon: ShieldCheck, path: '/changelogs' },
-                { id: 'tasks', label: 'APRA CPS 234 Tasks', icon: BarChart3, path: '/tasks' },
+                { id: 'notes', label: 'Notes', icon: FileText, path: '/notes' },
+        
                 { id: 'templates', label: 'Policy Templates', icon: FileText, path: '/templates' }
             ]
         },

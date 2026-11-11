@@ -12,7 +12,7 @@ import TasksWorkspaceCenterPane from '../TasksWorkspaceCenterPane.jsx';
 import TemplatesWorkspaceCenterPane from '../TemplatesWorkspaceCenterPane.jsx';
 import { apiService } from '../../services/apiService';
 import { banksList, policiesDatabase } from '../../data/mockData';
-import { DEFAULT_DEPARTMENTS } from '../../data/defaultPolicies';
+import { DEFAULT_DEPARTMENTS, DEFAULT_POLICIES } from '../../data/defaultPolicies';
 import { useAuth } from '../../context/AuthContext';
 import './home.css';
 
@@ -20,6 +20,8 @@ export default function Home({ initialView = 'policy' }) {
   const { user: authUser, logout: authLogout } = useAuth();
   const [searchParams] = useSearchParams();
   const urlPolicyId = searchParams.get('policy');
+  const urlEdit = searchParams.get('edit');
+  const urlSection = searchParams.get('section');
 
   // Current active user persona
   const [currentUser, setCurrentUser] = useState(() => {
@@ -32,7 +34,7 @@ export default function Home({ initialView = 'policy' }) {
         id: authUser.id || 'u_cba_exec_marcus',
         name: authUser.name || 'Marcus Vance',
         email: authUser.email || 'marcus.vance@commbank.com.au',
-        role: authUser.role || 'Bank Administrator',
+        role: authUser.role || 'Bank Approver',
         roleType: authUser.roleType || 'manager',
         department: authUser.department || 'Executive Governance & APRA Oversight',
         bankName: 'Commonwealth Bank of Australia',
@@ -47,7 +49,7 @@ export default function Home({ initialView = 'policy' }) {
       id: 'u_cba_exec_marcus',
       name: 'Marcus Vance',
       email: 'marcus.vance@commbank.com.au',
-      role: 'Bank Administrator',
+      role: 'Bank Approver',
       roleType: 'manager',
       department: 'Executive Governance & APRA Oversight',
       bankName: 'Commonwealth Bank of Australia',
@@ -66,8 +68,8 @@ export default function Home({ initialView = 'policy' }) {
   // Data states
   const [departments, setDepartments] = useState(DEFAULT_DEPARTMENTS);
   const [selectedDepartmentId, setSelectedDepartmentId] = useState('all');
-  const [policies, setPolicies] = useState([]);
-  const [allPolicies, setAllPolicies] = useState([]);
+  const [policies, setPolicies] = useState(DEFAULT_POLICIES);
+  const [allPolicies, setAllPolicies] = useState(DEFAULT_POLICIES);
   const [selectedPolicyId, setSelectedPolicyId] = useState(
     () => urlPolicyId || 'credit-card-limits-policy'
   );
@@ -89,11 +91,13 @@ export default function Home({ initialView = 'policy' }) {
   // Active Workspace Center Pane View: 'policy' | 'change_management' | 'tasks' | 'templates'
   const [activeWorkspaceView, setActiveWorkspaceView] = useState(initialView);
   const [focusedReviewItemId, setFocusedReviewItemId] = useState(null);
+  const [openedDraft, setOpenedDraft] = useState(null);
 
   // Modals
   const [isMakerCheckerOpen, setIsMakerCheckerOpen] = useState(false);
   const [isConfigureModalOpen, setIsConfigureModalOpen] = useState(false);
   const [isAddPolicyModalOpen, setIsAddPolicyModalOpen] = useState(false);
+  const [editingPolicy, setEditingPolicy] = useState(null);
   const [preselectedDept, setPreselectedDept] = useState({ id: null, name: '' });
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isNotificationsModalOpen, setIsNotificationsModalOpen] = useState(false);
@@ -109,13 +113,23 @@ export default function Home({ initialView = 'policy' }) {
     }
   }, [initialView]);
 
-  // Sync policy from URL query parameter
+  // Sync policy and auto-open edit modal if requested from Task location navigation
   useEffect(() => {
     if (urlPolicyId) {
       setSelectedPolicyId(urlPolicyId);
       setActiveWorkspaceView('policy');
+      if (urlEdit === 'true') {
+        const found = allPolicies.find(p => p.id === urlPolicyId) || 
+                      policies.find(p => p.id === urlPolicyId) || 
+                      policiesDatabase[urlPolicyId] ||
+                      (policies.length > 0 ? policies[0] : null);
+        if (found) {
+          setEditingPolicy(found);
+          setIsAddPolicyModalOpen(true);
+        }
+      }
     }
-  }, [urlPolicyId]);
+  }, [urlPolicyId, urlEdit, allPolicies, policies]);
 
   // Sync authUser
   useEffect(() => {
@@ -157,30 +171,27 @@ export default function Home({ initialView = 'policy' }) {
       }
     } catch (err) {
       console.warn('Could not load policies from API, using fallback DB:', err.message);
-      setAllPolicies(policiesDatabase);
-      setPolicies(policiesDatabase);
+      setAllPolicies(DEFAULT_POLICIES);
+      setPolicies(DEFAULT_POLICIES);
     }
   }, [currentUser?.roleType, selectedPolicyId]);
 
   // Load Maker-Checker data
   const loadMakerChecker = useCallback(async () => {
     try {
-      const [pending, history, drafts] = await Promise.all([
-        apiService.getMakerCheckerPending().catch(() => []),
-        apiService.getAuditTrail().catch(() => []),
-        apiService.getDrafts().catch(() => [])
-      ]);
+      const data = await apiService.getMakerCheckerItems();
+      if (data) {
+        const pendingArr = Array.isArray(data.pending) ? data.pending : [];
+        const historyArr = Array.isArray(data.history) ? data.history : [];
+        const draftsArr = Array.isArray(data.drafts) ? data.drafts : [];
 
-      const pendingArr = Array.isArray(pending) ? pending : [];
-      const historyArr = Array.isArray(history) ? history : [];
-      const draftsArr = Array.isArray(drafts) ? drafts : [];
-
-      setMakerCheckerData({
-        pendingCount: pendingArr.length,
-        pending: pendingArr,
-        history: historyArr,
-        drafts: draftsArr
-      });
+        setMakerCheckerData({
+          pendingCount: data.pendingCount || pendingArr.length,
+          pending: pendingArr,
+          history: historyArr,
+          drafts: draftsArr
+        });
+      }
     } catch (err) {
       console.warn('Could not load maker-checker data:', err.message);
     }
@@ -275,11 +286,110 @@ export default function Home({ initialView = 'policy' }) {
     setIsAddPolicyModalOpen(true);
   };
 
-  const activePolicy = allPolicies.find(p => p.id === selectedPolicyId) 
-    || policies.find(p => p.id === selectedPolicyId) 
+  const safeAllPolicies = Array.isArray(allPolicies) && allPolicies.length > 0 
+    ? allPolicies 
+    : DEFAULT_POLICIES;
+  const safePolicies = Array.isArray(policies) && policies.length > 0 
+    ? policies 
+    : DEFAULT_POLICIES;
+
+  const activePolicy = safeAllPolicies.find(p => p.id === selectedPolicyId) 
+    || safePolicies.find(p => p.id === selectedPolicyId) 
     || (makerCheckerData.drafts || []).find(d => d.id === selectedPolicyId)
-    || allPolicies[0] 
+    || DEFAULT_POLICIES.find(p => p.id === selectedPolicyId)
+    || safeAllPolicies[0] 
+    || DEFAULT_POLICIES[0]
     || null;
+
+  // When clicking Configure on an active policy, take a copy and create a draft clone for the user to edit
+  const handleConfigurePolicyCopy = async (targetDoc) => {
+    const policyToCopy = targetDoc || activePolicy || DEFAULT_POLICIES[0];
+    if (!policyToCopy) return;
+
+    const params = typeof policyToCopy.parameters === 'string'
+      ? JSON.parse(policyToCopy.parameters || '{}')
+      : (policyToCopy.parameters || {});
+
+    // Calculate incremental draft revision: v1.0 -> v1.1 or 1.2 -> v1.3
+    const curVer = policyToCopy.version || params.version || 'v1.0';
+    const num = parseFloat(String(curVer).replace(/[^0-9.]/g, '')) || 1.0;
+    const nextVer = `v${(num + 0.1).toFixed(1)}`;
+
+    // Prepare sections
+    let initialSections = params.sections;
+    if (!Array.isArray(initialSections) || initialSections.length === 0) {
+      const raw = policyToCopy.content || '';
+      const parts = raw.split(/(?=###\s+)/);
+      if (parts.length > 1) {
+        initialSections = parts.map((part, i) => {
+          const match = part.match(/^###\s*(?:\d+\.?\s*)?(.*?)\n([\s\S]*)$/);
+          return {
+            id: `sec-${i}-${Date.now()}`,
+            title: match ? match[1].trim() : `Section ${i + 1}`,
+            content: match ? match[2].trim() : part.trim(),
+            type: 'section'
+          };
+        });
+      } else {
+        initialSections = [
+          { id: `sec-summary-${Date.now()}`, title: 'Summary', content: policyToCopy.summary || 'Summary of operational intent.', type: 'section' },
+          { id: `sec-details-${Date.now()}`, title: 'Details', content: raw || 'Operational policy clauses.', type: 'section' }
+        ];
+      }
+    }
+
+    const draftClone = {
+      department_id: policyToCopy.department_id || policyToCopy.deptId || 'credit-cards',
+      title: policyToCopy.title ? `${policyToCopy.title} (Draft Revision)` : 'Operational Policy (Draft Revision)',
+      summary: policyToCopy.summary || '',
+      content: policyToCopy.content || '',
+      parameters: {
+        ...params,
+        version: nextVer,
+        copied_from: policyToCopy.id,
+        sections: initialSections,
+        turnaround_sla: params.turnaround_sla || '4 Hours',
+        daily_limit: params.daily_limit || '$25,000 AUD',
+        approval_limits: params.approval_limits || { officer_cap: '$100,000 AUD' },
+        versions: [
+          ...(params.versions || []),
+          {
+            version: nextVer,
+            timestamp: new Date().toISOString(),
+            author: currentUser?.name || 'Marcus Vance',
+            summary: `Cloned active policy '${policyToCopy.title}' for direct user draft configuration`
+          }
+        ]
+      },
+      created_by: currentUser?.name || 'Marcus Vance',
+      creation_mode: 'direct',
+      status: 'draft',
+      version: nextVer,
+      user_role: currentUser?.roleType || 'employee',
+      user_name: currentUser?.name || 'Marcus Vance'
+    };
+
+    let savedDraft = draftClone;
+    try {
+      const res = await apiService.createPolicy(draftClone);
+      savedDraft = res?.policy || res || draftClone;
+    } catch (err) {
+      console.warn('Could not save draft clone via API, using client copy:', err);
+      savedDraft = { ...draftClone, id: `draft-clone-${Date.now()}` };
+    }
+
+    setMakerCheckerData(prev => ({
+      ...prev,
+      drafts: [savedDraft, ...(prev.drafts || [])]
+    }));
+    setAllPolicies(prev => [savedDraft, ...(Array.isArray(prev) ? prev : [])]);
+    setEditingPolicy(savedDraft);
+    setPreselectedDept({
+      id: savedDraft.department_id,
+      name: policyToCopy.department_name || ''
+    });
+    setIsAddPolicyModalOpen(true);
+  };
 
   return (
     <div className="home-page p-0 flex flex-col h-full w-full overflow-hidden bg-[var(--bg-primary,#f8fafc)] text-[var(--text-primary,#0f172a)]">
@@ -288,7 +398,14 @@ export default function Home({ initialView = 'policy' }) {
         {activeWorkspaceView === 'change_management' ? (
           <ChangeManagementCenterPane
             currentUser={currentUser}
-            drafts={makerCheckerData.drafts || allPolicies.filter(p => p.status === 'draft')}
+            drafts={
+              (makerCheckerData.drafts && makerCheckerData.drafts.length > 0)
+                ? [
+                    ...makerCheckerData.drafts,
+                    ...allPolicies.filter(p => p.status === 'draft' && !makerCheckerData.drafts.some(d => String(d.id) === String(p.id)))
+                  ]
+                : allPolicies.filter(p => p.status === 'draft')
+            }
             inReviewItems={makerCheckerData.pending}
             historyItems={makerCheckerData.history}
             policies={allPolicies}
@@ -298,8 +415,13 @@ export default function Home({ initialView = 'policy' }) {
             }}
             onOpenAddPolicyModal={handleOpenAddPolicyModal}
             onEditDraft={(draft) => {
-              setSelectedPolicyId(draft.id);
-              setIsConfigureModalOpen(true);
+              const fullPolicy = allPolicies.find(p => p.id === draft.id) || draft;
+              setEditingPolicy(fullPolicy);
+              setPreselectedDept({
+                id: fullPolicy.department_id || fullPolicy.deptId || null,
+                name: fullPolicy.department_name || ''
+              });
+              setIsAddPolicyModalOpen(true);
             }}
             onRefresh={() => {
               setRefreshTrigger(prev => prev + 1);
@@ -326,7 +448,19 @@ export default function Home({ initialView = 'policy' }) {
             onBackToPolicy={() => setActiveWorkspaceView('policy')}
             onOpenAddPolicyModal={handleOpenAddPolicyModal}
             onSelectTemplate={(tpl) => {
-              handleOpenAddPolicyModal(tpl.department_id, tpl.department_id);
+              setEditingPolicy({
+                title: tpl.title,
+                summary: tpl.summary,
+                department_id: tpl.department_id,
+                parameters: {
+                  turnaround_sla: tpl.sla,
+                  daily_limit: tpl.daily_limit,
+                  approval_limits: { officer_cap: tpl.officer_cap },
+                  sections: typeof tpl.sections === 'string' ? JSON.parse(tpl.sections) : (tpl.sections || [])
+                }
+              });
+              setPreselectedDept({ id: tpl.department_id, name: tpl.department_name || '' });
+              setIsAddPolicyModalOpen(true);
             }}
           />
         ) : (
@@ -335,7 +469,7 @@ export default function Home({ initialView = 'policy' }) {
             currentUser={currentUser}
             canEditPolicy={true}
             canCreateDocument={true}
-            onOpenConfigureModal={() => setIsConfigureModalOpen(true)}
+            onOpenConfigureModal={handleConfigurePolicyCopy}
             onToggleStatus={handleTogglePolicyStatus}
             onToggleMasking={handleTogglePolicyMasking}
             onOpenExportModal={() => setIsExportModalOpen(true)}
@@ -370,7 +504,18 @@ export default function Home({ initialView = 'policy' }) {
                 setSelectedPolicyId(id);
                 setActiveWorkspaceView('policy');
               }}
-              policies={allPolicies}
+              policies={safeAllPolicies}
+              drafts={makerCheckerData.drafts || []}
+              activeWorkspaceView={activeWorkspaceView}
+              onOpenDraft={(draft) => {
+                const fullPolicy = safeAllPolicies.find(p => p.id === draft.id) || draft;
+                setEditingPolicy(fullPolicy);
+                setPreselectedDept({
+                  id: fullPolicy.department_id || fullPolicy.deptId || null,
+                  name: fullPolicy.department_name || ''
+                });
+                setIsAddPolicyModalOpen(true);
+              }}
             />
           </>
         )}
@@ -405,18 +550,42 @@ export default function Home({ initialView = 'policy' }) {
 
       <AddPolicyModal
         isOpen={isAddPolicyModalOpen}
-        onClose={() => setIsAddPolicyModalOpen(false)}
+        onClose={() => {
+          setIsAddPolicyModalOpen(false);
+          setEditingPolicy(null);
+        }}
+        editingPolicy={editingPolicy}
         preselectedDepartmentId={preselectedDept.id}
         preselectedDepartmentName={preselectedDept.name}
         currentUser={currentUser}
         departments={departments}
         onPolicyCreated={(newPolicy) => {
+          setEditingPolicy(null);
           setRefreshTrigger(prev => prev + 1);
           setIsAddPolicyModalOpen(false);
-          if (newPolicy && newPolicy.id) {
-            setSelectedPolicyId(newPolicy.id);
+          const pId = typeof newPolicy === 'string' ? newPolicy : (newPolicy && newPolicy.id);
+          if (pId) {
+            setSelectedPolicyId(pId);
             setActiveWorkspaceView('policy');
           }
+          if (newPolicy && typeof newPolicy === 'object' && newPolicy.id) {
+            setAllPolicies(prev => {
+              const list = Array.isArray(prev) ? prev : [];
+              const exists = list.some(p => String(p.id) === String(newPolicy.id));
+              if (exists) {
+                return list.map(p => String(p.id) === String(newPolicy.id) ? { ...p, ...newPolicy } : p);
+              }
+              return [newPolicy, ...list];
+            });
+            if (newPolicy.status === 'draft') {
+              setMakerCheckerData(prev => ({
+                ...prev,
+                drafts: [newPolicy, ...(prev.drafts || []).filter(d => String(d.id) !== String(newPolicy.id))]
+              }));
+            }
+          }
+          loadPolicies();
+          loadMakerChecker();
           window.dispatchEvent(new CustomEvent('liblist:policy-created', { detail: newPolicy }));
         }}
       />

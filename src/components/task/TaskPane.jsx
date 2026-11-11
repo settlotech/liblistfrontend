@@ -189,6 +189,14 @@ export default function TaskPane() {
                     <div className="flex items-center gap-2">
                         <button
                             type="button"
+                            onClick={() => setIsCreateModalOpen(true)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0057B8] text-white hover:bg-[#004EA6] text-xs font-semibold shadow-xs transition cursor-pointer"
+                        >
+                            <ListChecks className="w-3.5 h-3.5" />
+                            <span>+ New Task</span>
+                        </button>
+                        <button
+                            type="button"
                             onClick={loadTasks}
                             className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 transition cursor-pointer"
                             title="Refresh Task List"

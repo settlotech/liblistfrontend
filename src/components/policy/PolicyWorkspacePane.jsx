@@ -29,6 +29,7 @@ import {
 import { apiService } from '../../services/apiService';
 
 import FormattedPolicyContent from './FormattedPolicyContent';
+import CreateTaskDialog from '../task/CreateTaskDialog';
 export default function PolicyWorkspacePane({
   policy,
   currentUser,
@@ -43,6 +44,8 @@ export default function PolicyWorkspacePane({
   const [detailedPolicy, setDetailedPolicy] = useState(policy || null);
   const [isLoading, setIsLoading] = useState(false);
   const [activeSupplementaryTab, setActiveSupplementaryTab] = useState('parameters'); // 'parameters' | 'training' | 'reports' | 'incidents' | 'faqs' | 'reg_reference'
+  const [assignTaskModalData, setAssignTaskModalData] = useState(null);
+  const [taskSuccessToast, setTaskSuccessToast] = useState(null);
 
   const isBankOwner = currentUser?.roleType === 'manager' || currentUser?.roleType === 'admin';
   const isEmployee = currentUser?.roleType === 'employee';
@@ -486,7 +489,12 @@ export default function PolicyWorkspacePane({
           <span className="text-[10.5px] text-slate-400 font-mono">CORE SPECIFICATION</span>
         </div>
 
-          <FormattedPolicyContent content={activeDoc.content} />
+          <FormattedPolicyContent
+            content={activeDoc.content}
+            policyId={activeDoc?.id || detailedPolicy?.id || policy?.id}
+            policyTitle={activeDoc?.title || detailedPolicy?.title || policy?.title}
+            onAssignTask={(taskData) => setAssignTaskModalData(taskData)}
+          />
 
             {/* PHASE-WISE BREAKDOWN — Rendered when phases are stored in DB parameters */}
             {phases.length > 0 && (
@@ -517,6 +525,20 @@ export default function PolicyWorkspacePane({
                             Phase {phase.phase_number}: {phase.title}
                           </h5>
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => setAssignTaskModalData({
+                            library_id: String(activeDoc?.id || detailedPolicy?.id || policy?.id || ''),
+                            section_id: `Phase ${phase.phase_number}: ${phase.title}`,
+                            title: `[Phase ${phase.phase_number}] ${phase.title}`,
+                            description: phase.summary || (Array.isArray(phase.key_rules) ? phase.key_rules.join('\n') : '') || `Operational execution for Phase ${phase.phase_number}`
+                          })}
+                          className="opacity-70 group-hover:opacity-100 transition-opacity inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-[#0057B8] hover:text-white bg-blue-50 hover:bg-[#0057B8] border border-blue-200 rounded-lg cursor-pointer shadow-2xs shrink-0"
+                          title={`Assign task for Phase ${phase.phase_number}`}
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Assign Task</span>
+                        </button>
                       </div>
 
                       {/* Phase summary */}
@@ -1511,6 +1533,26 @@ export default function PolicyWorkspacePane({
               </div>
             </form>
           </div>
+        </div>
+      )}
+      {/* Create / Assign Task Modal from Policy Section */}
+      {assignTaskModalData && (
+        <CreateTaskDialog
+          initialData={assignTaskModalData}
+          onClose={() => setAssignTaskModalData(null)}
+          onTaskCreated={(newTask) => {
+            setAssignTaskModalData(null);
+            setTaskSuccessToast(`Task ${newTask?.task_code || ''} created and assigned successfully!`);
+            setTimeout(() => setTaskSuccessToast(null), 4000);
+          }}
+        />
+      )}
+
+      {/* Task Creation Success Notification Toast */}
+      {taskSuccessToast && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-xl bg-slate-900 text-white text-xs font-semibold shadow-2xl border border-slate-700 animate-in fade-in slide-in-from-bottom-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          <span>{taskSuccessToast}</span>
         </div>
       )}
     </main>

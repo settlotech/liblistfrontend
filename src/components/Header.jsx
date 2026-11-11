@@ -83,10 +83,10 @@ export default function Header({
   const superAdminRole = {
     id: 'super_admin',
     name: 'Ramesh',
-    role: 'Platform Owner',
+    role: 'Super Admin',
     roleType: 'admin',
-    department: 'Central Platform Owner',
-    bankName: 'Central Platform Owner',
+    department: 'Central Super Admin',
+    bankName: 'Central Super Admin',
     avatar: 'R'
   };
 
@@ -123,7 +123,7 @@ export default function Header({
             {currentView === 'SUPER_ADMIN' ? 'Platform Central Administration' : selectedBank.name}
           </span>
           <span className="text-[11px] font-mono text-[#0057B8] font-semibold bg-white border border-[#0057B8]/30 px-1.5 py-0.2 rounded shadow-2xs">
-            {currentView === 'SUPER_ADMIN' ? 'Platform Owner' : 'CBA'}
+            {currentView === 'SUPER_ADMIN' ? 'Super Admin' : 'CBA'}
           </span>
         </div>
       </div>
@@ -221,7 +221,7 @@ export default function Header({
           </button>
         )}
 
-        {/* Platform Owner: Quick Super Admin Portal / Bank Workspace Toggle */}
+        {/* Super Admin: Quick Super Admin Portal / Bank Workspace Toggle */}
         {isSuperAdmin && onToggleSuperAdminView && (
           <button
             onClick={onToggleSuperAdminView}
@@ -248,7 +248,7 @@ export default function Header({
                 {currentUser?.name || 'Bank Officer'}
               </div>
               <div className="text-[10.5px] text-slate-500">
-                {currentUser?.roleType === 'admin' ? 'Platform Owner' : (currentUser?.role?.toLowerCase().includes('owner') || currentUser?.role?.toLowerCase().includes('administrator') || currentUser?.roleType === 'manager' ? 'Bank Administrator' : 'Bank Employee')}
+                {currentUser?.roleType === 'admin' ? 'Super Admin' : (currentUser?.roleType === 'manager' || currentUser?.role?.toLowerCase().includes('approver') || currentUser?.role?.toLowerCase().includes('owner') ? 'Bank Approver' : 'Bank Employee')}
               </div>
             </div>
             <ChevronDown className="w-3 h-3 text-slate-400" />
@@ -268,7 +268,7 @@ export default function Header({
                     {currentUser?.name || 'Bank Officer'}
                   </div>
                   <div className="text-[11px] font-medium text-[#0057B8] truncate">
-                    {currentUser?.role === 'Bank Owner' || currentUser?.role?.toLowerCase().includes('owner') || currentUser?.role?.toLowerCase().includes('administrator') || currentUser?.roleType === 'manager' ? 'Bank Administrator' : (currentUser?.roleType === 'admin' ? 'Platform Owner' : (currentUser?.role || 'Bank Employee'))}
+                    {currentUser?.roleType === 'admin' ? 'Super Admin' : (currentUser?.roleType === 'manager' || currentUser?.role?.toLowerCase().includes('approver') || currentUser?.role?.toLowerCase().includes('owner') ? 'Bank Approver' : (currentUser?.role || 'Bank Employee'))}
                   </div>
                 </div>
               </div>
@@ -289,7 +289,7 @@ export default function Header({
                 )}
               </div>
 
-              {/* Platform Owner / Super Admin View Switcher */}
+              {/* Super Admin / Super Admin View Switcher */}
               {isSuperAdmin && onToggleSuperAdminView && (
                 <div className="p-2 border-b border-slate-100 bg-amber-50/40">
                   <button

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   X, 
   FileText, 
@@ -23,9 +24,11 @@ import {
   Save,
   Info,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  FileEdit
 } from 'lucide-react';
 import { apiService } from '../../../services/apiService';
+import { SectionWordToolbar } from './SectionWordToolbar';
 
 import { POLICY_TEMPLATES } from './policyTemplates';
 export default function AddPolicyModal({
@@ -35,7 +38,8 @@ export default function AddPolicyModal({
   preselectedDepartmentName,
   departments = [],
   currentUser,
-  onPolicyCreated
+  onPolicyCreated,
+  editingPolicy = null
 }) {
   // 3 Policy Creation Modes: 'direct' | 'library' | 'upload'
   const [creationMode, setCreationMode] = useState('direct');
@@ -49,45 +53,9 @@ export default function AddPolicyModal({
   const [dynamicTemplates, setDynamicTemplates] = useState(POLICY_TEMPLATES);
   const [selectedTemplatePhases, setSelectedTemplatePhases] = useState([]);
 
-  // Fetch dynamic starter templates from DB whenever modal opens
-  useEffect(() => {
-    if (isOpen) {
-      apiService.getTemplates()
-        .then((dbTpls) => {
-          if (Array.isArray(dbTpls) && dbTpls.length > 0) {
-            const formatted = dbTpls.map((t, idx) => ({
-              id: t.id,
-              name: t.name || `Template ${idx + 1}`,
-              title: t.title || 'Operational Standard',
-              dept: t.department_id || 'company-policies',
-              sla: t.sla || '4 Hours',
-              daily: t.daily_limit || '$25,000 AUD',
-              cap: t.officer_cap || '$100,000 AUD',
-              summary: t.summary || '',
-              sections: typeof t.sections === 'string' ? JSON.parse(t.sections) : (t.sections || []),
-              phases: typeof t.phases === 'string' ? JSON.parse(t.phases) : (t.phases || [])
-            }));
-            setDynamicTemplates(formatted);
-          }
-        })
-        .catch((err) => console.warn('Could not load dynamic templates from DB:', err));
-    }
-  }, [isOpen]);
-
-  // Form Fields
+  // Form Fields & Editing States
   const [departmentId, setDepartmentId] = useState(preselectedDepartmentId || departments[0]?.id || 'company-policies');
-
-  // Synchronize department when modal opens or preselected department changes
-  useEffect(() => {
-    if (isOpen) {
-      if (preselectedDepartmentId) {
-        setDepartmentId(preselectedDepartmentId);
-      } else if (!departmentId && departments.length > 0) {
-        setDepartmentId(departments[0].id);
-      }
-    }
-  }, [isOpen, preselectedDepartmentId]);
-
+  const [editingDraftId, setEditingDraftId] = useState(null);
   const [title, setTitle] = useState('');
   const [summary, setSummary] = useState('');
   const [content, setContent] = useState('');
@@ -139,12 +107,263 @@ export default function AddPolicyModal({
     }
   ]);
 
+  // Fetch dynamic starter templates from DB whenever modal opens
+  useEffect(() => {
+    if (isOpen) {
+      apiService.getTemplates()
+        .then((dbTpls) => {
+          if (Array.isArray(dbTpls) && dbTpls.length > 0) {
+            const formatted = dbTpls.map((t, idx) => ({
+              id: t.id,
+              name: t.name || `Template ${idx + 1}`,
+              title: t.title || 'Operational Standard',
+              dept: t.department_id || 'company-policies',
+              sla: t.sla || '4 Hours',
+              daily: t.daily_limit || '$25,000 AUD',
+              cap: t.officer_cap || '$100,000 AUD',
+              summary: t.summary || '',
+              sections: typeof t.sections === 'string' ? JSON.parse(t.sections) : (t.sections || []),
+              phases: typeof t.phases === 'string' ? JSON.parse(t.phases) : (t.phases || [])
+            }));
+            setDynamicTemplates(formatted);
+          }
+        })
+        .catch((err) => console.warn('Could not load dynamic templates from DB:', err));
+    }
+  }, [isOpen]);
+
+  // Synchronize department when modal opens or preselected department changes
+  useEffect(() => {
+    if (isOpen) {
+      if (preselectedDepartmentId) {
+        setDepartmentId(preselectedDepartmentId);
+      } else if (!departmentId && departments.length > 0) {
+        setDepartmentId(departments[0].id);
+      }
+    }
+  }, [isOpen, preselectedDepartmentId]);
+
+  // Synchronize fields when editing an existing policy / draft
+  useEffect(() => {
+    if (isOpen && editingPolicy) {
+      setEditingDraftId(editingPolicy.id || null);
+      setTitle(editingPolicy.title || '');
+      setSummary(editingPolicy.summary || '');
+      setContent(editingPolicy.content || '');
+      if (editingPolicy.department_id || editingPolicy.deptId) {
+        setDepartmentId(editingPolicy.department_id || editingPolicy.deptId);
+      }
+      const params = typeof editingPolicy.parameters === 'string'
+        ? JSON.parse(editingPolicy.parameters || '{}')
+        : (editingPolicy.parameters || {});
+
+      setTurnaroundSla(params.turnaround_sla || editingPolicy.turnaroundSla || '4 Hours');
+      setDailyLimit(params.daily_limit || editingPolicy.dailyLimit || '$25,000 AUD');
+      setOfficerCap(params.approval_limits?.officer_cap || editingPolicy.officerCap || '$100,000 AUD');
+
+      let loadedSections = [];
+      if (params.sections && Array.isArray(params.sections) && params.sections.length > 0) {
+        loadedSections = params.sections.map((sec, idx) => ({
+          ...sec,
+          id: sec.id ? String(sec.id) : `sec-${idx}-${Date.now()}`
+        }));
+      } else if (editingPolicy.content && typeof editingPolicy.content === 'string' && editingPolicy.content.trim()) {
+        const raw = editingPolicy.content.trim();
+        const parts = raw.split(/(?=###\s+)/);
+        if (parts.length > 1) {
+          loadedSections = parts.map((part, i) => {
+            const match = part.match(/^###\s*(?:\d+\.?\s*)?(.*?)\n([\s\S]*)$/);
+            return {
+              id: `sec-${i}-${Date.now()}`,
+              title: match ? match[1].trim() : `Section ${i + 1}`,
+              content: match ? match[2].trim() : part.trim(),
+              type: 'section'
+            };
+          });
+        } else {
+          loadedSections = [
+            { id: `sec-summary-${Date.now()}`, title: '1. Summary & Scope', content: editingPolicy.summary || 'Summary of operational intent.', type: 'section' },
+            { id: `sec-details-${Date.now()}`, title: '2. Operational Details & Clauses', content: raw, type: 'section' }
+          ];
+        }
+      }
+
+      // If sections is still empty, supply the standard 5 baseline sections so sections are NEVER 0
+      if (!loadedSections || loadedSections.length === 0) {
+        loadedSections = [
+          {
+            id: `sec-summary-${Date.now()}`,
+            title: '1. Purpose & Product Scope',
+            content: editingPolicy.summary || 'This policy framework governs credit assessment criteria, authorization limits, and regulatory compliance standards across retail banking operations under APRA CPS 234.',
+            type: 'section'
+          },
+          {
+            id: `sec-rules-${Date.now()}`,
+            title: '2. Operational Rules & Mandatory Verifications',
+            content: '1. Applicant Identity: Mandatory 100-point identity check via Australian DVS Gateway.\n2. Serviceability: Minimum debt-to-income (DTI) ratio check with 3.0% interest rate buffer.\n3. Bureau Inquiries: Real-time Comprehensive Credit Reporting (CCR) pull via Equifax API.',
+            type: 'section'
+          },
+          {
+            id: `sec-reports-${Date.now()}`,
+            title: '3. Reports & Audit Telemetry',
+            content: 'Daily transaction logging, monthly exception reports, and quarterly APRA CPS 230 operational risk attestations.',
+            type: 'section'
+          },
+          {
+            id: `sec-dependencies-${Date.now()}`,
+            title: '4. Dependencies & Core Integrations',
+            content: '1. Core Banking Settlement Engine (CBA Core API v4)\n2. Equifax Comprehensive Credit Bureau API\n3. Australian DVS Document Verification Service Gateway',
+            type: 'section'
+          },
+          {
+            id: `sec-events-${Date.now()}`,
+            title: '5. Operational Events & Lifecycle Triggers',
+            content: '1. Event: Credit request > $15,000 AUD triggers Credit Officer assignment.\n2. Event: Limit Cap Verification - System checks daily limit ($25,000 AUD) and officer cap ($100,000 AUD) before decision execution.\n3. Event: Cash advance >= $10,000 AUD triggers automated AUSTRAC TTR report generation.',
+            type: 'section'
+          }
+        ];
+      }
+
+      setSections(loadedSections);
+      setCreationMode('direct');
+    }
+  }, [isOpen, editingPolicy]);
+
   const handleUpdateSectionTitle = (id, newTitle) => {
     setSections(prev => prev.map(s => s.id === id ? { ...s, title: newTitle } : s));
   };
 
   const handleUpdateSectionContent = (id, newContent) => {
     setSections(prev => prev.map(s => s.id === id ? { ...s, content: newContent } : s));
+  };
+
+  const handleApplyFormat = (sectionId, formatKey) => {
+    const activeEl = document.activeElement;
+    const isTextarea = activeEl && activeEl.tagName === 'TEXTAREA';
+    const hasSelection = isTextarea && activeEl.selectionStart !== activeEl.selectionEnd;
+
+    setSections(prev => prev.map(sec => {
+      if (sec.id !== sectionId) return sec;
+      let text = sec.content || '';
+
+      if (hasSelection) {
+        const start = activeEl.selectionStart;
+        const end = activeEl.selectionEnd;
+        const selected = text.substring(start, end);
+        let replacement = selected;
+
+        switch (formatKey) {
+          case 'bold':
+            replacement = `**${selected}**`;
+            break;
+          case 'italic':
+            replacement = `*${selected}*`;
+            break;
+          case 'underline':
+            replacement = `<u>${selected}</u>`;
+            break;
+          case 'strikethrough':
+            replacement = `~~${selected}~~`;
+            break;
+          case 'h1':
+            replacement = `# ${selected}`;
+            break;
+          case 'h2':
+            replacement = `## ${selected}`;
+            break;
+          case 'h3':
+            replacement = `### ${selected}`;
+            break;
+          case 'alignCenter':
+            replacement = `<div align="center">\n${selected}\n</div>`;
+            break;
+          case 'alignRight':
+            replacement = `<div align="right">\n${selected}\n</div>`;
+            break;
+          case 'alignLeft':
+            replacement = `<div align="left">\n${selected}\n</div>`;
+            break;
+          case 'bullet':
+            replacement = selected.split('\n').map(l => l.startsWith('- ') ? l : `- ${l}`).join('\n');
+            break;
+          case 'number':
+            replacement = selected.split('\n').map((l, i) => `${i + 1}. ${l}`).join('\n');
+            break;
+          case 'checkbox':
+            replacement = selected.split('\n').map(l => `- [ ] ${l}`).join('\n');
+            break;
+          case 'note':
+            replacement = selected.split('\n').map(l => `> ${l}`).join('\n');
+            break;
+          case 'table':
+            replacement = `${selected}\n\n| Parameter | Requirement | Status |\n|---|---|---|\n| Limit | $50,000 AUD | Mandatory |\n| Approval Tier | Tier 2 Manager | Active |`;
+            break;
+          case 'addRow':
+            replacement = `${selected}\n| Additional Parameter | Specific Limit | Required |`;
+            break;
+          default:
+            break;
+        }
+
+        const newText = text.substring(0, start) + replacement + text.substring(end);
+        return { ...sec, content: newText };
+      }
+
+      // No active selection - insert or append template snippet
+      switch (formatKey) {
+        case 'bold':
+          text += (text ? '\n' : '') + '**Bold Text**';
+          break;
+        case 'italic':
+          text += (text ? '\n' : '') + '*Italic Text*';
+          break;
+        case 'underline':
+          text += (text ? '\n' : '') + '<u>Underlined Text</u>';
+          break;
+        case 'strikethrough':
+          text += (text ? '\n' : '') + '~~Strikethrough~~';
+          break;
+        case 'h1':
+          text += (text ? '\n\n' : '') + '# Main Document Heading';
+          break;
+        case 'h2':
+          text += (text ? '\n\n' : '') + '## Section Header';
+          break;
+        case 'h3':
+          text += (text ? '\n\n' : '') + '### Sub-clause Specification';
+          break;
+        case 'alignCenter':
+          text += (text ? '\n' : '') + '<div align="center">\nCentered Text\n</div>';
+          break;
+        case 'alignRight':
+          text += (text ? '\n' : '') + '<div align="right">\nRight-aligned Text\n</div>';
+          break;
+        case 'alignLeft':
+          text += (text ? '\n' : '') + '<div align="left">\nLeft-aligned Text\n</div>';
+          break;
+        case 'bullet':
+          text += (text ? '\n' : '') + '- Bullet item';
+          break;
+        case 'number':
+          text += (text ? '\n' : '') + '1. Numbered item';
+          break;
+        case 'checkbox':
+          text += (text ? '\n' : '') + '- [ ] Operational task requirement';
+          break;
+        case 'table':
+          text += (text ? '\n\n' : '') + '| Parameter | Threshold / Requirement | Status |\n|---|---|---|\n| Maximum Limit | $50,000 AUD | Mandatory |\n| Approval Tier | Tier 2 Manager | Active |';
+          break;
+        case 'addRow':
+          text += (text ? '\n' : '') + '| Additional Parameter | Specific Limit | Required |';
+          break;
+        case 'note':
+          text += (text ? '\n\n' : '') + '> **Statutory Note:** APRA CPS 234 compliance verification required prior to transaction authorization.';
+          break;
+        default:
+          break;
+      }
+      return { ...sec, content: text };
+    }));
   };
 
   const handleDeleteSection = (id) => {
@@ -248,6 +467,45 @@ export default function AddPolicyModal({
     setSections(prev => [...prev, newSec]);
   };
 
+  // Word-like Section Formatting Action Handler
+  const handleApplyWordFormat = (sectionId, formatKey) => {
+    setSections(prev => prev.map((s) => {
+      if (s.id !== sectionId) return s;
+      let text = s.content || '';
+      switch (formatKey) {
+        case 'bold': text = text ? `${text} **[Bold Clause]**` : '**[Bold Clause]**'; break;
+        case 'italic': text = text ? `${text} *[Italic Specification]*` : '*[Italic Specification]*'; break;
+        case 'underline': text = text ? `${text} <u>[Underlined Requirement]</u>` : '<u>[Underlined Requirement]</u>'; break;
+        case 'strikethrough': text = text ? `${text} ~~[Superseded Text]~~` : '~~[Superseded Text]~~'; break;
+        case 'h2': text = text ? `${text}\n\n## Operational Clause` : '## Operational Clause'; break;
+        case 'h3': text = text ? `${text}\n\n### Sub-clause Requirement` : '### Sub-clause Requirement'; break;
+        case 'bullet': text = text ? `${text}\n- Mandatory statutory requirement under APRA CPS 234` : '- Mandatory statutory requirement under APRA CPS 234'; break;
+        case 'number': text = text ? `${text}\n1. Underwriting assessment step` : '1. Underwriting assessment step'; break;
+        case 'checkbox': text = text ? `${text}\n- [ ] Dual-sign officer verification completed` : '- [ ] Dual-sign officer verification completed'; break;
+        case 'table':
+          text = text 
+            ? `${text}\n\n| Item / Metric | Specification Detail | Authority Cap | SLA Turnaround |\n| --- | --- | --- | --- |\n| Tier 1 Validation | Statutory verification under APRA CPS 234 | $25,000 AUD | 4 Hours |\n| Tier 2 Escalation | Dual-sign management review protocol | $50,000 AUD | 2 Hours |`
+            : '| Item / Metric | Specification Detail | Authority Cap | SLA Turnaround |\n| --- | --- | --- | --- |\n| Tier 1 Validation | Statutory verification under APRA CPS 234 | $25,000 AUD | 4 Hours |\n| Tier 2 Escalation | Dual-sign management review protocol | $50,000 AUD | 2 Hours |';
+          break;
+        case 'addRow':
+          text = text ? `${text}\n| Tier 3 Sign-Off | Department Head Executive clearance | $100,000 AUD | 1 Hour |` : '| Step | Standard Underwriting | $25,000 AUD | 4 Hours |';
+          break;
+        case 'addCol':
+          if (text.includes('| --- |')) {
+            text = text.split('\n').map(l => (l.trim().startsWith('|') && l.trim().endsWith('|')) ? `${l.slice(0, -1)} Status |` : l).join('\n');
+          } else {
+            text = `${text}\n\n| Step | Limit | Status |\n| --- | --- | --- |\n| 1 | $25,000 AUD | Active |`;
+          }
+          break;
+        case 'note':
+          text = text ? `${text}\n\n> [!NOTE]\n> Mandatory statutory verification of retail credit line applicants under APRA CPS 234.` : '> [!NOTE]\n> Mandatory statutory verification of retail credit line applicants under APRA CPS 234.';
+          break;
+        default: break;
+      }
+      return { ...s, content: text };
+    }));
+  };
+
   const handleSaveDraft = async () => {
     setErrorMessage('');
     const draftTitle = title.trim() || 'Untitled Operational Policy (Draft)';
@@ -265,45 +523,76 @@ export default function AddPolicyModal({
 
     setIsSubmitting(true);
     try {
-      // 1. Direct in-database draft policy creation (policies table with status: 'draft')
-      await apiService.createPolicy({
+      const existingParams = typeof editingPolicy?.parameters === 'string'
+        ? JSON.parse(editingPolicy.parameters || '{}')
+        : (editingPolicy?.parameters || {});
+      const existingVersions = existingParams.versions || [];
+      const currentVerStr = editingPolicy?.version || existingParams.version || 'v1.0';
+      const numVer = parseFloat(String(currentVerStr).replace(/[^0-9.]/g, '')) || 1.0;
+      const nextVer = `v${(numVer + 0.1).toFixed(1)}`;
+
+      const newVersionSnapshot = {
+        version: nextVer,
+        timestamp: new Date().toISOString(),
+        author: currentUser?.name || 'Marcus Vance',
+        summary: `Saved draft update with ${sections.length} clauses (${turnaroundSla} SLA, ${dailyLimit} Daily Limit)`
+      };
+
+      const payload = {
         department_id: departmentId || 'company-policies',
         title: draftTitle,
         summary: summary.trim() || draftTitle,
         content: finalContent,
         parameters: {
+          ...existingParams,
           turnaround_sla: turnaroundSla,
           daily_limit: dailyLimit,
           approval_limits: { officer_cap: officerCap },
           mandatory_dvs: true,
-          sections: sections
+          sections: sections,
+          version: nextVer,
+          versions: [newVersionSnapshot, ...existingVersions]
         },
-        created_by: currentUser?.name || 'Current User',
+        created_by: currentUser?.name || 'Marcus Vance',
         creation_mode: creationMode,
         status: 'draft',
+        version: nextVer,
         user_role: currentUser?.roleType || 'employee',
-        user_name: currentUser?.name || 'Staff User'
-      });
+        user_name: currentUser?.name || 'Marcus Vance'
+      };
 
-      // 2. Also register in maker-checker queue if not bank owner
-      if (!isBankOwner) {
-        const targetDeptName = departments.find(d => d.id === departmentId)?.name || 'Retail Banking';
+      let savedPolicy = null;
+      if (editingDraftId) {
         try {
-          await apiService.createMakerCheckerItem({
-            type: 'create_policy',
-            title: `[Draft] ${draftTitle}`,
-            department: targetDeptName,
-            requested_by: `${currentUser?.name || 'Staff User'} (${currentUser?.role || 'Staff'})`,
-            change_details: `Policy draft authored in system. Mode: ${creationMode}. SLA: ${turnaroundSla}. Sections: ${sections.length}.`,
-            status: 'draft'
-          });
-        } catch (mcErr) {
-          console.warn('Maker checker draft sync note:', mcErr.message);
+          const res = await apiService.updatePolicy(editingDraftId, payload);
+          savedPolicy = res?.policy || res || { ...payload, id: editingDraftId };
+        } catch (_) {
+          const created = await apiService.createPolicy({ ...payload, id: editingDraftId });
+          savedPolicy = created?.policy || created || { ...payload, id: editingDraftId };
+          if (savedPolicy?.id) setEditingDraftId(savedPolicy.id);
         }
+      } else {
+        const created = await apiService.createPolicy(payload);
+        savedPolicy = created?.policy || created || payload;
+        if (savedPolicy?.id) setEditingDraftId(savedPolicy.id);
       }
 
-      alert(`Policy draft "${draftTitle}" saved successfully!`);
-      if (onPolicyCreated) onPolicyCreated();
+      const targetDeptName = departments.find(d => d.id === departmentId)?.name || 'Retail Banking';
+      try {
+        await apiService.createMakerCheckerItem({
+          type: 'create_policy',
+          title: `[Draft] ${draftTitle}`,
+          department: targetDeptName,
+          requested_by: `${currentUser?.name || 'Staff User'} (${currentUser?.role || 'Staff'})`,
+          change_details: `Policy draft authored in system (${nextVer}). Mode: ${creationMode}. SLA: ${turnaroundSla}. Sections: ${sections.length}.`,
+          status: 'draft'
+        });
+      } catch (mcErr) {
+        console.warn('Maker checker draft sync note:', mcErr.message);
+      }
+
+      alert(`Policy draft "${draftTitle}" (${nextVer}) saved to drafts successfully!`);
+      if (onPolicyCreated) onPolicyCreated(savedPolicy);
       onClose();
     } catch (err) {
       console.error('Failed to save draft:', err);
@@ -335,24 +624,9 @@ export default function AddPolicyModal({
   const [isAiThinking, setIsAiThinking] = useState(false);
   const [aiStep, setAiStep] = useState('');
 
+  // Clear transient modal states when closed
   useEffect(() => {
-    if (preselectedDepartmentId) {
-      setDepartmentId(preselectedDepartmentId);
-    }
-  }, [preselectedDepartmentId]);
-
-  useEffect(() => {
-    if (isOpen) {
-      setSelectedDirectTemplateId(null);
-      setActiveTemplateInfoId(null);
-      setTitle('');
-      setSummary('');
-      setTurnaroundSla('4 Hours');
-      setDailyLimit('$25,000 AUD');
-      setOfficerCap('$100,000 AUD');
-      setSections([]);
-      setShowCloseConfirm(false);
-    } else {
+    if (!isOpen) {
       setExpandedSectionId(null);
       setExpandedModalSectionId(null);
       setActiveTemplateInfoId(null);
@@ -1490,12 +1764,26 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
         <div className="px-6 py-4 border-b border-blue-200/70 flex items-center justify-between bg-white">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-[#0057B8]/10 text-[#0057B8] border border-[#0057B8]/30 flex items-center justify-center font-bold text-sm">
-              +
+              {editingPolicy ? <FileEdit className="w-4 h-4 text-[#0057B8]" /> : '+'}
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-900">
-                LibList • Create Operational Policy
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                {editingPolicy ? (
+                  <>
+                    <span>Edit Draft: {editingPolicy.title || title || 'Operational Policy'}</span>
+                    <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-blue-100 text-[#0057B8] border border-blue-200">
+                      {editingPolicy.version || 'v1.0'}
+                    </span>
+                  </>
+                ) : (
+                  'LibList • Create Operational Policy'
+                )}
               </h2>
+              {editingPolicy && (
+                <p className="text-xs text-slate-500">
+                  Target Department: <span className="font-semibold text-slate-700">{editingPolicy.department_name || preselectedDepartmentName || 'Credit Cards'}</span>
+                </p>
+              )}
             </div>
           </div>
           <button 
@@ -1507,7 +1795,8 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
           </button>
         </div>
 
-        {/* 3 Creation Modes Tab Bar */}
+        {/* 3 Creation Modes Tab Bar (Hidden when editing draft or configuring) */}
+        {!editingPolicy && (
         <div className="p-3 bg-[#e8f1fb] border-b border-blue-200/70 grid grid-cols-3 gap-2 text-[12.5px]">
           <button
             type="button"
@@ -1552,6 +1841,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
             <span>3. Document Upload (AI)</span>
           </button>
         </div>
+        )}
 
         {/* Error notification */}
         {errorMessage && (
@@ -1563,102 +1853,226 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4 text-[13px] custom-scrollbar bg-[#f0f6fc]">
           
+          {/* DIRECT DRAFT / CONFIGURED EDITING MODE (Immediate access to modular sections, no mode/template clutter) */}
+          {editingPolicy ? (
+            <div className="space-y-4 animate-in fade-in duration-150">
+              {/* Document Title */}
+              <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Policy Document Title
+                </label>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="e.g. Credit Assessment & Approval Guidelines"
+                  required
+                  className="w-full p-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-[14px] bg-white font-bold text-slate-900 shadow-2xs"
+                />
+              </div>
+
+              {/* Directly Render Modular Sections with Word Action Toolbar */}
+              <div className="space-y-3">
+                {sections.map((section, idx) => (
+                  <div
+                    key={section.id || idx}
+                    className="p-3.5 rounded-xl border border-slate-200/90 bg-white hover:border-[#0057B8]/40 shadow-xs space-y-2.5 transition"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <span className="w-6 h-6 rounded-md bg-[#0057B8] text-white text-[11px] font-bold flex items-center justify-center flex-shrink-0 font-mono shadow-2xs">
+                          {idx + 1}
+                        </span>
+                        <input
+                          type="text"
+                          value={section.title}
+                          onChange={(e) => handleUpdateSectionTitle(section.id, e.target.value)}
+                          placeholder="Section Title"
+                          className="font-bold text-[13.5px] text-slate-900 bg-white border border-slate-200 focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8] px-2.5 py-1 rounded-md outline-none transition flex-1 shadow-2xs"
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedModalSectionId(section.id || `sec-${idx}`)}
+                          className="p-1.5 rounded-lg transition text-slate-400 hover:text-[#0057B8] hover:bg-blue-50 cursor-pointer"
+                          title="Expand clause in full Word editor popup"
+                        >
+                          <Maximize2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={idx === 0}
+                          onClick={() => handleMoveSectionUp(idx)}
+                          className={`p-1.5 rounded transition ${
+                            idx === 0 ? 'text-slate-300 cursor-not-allowed' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200 cursor-pointer'
+                          }`}
+                          title="Move section up"
+                        >
+                          <ArrowUp className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={idx === sections.length - 1}
+                          onClick={() => handleMoveSectionDown(idx)}
+                          className={`p-1.5 rounded transition ${
+                            idx === sections.length - 1 ? 'text-slate-300 cursor-not-allowed' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200 cursor-pointer'
+                          }`}
+                          title="Move section down"
+                        >
+                          <ArrowDown className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteSection(section.id)}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
+                          title="Delete section"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Word-like Top Action Toolbar for Section */}
+                    <SectionWordToolbar
+                      sectionId={section.id}
+                      content={section.content}
+                      sectionIndex={idx}
+                      onApplyFormat={handleApplyFormat}
+                    />
+
+                    {/* Textarea attached seamlessly to the toolbar */}
+                    <textarea
+                      rows={Math.max(4, Math.min(10, Math.ceil((section.content || '').length / 80)))}
+                      value={section.content}
+                      onChange={(e) => handleUpdateSectionContent(section.id, e.target.value)}
+                      placeholder={`Enter ${section.title || 'section'} details, operational requirements, or rules...`}
+                      className="w-full p-3 rounded-b-lg border border-slate-200 border-t-0 focus:outline-none focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8] text-xs leading-relaxed text-slate-800 bg-white placeholder-slate-400 shadow-2xs font-sans transition-all"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <>
           {/* MODE 1: DIRECT IN-SYSTEM */}
           {creationMode === 'direct' && (
             <div className="space-y-4 animate-in fade-in duration-150">
               
-              {/* STEP 1: CHOOSE STARTING TEMPLATE FIRST */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
-                      1. Choose Starting Template
-                    </label>
-                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-                      DB Dynamic ({dynamicTemplates.length})
-                    </span>
+              {/* STEP 1: CHOOSE STARTING TEMPLATE FIRST (Only for fresh policy creation) */}
+              {!editingPolicy ? (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
+                        1. Choose Starting Template
+                      </label>
+                      <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                        DB Dynamic ({dynamicTemplates.length})
+                      </span>
+                    </div>
+                    {selectedDirectTemplateId && (
+                      <span className="text-[11px] text-[#0057B8] font-bold bg-blue-100/70 border border-blue-200 px-2 py-0.5 rounded-full">
+                        {dynamicTemplates.find(t => t.id === selectedDirectTemplateId)?.name} Selected
+                      </span>
+                    )}
                   </div>
-                  {selectedDirectTemplateId && (
-                    <span className="text-[11px] text-[#0057B8] font-bold bg-blue-100/70 border border-blue-200 px-2 py-0.5 rounded-full">
-                      {dynamicTemplates.find(t => t.id === selectedDirectTemplateId)?.name} Selected
-                    </span>
-                  )}
-                </div>
 
-                {/* Dynamic Template Cards with (i) Info Icon Button */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  {dynamicTemplates.map((tpl) => {
-                    const isSelected = selectedDirectTemplateId === tpl.id;
-                    return (
-                      <div
-                        key={tpl.id}
-                        onClick={() => handleSelectDirectTemplate(tpl)}
-                        className={`relative p-3 rounded-xl border transition-all cursor-pointer text-left flex flex-col justify-between ${
-                          isSelected
-                            ? 'bg-[#0057B8] text-white border-[#0057B8] shadow-sm font-bold ring-2 ring-[#0057B8]/25'
-                            : 'bg-white text-slate-700 border-blue-200/90 hover:border-[#0057B8] hover:bg-blue-50/50 shadow-2xs'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-1 w-full">
-                          <span className={`text-[12.5px] font-bold ${isSelected ? 'text-white' : 'text-slate-900'}`}>
-                            {tpl.name}
-                          </span>
-                          <div className="flex items-center gap-1">
-                            {/* Info icon button toggles clean info tooltip/popover */}
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveTemplateInfoId(activeTemplateInfoId === tpl.id ? null : tpl.id);
-                              }}
-                              className={`p-1 rounded-md transition cursor-pointer ${
-                                isSelected 
-                                  ? 'text-white/80 hover:text-white hover:bg-white/20' 
-                                  : 'text-slate-400 hover:text-[#0057B8] hover:bg-blue-100/70'
-                              }`}
-                              title={`View ${tpl.name} info`}
-                            >
-                              <Info className="w-3.5 h-3.5" />
-                            </button>
-                            {isSelected && (
-                              <Check className="w-3.5 h-3.5 text-white flex-shrink-0" />
-                            )}
-                          </div>
-                        </div>
-
-                        <span className={`text-[11.5px] font-medium truncate mt-1 block ${isSelected ? 'text-blue-100' : 'text-slate-600'}`}>
-                          {tpl.title}
-                        </span>
-
-                        {/* Minimal info popover */}
-                        {activeTemplateInfoId === tpl.id && (
-                          <div
-                            onClick={(e) => e.stopPropagation()}
-                            className="absolute left-0 top-full mt-2 z-40 w-64 p-3 bg-white text-slate-800 rounded-xl shadow-xl border border-blue-200 text-xs animate-in fade-in duration-150"
-                          >
-                            <div className="flex items-center justify-between pb-1.5 border-b border-slate-100 mb-1.5 font-bold text-slate-900">
-                              <span>{tpl.name} • {tpl.title}</span>
+                  {/* Dynamic Template Cards with (i) Info Icon Button */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    {dynamicTemplates.map((tpl) => {
+                      const isSelected = selectedDirectTemplateId === tpl.id;
+                      return (
+                        <div
+                          key={tpl.id}
+                          onClick={() => handleSelectDirectTemplate(tpl)}
+                          className={`relative p-3 rounded-xl border transition-all cursor-pointer text-left flex flex-col justify-between ${
+                            isSelected
+                              ? 'bg-[#0057B8] text-white border-[#0057B8] shadow-sm font-bold ring-2 ring-[#0057B8]/25'
+                              : 'bg-white text-slate-700 border-blue-200/90 hover:border-[#0057B8] hover:bg-blue-50/50 shadow-2xs'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-1 w-full">
+                            <span className={`text-[12.5px] font-bold ${isSelected ? 'text-white' : 'text-slate-900'}`}>
+                              {tpl.name}
+                            </span>
+                            <div className="flex items-center gap-1">
                               <button
                                 type="button"
-                                onClick={() => setActiveTemplateInfoId(null)}
-                                className="text-slate-400 hover:text-slate-700 p-0.5 cursor-pointer"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveTemplateInfoId(activeTemplateInfoId === tpl.id ? null : tpl.id);
+                                }}
+                                className={`p-1 rounded-md transition cursor-pointer ${
+                                  isSelected 
+                                    ? 'text-white/80 hover:text-white hover:bg-white/20' 
+                                    : 'text-slate-400 hover:text-[#0057B8] hover:bg-blue-100/70'
+                                }`}
+                                title={`View ${tpl.name} info`}
                               >
-                                <X className="w-3 h-3" />
+                                <Info className="w-3.5 h-3.5" />
                               </button>
+                              {isSelected && (
+                                <Check className="w-3.5 h-3.5 text-white flex-shrink-0" />
+                              )}
                             </div>
-                            <p className="text-[11px] leading-relaxed text-slate-600">
-                              {tpl.summary}
-                            </p>
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
 
-              {/* Prompt if no template chosen yet */}
-              {!selectedDirectTemplateId && (
+                          <span className={`text-[11.5px] font-medium truncate mt-1 block ${isSelected ? 'text-blue-100' : 'text-slate-600'}`}>
+                            {tpl.title}
+                          </span>
+
+                          {activeTemplateInfoId === tpl.id && (
+                            <div
+                              onClick={(e) => e.stopPropagation()}
+                              className="absolute left-0 top-full mt-2 z-40 w-64 p-3 bg-white text-slate-800 rounded-xl shadow-xl border border-blue-200 text-xs animate-in fade-in duration-150"
+                            >
+                              <div className="flex items-center justify-between pb-1.5 border-b border-slate-100 mb-1.5 font-bold text-slate-900">
+                                <span>{tpl.name} • {tpl.title}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveTemplateInfoId(null)}
+                                  className="text-slate-400 hover:text-slate-700 p-0.5 cursor-pointer"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+                              <p className="text-[11px] leading-relaxed text-slate-600">
+                                {tpl.summary}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-xl text-xs text-blue-900 shadow-2xs flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse flex-shrink-0" />
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-slate-900">Editing Draft Revision</span>
+                        <span className="font-mono bg-white px-2 py-0.5 rounded border border-blue-300 font-bold text-[#0057B8]">
+                          {editingPolicy.version || 'v1.1'}
+                        </span>
+                        <span className="text-slate-600 font-medium truncate max-w-sm">({editingPolicy.title})</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Direct editing mode: adjust policy title, statutory parameters, and modular clauses with formatting toolbar below.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[10.5px] font-bold text-emerald-800 bg-emerald-100/70 border border-emerald-300 px-2.5 py-0.5 rounded-full">
+                    Draft Ready
+                  </span>
+                </div>
+              )}
+
+              {/* Prompt if no template chosen yet and not editing */}
+              {!selectedDirectTemplateId && !editingPolicy && (
                 <div className="p-8 text-center bg-white rounded-2xl border border-dashed border-blue-200 text-slate-500 space-y-2">
                   <div className="w-10 h-10 rounded-full bg-blue-50 text-[#0057B8] flex items-center justify-center mx-auto">
                     <BookOpen className="w-5 h-5" />
@@ -1670,8 +2084,8 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                 </div>
               )}
 
-              {/* STEP 2: DOCUMENT CONFIGURATION & CLAUSES (REVEALED AFTER TEMPLATE SELECTION) */}
-              {selectedDirectTemplateId && (
+              {/* STEP 2: DOCUMENT CONFIGURATION & CLAUSES (REVEALED AFTER TEMPLATE SELECTION OR WHEN EDITING DRAFT) */}
+              {(selectedDirectTemplateId || editingPolicy) && (
                 <div className="space-y-4 pt-1 border-t border-blue-200/60 animate-in fade-in duration-150">
                   {/* If opened from specific department (+), target is ALREADY CHOSEN — do not ask again */}
                   {preselectedDepartmentId ? (
@@ -1794,9 +2208,9 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                             {/* Expand clause in big-screen separate popup */}
                             <button
                               type="button"
-                              onClick={() => setExpandedModalSectionId(section.id)}
+                              onClick={() => setExpandedModalSectionId(section.id || `sec-${idx}`)}
                               className="p-1.5 rounded-lg transition text-slate-400 hover:text-[#0057B8] hover:bg-blue-50 cursor-pointer"
-                              title="Expand clause in full-screen popup"
+                              title="Expand clause in full Word editor popup"
                             >
                               <Maximize2 className="w-3.5 h-3.5" />
                             </button>
@@ -1834,12 +2248,18 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                           </div>
                         </div>
 
+                        <SectionWordToolbar
+                          sectionId={section.id}
+                          content={section.content}
+                          sectionIndex={idx}
+                          onApplyFormat={handleApplyFormat}
+                        />
                         <textarea
                           rows={Math.max(3, Math.min(6, Math.ceil((section.content || '').length / 90)))}
                           value={section.content}
                           onChange={(e) => handleUpdateSectionContent(section.id, e.target.value)}
                           placeholder={`Enter ${section.title || 'section'} details, operational requirements, or rules...`}
-                          className="w-full p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8] text-xs leading-relaxed text-slate-800 bg-white placeholder-slate-400 shadow-2xs font-sans transition-all"
+                          className="w-full p-2.5 rounded-b-lg border border-slate-200 border-t-0 focus:outline-none focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8] text-xs leading-relaxed text-slate-800 bg-white placeholder-slate-400 shadow-2xs font-sans transition-all"
                         />
                       </div>
                     );
@@ -2157,24 +2577,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                       </span>
                     </div>
                     
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => handleAddSection('New Section')}
-                        className="px-3 py-1.5 bg-[#0057B8]/10 hover:bg-[#0057B8]/20 text-[#0057B8] font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1 shadow-2xs border border-[#0057B8]/30"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>+ Add Section</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleAddParagraph}
-                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1 border border-slate-300 shadow-2xs"
-                      >
-                        <AlignLeft className="w-3.5 h-3.5" />
-                        <span>+ Add Paragraph</span>
-                      </button>
-                    </div>
+
                   </div>
 
                   {/* Render Sections List */}
@@ -2231,33 +2634,24 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                             </button>
                           </div>
                         </div>
+                        <SectionWordToolbar
+                          sectionId={section.id}
+                          content={section.content}
+                          sectionIndex={idx}
+                          onApplyFormat={handleApplyFormat}
+                        />
                         <textarea
                           rows={Math.max(3, Math.min(8, Math.ceil((section.content || '').length / 90)))}
                           value={section.content}
                           onChange={(e) => handleUpdateSectionContent(section.id, e.target.value)}
                           placeholder="Section clauses and operational specifications..."
-                          className="w-full p-2.5 bg-white rounded-lg border border-slate-200 text-xs leading-relaxed text-slate-800 focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8] outline-none shadow-2xs font-sans"
+                          className="w-full p-2.5 bg-white rounded-b-lg border border-slate-200 border-t-0 text-xs leading-relaxed text-slate-800 focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8] outline-none shadow-2xs font-sans"
                         />
                       </div>
                     ))}
                   </div>
 
-                  {/* Quick Add Presets Bar */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11.5px] text-slate-500">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="font-semibold text-slate-600">Quick Add:</span>
-                      {['Summary', 'Details', 'Reports', 'Dependencies', 'Operational Events'].map(name => (
-                        <button
-                          key={name}
-                          type="button"
-                          onClick={() => handleAddSection(name)}
-                          className="px-2.5 py-1 bg-white hover:bg-blue-50 hover:text-[#0057B8] hover:border-[#0057B8] text-slate-600 border border-slate-300 rounded-lg text-[11px] font-semibold transition cursor-pointer shadow-2xs"
-                        >
-                          +{name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+
                 </div>
               </div>
             </div>
@@ -2779,6 +3173,8 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
               )}
             </div>
           )}
+            </>
+          )}
         </form>
 
         {/* Footer */}
@@ -2808,147 +3204,204 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
               disabled={isSubmitting || isAiThinking}
               className="px-5 py-2 text-[13px] font-semibold text-white bg-[#0057B8] hover:bg-[#004EA6] rounded-lg shadow-xs transition cursor-pointer"
             >
-              {isSubmitting 
-                ? (isBankOwner ? 'Publishing Policy...' : 'Submitting Proposal...') 
-                : creationMode === 'library'
-                  ? (isBankOwner ? 'Adopt & Publish Policy' : 'Submit Template Proposal')
-                  : (isBankOwner ? 'Publish Operational Policy' : 'Submit for Bank Administrator Approval')}
+              {isSubmitting ? 'Submitting...' : 'Submit for Approval'}
             </button>
           </div>
         </div>
       </div>
 
-      {/* SEPARATE BIG-SCREEN POPUP FOR CLAUSE EXPANSION (PAGE-BY-PAGE EXPERIENCE) */}
-      {expandedModalSectionId && (() => {
-        const currentSectionIndex = sections.findIndex(s => s.id === expandedModalSectionId);
-        const currentSection = sections[currentSectionIndex] || sections[0];
-        const totalSections = sections.length;
-        const hasPrev = currentSectionIndex > 0;
-        const hasNext = currentSectionIndex < totalSections - 1;
+      {/* FULL WORD DOCUMENT CLAUSE EXPANDED EDITOR (A4 WORD PAGE EXPERIENCE) */}
+      {expandedModalSectionId && typeof document !== 'undefined' && createPortal(
+        (() => {
+          const currentSectionIndex = Math.max(0, sections.findIndex((s, idx) => (s.id || `sec-${idx}`) === expandedModalSectionId));
+          const currentSection = sections[currentSectionIndex] || sections[0];
+          const totalSections = Math.max(1, sections.length);
+          const hasPrev = currentSectionIndex > 0;
+          const hasNext = currentSectionIndex < totalSections - 1;
 
-        if (!currentSection) return null;
+          if (!currentSection) return null;
 
-        return (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-3 sm:p-6 animate-in fade-in duration-150">
-            <div className="bg-white rounded-2xl shadow-2xl border border-blue-200 w-full max-w-4xl h-[86vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
-              {/* Header */}
-              <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-gradient-to-r from-blue-50/80 via-sky-50/40 to-white">
-                <div className="flex items-center gap-3 flex-1 min-w-0 pr-4">
-                  <span className="w-8 h-8 rounded-lg bg-[#0057B8] text-white font-mono font-bold text-sm flex items-center justify-center flex-shrink-0 shadow-xs">
-                    {currentSectionIndex + 1}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#0057B8] bg-blue-100/90 px-2 py-0.5 rounded-full inline-block">
-                        Page {currentSectionIndex + 1} of {totalSections}
-                      </span>
-                      <span className="text-[11px] text-slate-400 font-medium hidden sm:inline-block">
-                        Clause Full-Screen Editor
-                      </span>
-                    </div>
-                    <h3 className="font-bold text-[16px] text-slate-900 tracking-tight select-none truncate">
-                      {currentSection.title || (currentSection.type === 'paragraph' ? 'Paragraph' : `Section ${currentSectionIndex + 1}`)}
-                    </h3>
-                  </div>
+          const cleanWords = (currentSection.content || '').trim().split(/\s+/).filter(Boolean).length;
+          const charCount = (currentSection.content || '').length;
+
+          return (
+            <div className="fixed inset-0 z-[9999] flex flex-col bg-[#e8edf4] animate-in fade-in duration-150 select-text">
+            {/* Top Word Ribbon Title Bar */}
+            <div className="bg-[#0057B8] text-white px-5 py-2.5 flex items-center justify-between shadow-md flex-shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-white/15 border border-white/30 flex items-center justify-center font-bold text-white shadow-xs">
+                  <FileText className="w-4 h-4" />
                 </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-bold text-sm text-white truncate">
+                      LibList Word Document • Clause {currentSectionIndex + 1}
+                    </h2>
+                    <span className="text-[11px] font-mono bg-white/20 border border-white/30 px-2 py-0.5 rounded text-white font-semibold">
+                      Page {currentSectionIndex + 1} of {totalSections}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-blue-100 truncate">
+                    {title || 'Operational Policy Document'} (Draft Revision)
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-shrink-0">
                 <button
                   type="button"
                   onClick={() => setExpandedModalSectionId(null)}
-                  className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl cursor-pointer transition flex-shrink-0"
+                  className="px-4 py-1.5 bg-white hover:bg-blue-50 text-[#0057B8] font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+                  title="Save and return to policy draft view"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Done & Return to Policy</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExpandedModalSectionId(null)}
+                  className="p-1.5 text-white/80 hover:text-white hover:bg-white/15 rounded-lg cursor-pointer transition"
                   title="Close expanded editor"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
+            </div>
 
-              {/* Textarea Body */}
-              <div className="p-6 flex-1 flex flex-col bg-white overflow-hidden space-y-2">
-                <div className="flex items-center justify-between text-xs text-slate-500 font-medium pb-1">
-                  <span>Edit detailed operational clauses, specifications, thresholds, and regulatory logic:</span>
-                  <span className="font-mono text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
-                    {(currentSection.content || '').length} characters
+            {/* Word Action Formatting Toolbar (Spanning full width across the top) */}
+            <div className="bg-white border-b border-slate-300 px-4 sm:px-8 py-1.5 shadow-2xs flex-shrink-0 flex items-center justify-between">
+              <div className="w-full">
+                <SectionWordToolbar
+                  sectionId={currentSection.id}
+                  content={currentSection.content}
+                  sectionIndex={currentSectionIndex}
+                  onApplyFormat={handleApplyFormat}
+                />
+              </div>
+            </div>
+
+            {/* Word Document Canvas - Centered A4 Sheet of Paper */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-8 flex justify-center custom-scrollbar bg-[#e8edf4]">
+              <div className="w-full max-w-4xl bg-white rounded-sm shadow-2xl border border-slate-300 min-h-[850px] p-8 sm:p-14 flex flex-col space-y-4">
+                
+                {/* Word Page Running Header */}
+                <div className="flex items-center justify-between pb-3 border-b border-slate-200 text-[11px] text-slate-400 font-mono select-none">
+                  <span className="uppercase tracking-wider font-semibold text-slate-500">
+                    COMMONWEALTH BANK OF AUSTRALIA • INSTITUTIONAL GOVERNANCE STANDARD
                   </span>
+                  <span>CLAUSE PAGE {currentSectionIndex + 1} / {totalSections}</span>
                 </div>
+
+                {/* Section Clause Heading (Editable Large Word Title) */}
+                <div className="pt-2">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="w-6 h-6 rounded-md bg-[#0057B8] text-white font-mono font-bold text-xs flex items-center justify-center flex-shrink-0 shadow-2xs">
+                      {currentSectionIndex + 1}
+                    </span>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#0057B8] bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
+                      Clause Specification
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    value={currentSection.title}
+                    onChange={(e) => handleUpdateSectionTitle(currentSection.id, e.target.value)}
+                    placeholder="Enter Clause Title (e.g. Purpose & Product Scope)..."
+                    className="w-full text-xl sm:text-2xl font-bold text-slate-900 border-b border-transparent hover:border-slate-300 focus:border-[#0057B8] pb-1 outline-none transition font-sans placeholder-slate-300"
+                  />
+                </div>
+
+                {/* Word Page Canvas Textarea */}
                 <textarea
                   key={currentSection.id}
                   value={currentSection.content || ''}
                   onChange={(e) => handleUpdateSectionContent(currentSection.id, e.target.value)}
-                  placeholder="Enter complete clause specifications, operational steps, or regulatory requirements..."
-                  className="w-full flex-1 p-4 rounded-xl border-2 border-slate-200 focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/20 outline-none text-[13.5px] leading-relaxed text-slate-800 bg-[#fbfcfe] font-sans resize-none shadow-inner custom-scrollbar"
+                  placeholder="Type full operational clause specifications, underwriting parameters, statutory authorities, and APRA compliance rules here..."
+                  className="w-full flex-1 min-h-[600px] border-none outline-none focus:ring-0 text-[14.5px] leading-relaxed text-slate-800 font-sans resize-none placeholder-slate-300 bg-transparent custom-scrollbar"
                   autoFocus
                 />
+
+                {/* Word Page Running Footer */}
+                <div className="pt-4 border-t border-slate-200 flex items-center justify-between text-[11px] text-slate-400 font-mono select-none">
+                  <span>Confidential - Commonwealth Bank Internal Use Only • APRA CPS 234</span>
+                  <span>Page {currentSectionIndex + 1} of {totalSections}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Word Status Ribbon */}
+            <div className="bg-white border-t border-slate-300 px-6 py-2.5 flex items-center justify-between text-xs text-slate-600 flex-shrink-0 select-none shadow-xs">
+              <div className="flex items-center gap-3 font-mono text-[11.5px] text-slate-500">
+                <span className="font-semibold text-slate-700">
+                  Page {currentSectionIndex + 1} of {totalSections}
+                </span>
+                <span>•</span>
+                <span>{cleanWords} words</span>
+                <span>•</span>
+                <span>{charCount} characters</span>
+                <span>•</span>
+                <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                  <Check className="w-3 h-3 text-emerald-600" />
+                  Auto-Synchronized
+                </span>
               </div>
 
-              {/* Footer with Page Navigation: Previous Page, Next Page, and Done */}
-              <div className="px-6 py-3.5 border-t border-slate-200 bg-slate-50 flex items-center justify-between flex-wrap gap-2">
-                <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
-                  <span className="font-bold text-slate-700">Page {currentSectionIndex + 1} of {totalSections}</span>
-                  <span>•</span>
-                  <span className="hidden sm:inline">Changes synchronized automatically</span>
-                </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={!hasPrev}
+                  onClick={() => {
+                    if (hasPrev) {
+                      const prevSec = sections[currentSectionIndex - 1];
+                      setExpandedModalSectionId(prevSec.id || `sec-${currentSectionIndex - 1}`);
+                    }
+                  }}
+                  className={`px-3.5 py-1.5 text-xs font-semibold rounded-xl border flex items-center gap-1.5 transition ${
+                    hasPrev 
+                      ? 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300 cursor-pointer shadow-2xs' 
+                      : 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-50'
+                  }`}
+                  title="Previous Clause Page"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span>Previous Clause</span>
+                </button>
 
-                <div className="flex items-center gap-2">
-                  {/* Previous Page Button */}
-                  <button
-                    type="button"
-                    disabled={!hasPrev}
-                    onClick={() => {
-                      if (hasPrev) {
-                        setExpandedModalSectionId(sections[currentSectionIndex - 1].id);
-                      }
-                    }}
-                    className={`px-3.5 py-2 text-xs font-semibold rounded-xl border flex items-center gap-1.5 transition ${
-                      hasPrev 
-                        ? 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300 cursor-pointer shadow-2xs' 
-                        : 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-50'
-                    }`}
-                    title="Move to previous clause page"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                    <span>Previous Page</span>
-                  </button>
+                <button
+                  type="button"
+                  disabled={!hasNext}
+                  onClick={() => {
+                    if (hasNext) {
+                      const nextSec = sections[currentSectionIndex + 1];
+                      setExpandedModalSectionId(nextSec.id || `sec-${currentSectionIndex + 1}`);
+                    }
+                  }}
+                  className={`px-3.5 py-1.5 text-xs font-semibold rounded-xl border flex items-center gap-1.5 transition ${
+                    hasNext 
+                      ? 'bg-[#0057B8] hover:bg-[#004EA6] text-white border-[#0057B8] cursor-pointer shadow-xs' 
+                      : 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-50'
+                  }`}
+                  title="Next Clause Page"
+                >
+                  <span>Next Clause</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
 
-                  {/* Next Page Button */}
-                  {hasNext ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setExpandedModalSectionId(sections[currentSectionIndex + 1].id);
-                      }}
-                      className="px-4 py-2 bg-[#0057B8] hover:bg-[#004EA6] text-white font-bold rounded-xl text-xs shadow-xs transition cursor-pointer flex items-center gap-1.5 active:scale-95"
-                      title="Move to next clause page"
-                    >
-                      <span>Next Page</span>
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setExpandedModalSectionId(null)}
-                      className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-xs transition cursor-pointer flex items-center gap-1.5 active:scale-95"
-                      title="All pages complete - return to policy"
-                    >
-                      <Check className="w-4 h-4" />
-                      <span>Done & Return</span>
-                    </button>
-                  )}
-
-                  {/* Return anytime */}
-                  {hasNext && (
-                    <button
-                      type="button"
-                      onClick={() => setExpandedModalSectionId(null)}
-                      className="px-3.5 py-2 text-xs text-slate-600 hover:bg-slate-200/70 rounded-xl transition cursor-pointer"
-                    >
-                      Done & Return
-                    </button>
-                  )}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setExpandedModalSectionId(null)}
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-xs transition cursor-pointer flex items-center gap-1.5 ml-2"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Done & Return</span>
+                </button>
               </div>
             </div>
           </div>
         );
-      })()}
+      })(),
+      document.body
+    )}
 
       {/* CLOSE CONFIRMATION / SAVE TO DRAFT PROMPT */}
       {showCloseConfirm && (

@@ -8,17 +8,17 @@ import { usersApi } from '../../services/api/usersApi';
  * CreateTaskDialog – Task creation form.
  * IMPORTANT: This dialog must only be opened from the TaskContextMenu (right-click).
  */
-export default function CreateTaskDialog({ onClose, onTaskCreated }) {
+export default function CreateTaskDialog({ onClose, onTaskCreated, initialData = {} }) {
     const { user } = useAuth();
 
     const [form, setForm] = useState({
-        title: '',
-        description: '',
-        category: 'general',
-        assigned_to: '',
-        library_id: '',
-        section_id: '',
-        participants: [] // [{user_id, role}]
+        title: initialData.title || '',
+        description: initialData.description || '',
+        category: initialData.category || 'general',
+        assigned_to: initialData.assigned_to || '',
+        library_id: initialData.library_id || '',
+        section_id: initialData.section_id || '',
+        participants: initialData.participants || []
     });
 
     const [users, setUsers] = useState([]);
@@ -144,7 +144,7 @@ export default function CreateTaskDialog({ onClose, onTaskCreated }) {
                         </div>
                         <div>
                             <h2 className="text-sm font-bold text-slate-900">New Task</h2>
-                            <p className="text-[11px] text-slate-500">Create from Task Pane context menu</p>
+                            <p className="text-[11px] text-slate-500">{form.section_id ? `Linked: ${form.section_id}` : 'Create and assign task'}</p>
                         </div>
                     </div>
                     <button
@@ -172,6 +172,16 @@ export default function CreateTaskDialog({ onClose, onTaskCreated }) {
 
                 {/* Form */}
                 <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-5 space-y-5 text-xs">
+                    {(form.library_id || form.section_id) && (
+                        <div className="flex items-center gap-2 p-2.5 rounded-xl bg-blue-50/70 border border-blue-200 text-[#0057B8]">
+                            <div className="w-2 h-2 rounded-full bg-[#0057B8]" />
+                            <div className="text-[11px] min-w-0">
+                                <span className="font-bold">Linked Policy Context: </span>
+                                {form.library_id && <span className="font-mono bg-blue-100/90 text-[#0057B8] px-1.5 py-0.5 rounded text-[10px] mr-1.5">{form.library_id}</span>}
+                                {form.section_id && <span className="font-semibold text-slate-800">{form.section_id}</span>}
+                            </div>
+                        </div>
+                    )}
 
                     {/* Title */}
                     <div>

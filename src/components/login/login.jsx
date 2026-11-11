@@ -13,7 +13,9 @@ import {
     ShieldCheck,
     AlertCircle,
     X,
-    Sparkles
+    Sparkles,
+    Building2,
+    UserCheck
 } from 'lucide-react';
 import './login.css';
 
@@ -40,9 +42,21 @@ export default function Login() {
 
     const version = 'v0.0.1'
     const about = ['Multi-bank master policy', 'Real-time Maker-Checker auditing & change management'];
-    // Fill Super Admin credentials
+    // Auto-fill credential helpers for demo personas
     const handleFillSuperAdmin = () => {
         setEmail('settlo@gmail.com');
+        setPassword('123456');
+        setErrors({});
+    };
+
+    const handleFillApprover = () => {
+        setEmail('marcus.vance@cba.com.au');
+        setPassword('123456');
+        setErrors({});
+    };
+
+    const handleFillEmployee = () => {
+        setEmail('sarah.jenkins@cba.com.au');
         setPassword('123456');
         setErrors({});
     };
@@ -135,7 +149,7 @@ export default function Login() {
                         <ul className="why-features-list">
                             {
                                 about.map((val) => 
-                                    <li>
+                                    <li key={val}>
                                         <CheckCircle2 size={16} className="feature-check-icon" />
                                         <span>{val}</span>
                                     </li>
@@ -177,20 +191,50 @@ export default function Login() {
                                 </div>
                             )}
 
-                            <div
-                                className="quick-superadmin-card"
-                                onClick={handleFillSuperAdmin}
-                                title="Click to auto-fill Super Admin credentials"
-                            >
-                                <div className="quick-superadmin-left">
-                                    <div className="quick-icon-wrap">
-                                        <ShieldCheck size={16} />
-                                    </div>
-                                    <div>
-                                        <div className="quick-admin-label">
-                                            <strong>Default Super Admin</strong> 
+                            <div className="quick-roles-container">
+                                <div className="quick-roles-header">
+                                    <Sparkles size={13} className="quick-sparkle-icon" />
+                                    <span>Select Demo Persona to Log In:</span>
+                                </div>
+                                <div className="quick-roles-grid">
+                                    <button
+                                        type="button"
+                                        className={`quick-role-pill ${email === 'settlo@gmail.com' ? 'active' : ''}`}
+                                        onClick={handleFillSuperAdmin}
+                                        title="Super Admin - Full Access"
+                                    >
+                                        <ShieldCheck size={15} className="icon-admin" />
+                                        <div className="role-btn-texts">
+                                            <span className="role-name">Super Admin</span>
+                                            <span className="role-sub">settlo@gmail.com</span>
                                         </div>
-                                    </div>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        className={`quick-role-pill ${email === 'marcus.vance@cba.com.au' ? 'active' : ''}`}
+                                        onClick={handleFillApprover}
+                                        title="Bank Approver - Marcus Vance (Manager / Approver)"
+                                    >
+                                        <Building2 size={15} className="icon-owner" />
+                                        <div className="role-btn-texts">
+                                            <span className="role-name">Bank Approver</span>
+                                            <span className="role-sub">marcus.vance@...</span>
+                                        </div>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        className={`quick-role-pill ${email === 'sarah.jenkins@cba.com.au' ? 'active' : ''}`}
+                                        onClick={handleFillEmployee}
+                                        title="Bank Employee - Sarah Jenkins (Maker)"
+                                    >
+                                        <UserCheck size={15} className="icon-employee" />
+                                        <div className="role-btn-texts">
+                                            <span className="role-name">Bank Employee</span>
+                                            <span className="role-sub">sarah.jenkins@...</span>
+                                        </div>
+                                    </button>
                                 </div>
                             </div>
 

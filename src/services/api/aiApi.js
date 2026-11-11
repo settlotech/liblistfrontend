@@ -2,25 +2,10 @@ import { API_BASE, apiFetch } from './baseApi';
 
 export const aiApi = {
   async ingestDocuments(payload) {
-    let headers = {};
-    let body = payload;
-
-    if (!(payload instanceof FormData)) {
-      headers['Content-Type'] = 'application/json';
-      body = JSON.stringify(payload);
-    }
-
-    const res = await fetch(`${API_BASE}/ai/ingest-documents`, {
+    return await apiFetch('/ai/ingest-documents', {
       method: 'POST',
-      headers,
-      body
+      body: payload
     });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Upload failed' }));
-      throw new Error(err.error || 'Failed to ingest documents');
-    }
-    return await res.json();
   },
 
   async queryRag(question, departmentId = 'all') {

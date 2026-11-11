@@ -8,6 +8,7 @@ import Setting from './components/setting/Setting';
 import Resetpassword from './components/common/restpassword/resetpassword';
 import Signup from './components/signup/signup';
 import Dashboard from './components/dashboard/dashboard';
+import DocumentManagementView from './components/documents/DocumentManagementView';
 import './App.css';
 import Task from './components/demotask/task';
 
@@ -76,7 +77,11 @@ function App() {
             {/* Protected Australian Banking Hub & Modules (Common to all users) */}
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/home" element={<ProtectedRoute><Home initialView="policy" /></ProtectedRoute>} />
-            <Route path="/documents" element={<ProtectedRoute><Home initialView="policy" /></ProtectedRoute>} />
+            {/* Document Management System (DMS) & Notes */}
+            <Route path="/notes" element={<ProtectedRoute><DocumentManagementView /></ProtectedRoute>} />
+            <Route path="/notes/:id" element={<ProtectedRoute><DocumentManagementView /></ProtectedRoute>} />
+            <Route path="/documents" element={<ProtectedRoute><DocumentManagementView /></ProtectedRoute>} />
+            <Route path="/documents/:id" element={<ProtectedRoute><DocumentManagementView /></ProtectedRoute>} />
             <Route path="/demotask" element={<ProtectedRoute><Task /></ProtectedRoute>} />
             <Route path="/changelogs" element={<ProtectedRoute><Home initialView="change_management" /></ProtectedRoute>} />
             <Route path="/tasks" element={<ProtectedRoute><Home initialView="tasks" /></ProtectedRoute>} />

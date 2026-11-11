@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
     X, User, Calendar, FileText, Tag, MessageSquare,
-    RefreshCw, Loader2, ChevronDown, ChevronUp
+    RefreshCw, Loader2, ChevronDown, ChevronUp,
+    ExternalLink, Compass
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { taskApi } from '../../services/api/taskApi';
@@ -29,6 +31,14 @@ export default function TaskDetailsPane({ task: initialTask, onClose, onTaskUpda
     const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
     const [activeTab, setActiveTab] = useState('details'); // 'details' | 'activity'
     const [error, setError] = useState(null);
+
+    const navigate = useNavigate();
+
+    const handleNavigateToPolicy = () => {
+        const policyId = task?.library_id || 'credit-card-limits-policy';
+        const sectionParam = task?.section_id ? `&section=${encodeURIComponent(task.section_id)}` : '';
+        navigate(`/dashboard?policy=${encodeURIComponent(policyId)}&edit=true${sectionParam}`);
+    };
 
     const isCreator = user?.id === task?.created_by;
     const isAssignee = user?.id === task?.assigned_to;
@@ -167,6 +177,33 @@ export default function TaskDetailsPane({ task: initialTask, onClose, onTaskUpda
             <div className="flex-1 overflow-y-auto">
                 {activeTab === 'details' ? (
                     <div className="p-5 space-y-5">
+                        {/* Navigate to Location & Edit Section */}
+                        <section className="bg-gradient-to-r from-blue-50/90 via-sky-50/50 to-white p-3.5 rounded-2xl border-2 border-[#0057B8]/25 shadow-2xs space-y-2.5">
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="text-[11px] font-bold uppercase tracking-wider text-[#0057B8] flex items-center gap-1.5">
+                                    <Compass className="w-3.5 h-3.5 text-[#0057B8]" />
+                                    <span>Policy Section Location</span>
+                                </span>
+                                {task?.section_id ? (
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#0057B8] text-white max-w-[170px] truncate" title={task.section_id}>
+                                        § {task.section_id}
+                                    </span>
+                                ) : (
+                                    <span className="text-[10px] font-semibold text-slate-500">
+                                        General Policy
+                                    </span>
+                                )}
+                            </div>
+                            <button
+                                type="button"
+                                onClick={handleNavigateToPolicy}
+                                className="w-full py-2.5 px-4 bg-[#0057B8] hover:bg-[#004EA6] text-white rounded-xl text-xs font-bold shadow-xs hover:shadow transition flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+                            >
+                                <ExternalLink className="w-3.5 h-3.5 text-blue-200" />
+                                <span>Navigate to Location & Edit</span>
+                            </button>
+                        </section>
+
                         {/* Status */}
                         <section>
                             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Status</p>
