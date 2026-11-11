@@ -17,7 +17,9 @@ export default function DocumentHeader({
     onOpenVersionHistory,
     onOpenCompare,
     onOpenRestore,
-    onOpenCommit
+    onOpenCommit,
+    availableDocuments = [],
+    onSelectDocument = null
 }) {
     if (!document) return null;
 
@@ -53,9 +55,33 @@ export default function DocumentHeader({
                         <FileText size={22} />
                     </span>
                     <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                             <h1 className="dms-doc-title">{document.document_name}</h1>
                             <span className="dms-version-badge">{versionNum}</span>
+                            {availableDocuments && availableDocuments.length > 0 && onSelectDocument && (
+                                <select
+                                    value={document.id}
+                                    onChange={(e) => onSelectDocument(e.target.value)}
+                                    style={{
+                                        padding: '4px 8px',
+                                        fontSize: '11.5px',
+                                        fontWeight: '600',
+                                        borderRadius: '6px',
+                                        border: '1px solid #cbd5e1',
+                                        background: '#ffffff',
+                                        color: '#0f172a',
+                                        maxWidth: '240px',
+                                        cursor: 'pointer'
+                                    }}
+                                    title="Switch policy / draft"
+                                >
+                                    {availableDocuments.map(d => (
+                                        <option key={d.id} value={d.id}>
+                                            {d.status === 'draft' ? '[Draft] ' : ''}{d.title} (v{d.version || '1.0'})
+                                        </option>
+                                    ))}
+                                </select>
+                            )}
                         </div>
                         <div className="dms-meta-line" style={{ marginTop: '2px' }}>
                             Last updated: {updatedDate} 

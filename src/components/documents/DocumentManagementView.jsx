@@ -14,6 +14,7 @@ import ActivityLogView from './ActivityLogView';
 import ReferencesView from './ReferencesView';
 import ErrorBoundary from '../common/ErrorBoundary';
 import { documentManagementApi } from '../../services/api/documentManagementApi';
+import { apiService } from '../../services/apiService';
 import './documents.css';
 
 export default function DocumentManagementView() {
@@ -28,6 +29,7 @@ export default function DocumentManagementView() {
     const [annotations, setAnnotations] = useState([]);
     const [currentVersion, setCurrentVersion] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [availableDraftsAndPolicies, setAvailableDraftsAndPolicies] = useState([]);
 
     // View & layout state
     const [activeTab, setActiveTab] = useState('document'); // 'document' | 'version_history' | 'activity_log' | 'references'
@@ -83,6 +85,87 @@ export default function DocumentManagementView() {
                 if (foundDocs.length > 0) {
                     liveDoc = foundDocs[0];
                     setSearchParams({ docId: liveDoc.id });
+                } else {
+                    // Bridge with PostgreSQL Bank Policies & Saved Drafts for Notes
+                    const [allPol, mcData] = await Promise.all([
+                        apiService.getPolicies('all').catch(() => []),
+                        apiService.getMakerCheckerItems().catch(() => ({ drafts: [] }))
+                    ]);
+                    const drafts = mcData?.drafts || [];
+                    const policies = Array.isArray(allPol) ? allPol : [];
+                    const combined = [
+                        ...drafts,
+                        ...policies.filter(p => !drafts.some(d => String(d.id) === String(p.id)))
+                    ];
+                    setAvailableDraftsAndPolicies(combined);
+
+                    if (combined.length > 0) {
+                        const target = targetDocId
+                            ? combined.find(p => String(p.id) === String(targetDocId)) || combined[0]
+                            : combined[0];
+
+                        const rawSec = target.parameters?.sections || [];
+                        const parsedSec = Array.isArray(rawSec) 
+                            ? rawSec 
+                            : (typeof rawSec === 'string' ? JSON.parse(rawSec) : []);
+
+                        liveDoc = {
+                            id: target.id,
+                            document_name: target.title,
+                            title: target.title,
+                            summary: target.summary,
+                            status: target.status || 'draft',
+                            version: target.version || '1.0',
+                            department_name: target.department_name || target.department_id || 'Retail Lending',
+                            created_by: target.created_by || 'Staff User',
+                            updated_at: target.updated_at || new Date().toISOString(),
+                            is_draft: target.status === 'draft'
+                        };
+
+                        setLibrary({
+                            id: target.department_id || 'retail-lending',
+                            library_name: target.department_name || 'Retail Banking Standards'
+                        });
+
+                        if (parsedSec.length > 0) {
+                            setSections(parsedSec.map((s, idx) => ({
+                                id: s.id || `sec-${idx}`,
+                                section_number: idx + 1,
+                                title: s.title || `Clause ${idx + 1}`,
+                                content: s.content || ''
+                            })));
+                        } else {
+                            setSections([
+                                {
+                                    id: 'sec-1',
+                                    section_number: 1,
+                                    title: '1. Policy Clauses & Specifications',
+                                    content: target.content || 'Operational policy clauses and specifications authored in system.'
+                                }
+                            ]);
+                        }
+
+                        // Load comments as notes
+                        try {
+                            const comms = await apiService.getPolicyComments(target.id);
+                            const list = Array.isArray(comms) ? comms : (comms?.comments || []);
+                            setAnnotations(list.map(c => ({
+                                id: c.id,
+                                category: 'NOTE',
+                                comment: c.comment || c.text || '',
+                                author: c.author_name || c.user_name || 'Staff User',
+                                created_at: c.created_at
+                            })));
+                        } catch (_) {
+                            setAnnotations([]);
+                        }
+
+                        setCurrentVersion({
+                            id: `v-${target.version || '1.0'}`,
+                            version_number: target.version || '1.0',
+                            commit_message: `Draft v${target.version || '1.0'} initialized`
+                        });
+                    }
                 }
             }
 
@@ -374,6 +457,11 @@ export default function DocumentManagementView() {
                 onOpenCompare={() => setActiveTab('version_history')}
                 onOpenRestore={() => setActiveTab('version_history')}
                 onOpenCommit={handleCommitChanges}
+                availableDocuments={availableDraftsAndPolicies}
+                onSelectDocument={(id) => {
+                    setSearchParams({ docId: id });
+                    loadDocumentData(id);
+                }}
             />
 
             {/* TAB 1: Main WYSIWYG Document Editor View */}

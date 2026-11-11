@@ -412,68 +412,6 @@ export default function DraftCommentsFeed({
   return (
     <div className="flex flex-col h-full bg-[#f8fafc] relative select-none">
       
-      {/* TOP CARD: The Opened Policy or Draft Card */}
-      <div className="p-3 bg-white border-b border-slate-200 shadow-2xs space-y-2">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse"></span>
-              <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${
-                isDraft 
-                  ? 'text-amber-800 bg-amber-50 border-amber-300' 
-                  : 'text-blue-700 bg-blue-50 border-blue-200'
-              }`}>
-                {isDraft ? 'Draft Revision' : 'Master Policy'} • {openedDocument.version || 'v1.0'}
-              </span>
-              <span className="text-[10px] font-mono text-slate-400">
-                {new Date().toLocaleDateString()}
-              </span>
-            </div>
-            <h3 className="font-bold text-slate-900 text-xs mt-1 truncate">
-              {openedDocument.title || 'Operational Document'}
-            </h3>
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              Authored by <strong className="text-slate-700">{openedDocument.created_by || 'Marcus Vance'}</strong>
-            </p>
-          </div>
-
-          {/* Direct Open in Full Editor Button if it's a draft */}
-          {isDraft && onOpenDraft && (
-            <button
-              type="button"
-              onClick={() => onOpenDraft(openedDocument)}
-              className="px-2.5 py-1.5 bg-[#0057B8] hover:bg-[#004EA6] text-white rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1 flex-shrink-0 shadow-primary-sm active:scale-95"
-              title="Open this draft in Full Editor with all modular options"
-            >
-              <FileEdit className="w-3.5 h-3.5" />
-              <span>Open in Editor</span>
-            </button>
-          )}
-        </div>
-
-        {/* Shared with team members */}
-        <div className="p-2 bg-slate-50 rounded-lg border border-slate-200/80 flex items-center justify-between text-[11px]">
-          <div className="flex items-center gap-1.5">
-            <span className="font-bold text-slate-700">Access:</span>
-            <div className="flex -space-x-1 overflow-hidden">
-              {squadUsers.slice(0, 3).map(u => (
-                <span 
-                  key={u.id} 
-                  className={`w-4 h-4 rounded-full ${u.color || 'bg-blue-600'} text-white text-[8px] font-bold flex items-center justify-center border border-white`}
-                  title={u.name}
-                >
-                  {u.avatar}
-                </span>
-              ))}
-            </div>
-            <span className="text-slate-500 text-[10.5px]">All squad members have access</span>
-          </div>
-          <span className="text-[10px] font-bold text-blue-700 bg-blue-100/70 px-1.5 py-0.2 rounded">
-            Full Access
-          </span>
-        </div>
-      </div>
-
       {/* COMMENTS STREAM */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
         {comments.length === 0 ? (
