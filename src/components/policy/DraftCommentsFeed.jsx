@@ -71,67 +71,93 @@ export default function DraftCommentsFeed({
       .catch(err => console.warn('Squad users notice:', err));
   }, []);
 
-  // Load comments for currently opened document
+  // Load comments for currently opened document from PostgreSQL DB
   useEffect(() => {
     if (!docKey) {
       setComments([]);
       return;
     }
 
+    let isMounted = true;
     const storageKey = `liblist_doc_comments_${docKey}`;
-    const stored = localStorage.getItem(storageKey);
-    if (stored) {
-      try {
-        setComments(JSON.parse(stored));
-        return;
-      } catch (_) {}
-    }
 
-    // Default Seed Comments for this opened policy / draft
-    const defaultComments = [
-      {
-        id: `c-seed-1`,
-        author: openedDocument?.created_by || 'Marcus Vance',
-        authorRole: 'Bank Administrator',
-        avatar: (openedDocument?.created_by || 'Marcus').slice(0, 2).toUpperCase(),
-        avatarColor: 'bg-indigo-600',
-        text: `${openedDocument?.status === 'draft' ? 'Draft revision' : 'Master policy'} ${openedDocument?.version || 'v1.0'} opened for review. Please check the statutory thresholds, SLA turnaround, and delegated officer caps.`,
-        time: '1h ago',
-        likes: 3,
-        likedByMe: false,
-        isTask: false,
-        replies: []
-      },
-      {
-        id: `c-seed-2`,
-        author: 'Sarah Jenkins',
-        authorRole: 'Senior Credit Risk Officer',
-        avatar: 'SJ',
-        avatarColor: 'bg-emerald-600',
-        text: '@David Miller verify Clause 2 underwriting limits and ensure 4-hour SLA aligns with APRA CPS 234.',
-        time: '25m ago',
-        likes: 2,
-        likedByMe: true,
-        isTask: true,
-        taskAssignee: 'David Miller',
-        taskStatus: 'in_progress',
-        replies: [
+    // 1. Fetch persistent comments from PostgreSQL backend DB
+    apiService.getPolicyComments(docKey)
+      .then(remoteComments => {
+        if (!isMounted) return;
+        if (Array.isArray(remoteComments) && remoteComments.length > 0) {
+          setComments(remoteComments);
+          try { localStorage.setItem(storageKey, JSON.stringify(remoteComments)); } catch (_) {}
+          return;
+        }
+
+        // Check local cache if DB had no comments yet
+        const stored = localStorage.getItem(storageKey);
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setComments(parsed);
+              return;
+            }
+          } catch (_) {}
+        }
+
+        // Initialize default seed comments
+        const defaultComments = [
           {
-            id: `rep-seed-1`,
-            author: 'David Miller',
-            authorRole: 'Credit Underwriter',
-            avatar: 'DM',
-            avatarColor: 'bg-blue-600',
-            text: '@Sarah Jenkins Underwriting limits and 4-hour buffer verified.',
-            time: '15m ago',
-            likes: 1
+            id: `c-seed-1`,
+            author: openedDocument?.created_by || 'Marcus Vance',
+            authorRole: 'Bank Administrator',
+            avatar: (openedDocument?.created_by || 'Marcus').slice(0, 2).toUpperCase(),
+            avatarColor: 'bg-indigo-600',
+            text: `${openedDocument?.status === 'draft' ? 'Draft revision' : 'Master policy'} ${openedDocument?.version || 'v1.0'} opened for review. Please check the statutory thresholds, SLA turnaround, and delegated officer caps.`,
+            time: '1h ago',
+            likes: 3,
+            likedByMe: false,
+            isTask: false,
+            replies: []
+          },
+          {
+            id: `c-seed-2`,
+            author: 'Sarah Jenkins',
+            authorRole: 'Senior Credit Risk Officer',
+            avatar: 'SJ',
+            avatarColor: 'bg-emerald-600',
+            text: '@David Miller verify Clause 2 underwriting limits and ensure 4-hour SLA aligns with APRA CPS 234.',
+            time: '25m ago',
+            likes: 2,
+            likedByMe: true,
+            isTask: true,
+            taskAssignee: 'David Miller',
+            taskStatus: 'in_progress',
+            replies: [
+              {
+                id: `rep-seed-1`,
+                author: 'David Miller',
+                authorRole: 'Credit Underwriter',
+                avatar: 'DM',
+                avatarColor: 'bg-blue-600',
+                text: '@Sarah Jenkins Underwriting limits and 4-hour buffer verified.',
+                time: '15m ago',
+                likes: 1
+              }
+            ]
           }
-        ]
-      }
-    ];
+        ];
+        setComments(defaultComments);
+        try { localStorage.setItem(storageKey, JSON.stringify(defaultComments)); } catch (_) {}
+      })
+      .catch(err => {
+        if (!isMounted) return;
+        console.warn('Could not load comments from DB:', err);
+        const stored = localStorage.getItem(storageKey);
+        if (stored) {
+          try { setComments(JSON.parse(stored)); } catch (_) {}
+        }
+      });
 
-    setComments(defaultComments);
-    localStorage.setItem(storageKey, JSON.stringify(defaultComments));
+    return () => { isMounted = false; };
   }, [docKey, openedDocument]);
 
   // Persist comments when updated
@@ -181,7 +207,7 @@ export default function DraftCommentsFeed({
     inputRef.current?.focus();
   };
 
-  // Toggle Like (Instagram Heart)
+  // Toggle Like (Instagram Heart) with DB persistence
   const handleToggleLike = (commentId) => {
     const updated = comments.map(c => {
       if (c.id === commentId) {
@@ -195,9 +221,12 @@ export default function DraftCommentsFeed({
       return c;
     });
     updateCommentsState(updated);
+    if (docKey) {
+      apiService.toggleCommentLike(docKey, commentId).catch(() => {});
+    }
   };
 
-  // Update Task Status with backend sync and cross-module broadcast
+  // Update Task Status with backend sync, DB persistence, and cross-module broadcast
   const handleUpdateTaskStatus = async (commentId, nextStatus) => {
     const comment = comments.find(c => c.id === commentId);
     const updated = comments.map(c => {
@@ -207,6 +236,10 @@ export default function DraftCommentsFeed({
       return c;
     });
     updateCommentsState(updated);
+
+    if (docKey) {
+      apiService.updateCommentTaskStatus(docKey, commentId, nextStatus).catch(() => {});
+    }
 
     if (comment?.taskId) {
       const statusForBackend = (nextStatus === 'completed' || nextStatus === 'resolved') ? 'completed' : nextStatus;
@@ -225,7 +258,7 @@ export default function DraftCommentsFeed({
     }
   };
 
-  // Post a new comment or reply with real Task Creation in Task Management
+  // Post a new comment or reply with real Task Creation in Task Management and DB persistence
   const handlePostComment = async () => {
     const text = inputText.trim();
     if (!text) return;
@@ -255,7 +288,7 @@ export default function DraftCommentsFeed({
           title: taskTitle,
           description: text,
           category: 'general',
-          assigned_to: targetAssigneeId,
+          assigned_to: targetAssigneeId || targetAssigneeName,
           library_id: originPolicyId,
           section_id: openedDocument?.version ? `Draft v${openedDocument.version}` : null
         });
@@ -326,6 +359,10 @@ export default function DraftCommentsFeed({
 
       updateCommentsState(updated);
       setReplyingTo(null);
+
+      if (docKey) {
+        apiService.postCommentReply(docKey, replyingTo.id, replyObj).catch(() => {});
+      }
     } else {
       const newComment = {
         id: `c-${Date.now()}`,
@@ -348,6 +385,20 @@ export default function DraftCommentsFeed({
       };
 
       updateCommentsState([...comments, newComment]);
+
+      if (docKey) {
+        apiService.postPolicyComment(docKey, {
+          text: newComment.text,
+          author: newComment.author,
+          authorRole: newComment.authorRole,
+          avatar: newComment.avatar,
+          avatarColor: newComment.avatarColor,
+          isTask: newComment.isTask,
+          targetAssigneeId: newComment.taskAssigneeId,
+          targetAssigneeName: newComment.taskAssignee,
+          section_id: openedDocument?.version ? `Draft v${openedDocument.version}` : null
+        }).catch(() => {});
+      }
     }
 
     setInputText('');

@@ -52,6 +52,23 @@ export function ChangeManagementCenterPane({
   const [expandedDraftId, setExpandedDraftId] = useState(null);
   const [draftScope, setDraftScope] = useState('all'); // 'all' | 'my'
   const [expandedVersionDraftId, setExpandedVersionDraftId] = useState(null);
+  const [draftVersionsCache, setDraftVersionsCache] = useState({});
+
+  const handleToggleVersionHistory = async (draftId) => {
+    if (expandedVersionDraftId === draftId) {
+      setExpandedVersionDraftId(null);
+      return;
+    }
+    setExpandedVersionDraftId(draftId);
+    if (!draftVersionsCache[draftId]) {
+      try {
+        const res = await apiService.getPolicyVersions(draftId);
+        if (Array.isArray(res) && res.length > 0) {
+          setDraftVersionsCache(prev => ({ ...prev, [draftId]: res }));
+        }
+      } catch (_) {}
+    }
+  };
   const [selectedReviewItemId, setSelectedReviewItemId] = useState(focusedItemId || null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -526,7 +543,7 @@ export function ChangeManagementCenterPane({
                             {/* 2.5. Version History & Commit Snapshots */}
                             <button
                               type="button"
-                              onClick={() => setExpandedVersionDraftId(expandedVersionDraftId === draft.id ? null : draft.id)}
+                              onClick={() => handleToggleVersionHistory(draft.id)}
                               className={`px-2.5 py-1.5 rounded-lg border text-[11px] font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs ${
                                 expandedVersionDraftId === draft.id
                                   ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
@@ -592,7 +609,7 @@ export function ChangeManagementCenterPane({
                               </button>
                             </div>
                             <div className="space-y-1.5">
-                              {(params.versions && params.versions.length > 0 ? params.versions : [
+                              {(draftVersionsCache[draft.id] || (params.versions && params.versions.length > 0 ? params.versions : null) || [
                                 {
                                   version: draft.version || 'v1.0',
                                   version_author: draft.created_by || 'Current User',
@@ -624,13 +641,15 @@ export function ChangeManagementCenterPane({
                                           ...draft,
                                           title: ver.title || draft.title,
                                           summary: ver.summary || draft.summary,
-                                          version: ver.version,
+                                          version: ver.version || ver.version_number,
+                                          content: ver.content || draft.content,
                                           parameters: {
                                             ...params,
-                                            version: ver.version,
+                                            version: ver.version || ver.version_number,
                                             sections: ver.sections || params.sections || []
                                           }
                                         });
+                                        apiService.restorePolicyVersion(draft.id, ver.id || ver.version, currentUser?.name).catch(() => {});
                                       }}
                                       className="px-2.5 py-1 bg-white hover:bg-blue-50 text-[#0057B8] border border-blue-300 rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-2xs cursor-pointer flex-shrink-0"
                                       title="Restore and edit this specific version"

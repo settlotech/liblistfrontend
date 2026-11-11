@@ -533,9 +533,16 @@ export default function AddPolicyModal({
 
       const newVersionSnapshot = {
         version: nextVer,
-        timestamp: new Date().toISOString(),
+        version_author: currentUser?.name || 'Marcus Vance',
         author: currentUser?.name || 'Marcus Vance',
-        summary: `Saved draft update with ${sections.length} clauses (${turnaroundSla} SLA, ${dailyLimit} Daily Limit)`
+        title: draftTitle,
+        summary: summary.trim() || draftTitle,
+        content: finalContent,
+        sections: sections.map(s => ({ ...s })),
+        turnaround_sla: turnaroundSla,
+        daily_limit: dailyLimit,
+        timestamp: new Date().toISOString(),
+        notes: `Draft revision saved with ${sections.length} clauses (${turnaroundSla} SLA, ${dailyLimit} Daily Limit)`
       };
 
       const payload = {

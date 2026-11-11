@@ -107,7 +107,7 @@ export default function TaskCard({ task, onClick, onPin, onUnpin, isSelected }) 
             <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">
                 <span className="flex items-center gap-1 font-medium">
                     <User className="w-3 h-3 text-[#0057B8]" />
-                    {task.assigned_to_name || 'Unassigned'}
+                    {task.assigned_to_name || task.assigned_to || 'Unassigned'}
                 </span>
                 <span className="flex items-center gap-1">
                     <Calendar className="w-3 h-3 text-slate-400" />

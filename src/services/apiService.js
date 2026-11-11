@@ -39,6 +39,17 @@ export const apiService = {
   addPolicyArtifact: policyApi.addPolicyArtifact,
   getPolicyArtifacts: policyApi.getPolicyArtifacts,
 
+  // Version Control & Snapshots
+  getPolicyVersions: policyApi.getPolicyVersions,
+  restorePolicyVersion: policyApi.restorePolicyVersion,
+
+  // Document Comments (DB Persistent)
+  getPolicyComments: policyApi.getPolicyComments,
+  postPolicyComment: policyApi.postPolicyComment,
+  toggleCommentLike: policyApi.toggleCommentLike,
+  updateCommentTaskStatus: policyApi.updateCommentTaskStatus,
+  postCommentReply: policyApi.postCommentReply,
+
   // 3. Maker-Checker Governance & Approvals
   getMakerCheckerItems: makerCheckerApi.getMakerCheckerItems,
   createMakerCheckerItem: makerCheckerApi.createMakerCheckerItem,

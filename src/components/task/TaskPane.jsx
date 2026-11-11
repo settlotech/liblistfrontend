@@ -165,6 +165,15 @@ export default function TaskPane() {
         return filteredTasks.filter(t => t.is_pinned || t.display_category === 'pinned');
     }, [filteredTasks]);
 
+        const assignedTasks = useMemo(() => {
+        const myName = (user?.name || '').toLowerCase();
+        const myId = (user?.id || '').toLowerCase();
+        return filteredTasks.filter(t => {
+            const an = (t.assigned_to_name || t.assigned_to || '').toLowerCase();
+            return (myName && an.includes(myName)) || (myId && an.includes(myId));
+        });
+    }, [filteredTasks, user]);
+
     const generalTasks = useMemo(() => {
         return filteredTasks.filter(t => t.category === 'general' && !t.is_pinned && t.display_category !== 'pinned');
     }, [filteredTasks]);
@@ -222,6 +231,17 @@ export default function TaskPane() {
                 <div className="px-6 py-2.5 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
                     {/* Category tabs */}
                     <div className="flex items-center gap-1.5 overflow-x-auto">
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('assigned')}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                                activeTab === 'assigned'
+                                    ? 'bg-[#0057B8] text-white shadow-xs'
+                                    : 'text-slate-600 hover:bg-slate-100'
+                            }`}
+                        >
+                            Assigned to Me ({assignedTasks.length})
+                        </button>
                         <button
                             type="button"
                             onClick={() => setActiveTab('all')}
@@ -337,6 +357,20 @@ export default function TaskPane() {
                                     onPin={handlePin}
                                     onUnpin={handleUnpin}
                                     emptyMessage="No common tasks shared across workspace"
+                                />
+                            )}
+
+                            {/* Assigned to Me Category */}
+                            {activeTab === 'assigned' && (
+                                <TaskList
+                                    title="Tasks Assigned Directly to You"
+                                    tasks={assignedTasks}
+                                    isLoading={isLoading}
+                                    selectedTaskId={selectedTask?.id}
+                                    onTaskClick={(t) => setSelectedTask(t)}
+                                    onPin={handlePin}
+                                    onUnpin={handleUnpin}
+                                    emptyMessage="No tasks currently assigned to your profile"
                                 />
                             )}
 
