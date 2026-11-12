@@ -1865,7 +1865,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
             }`}
           >
             <Bot className="w-4 h-4 text-[#0057B8]" />
-            <span>3. Document Upload (AI)</span>
+            <span>3. Document Upload</span>
           </button>
         </div>
         )}

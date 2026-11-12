@@ -49,7 +49,7 @@ export default function ContextualFeedPane({
         <div className="h-11 px-3.5 border-b border-[#dbe4ef] bg-white flex items-center justify-between">
           <div className="flex items-center gap-2 font-bold text-slate-800 text-[13px]">
             <MessageSquare className="w-4 h-4 text-[#0057B8]" />
-            <span className="truncate">Chats & Shidney AI</span>
+            <span className="truncate">Chats & Shidney</span>
           </div>
           {onCloseMobile && (
             <button 
@@ -71,10 +71,10 @@ export default function ContextualFeedPane({
                 ? 'bg-[#0057B8] text-white shadow-sm font-semibold'
                 : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
             }`}
-            title="Interactive Shidney Banking AI Copilot"
+            title="Interactive Shidney Copilot"
           >
             <Bot className="w-3.5 h-3.5 flex-shrink-0" />
-            <span className="truncate">Shidney AI</span>
+            <span className="truncate">Shidney</span>
           </button>
 
           <button
