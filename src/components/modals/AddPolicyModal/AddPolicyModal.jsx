@@ -65,6 +65,8 @@ export default function AddPolicyModal({
   const [officerCap, setOfficerCap] = useState('$100,000 AUD');
   const [uploadedFileName, setUploadedFileName] = useState('');
   const [uploadedPdfPreviewUrl, setUploadedPdfPreviewUrl] = useState(null);
+  const [uploadedDocRawText, setUploadedDocRawText] = useState('');
+  const [leftPaneViewMode, setLeftPaneViewMode] = useState('preview');
   const [isTemplateEditorActive, setIsTemplateEditorActive] = useState(false);
   const [selectedUploadTemplateId, setSelectedUploadTemplateId] = useState('template-01-pdf');
   const [complianceTags, setComplianceTags] = useState([]);
@@ -1184,6 +1186,12 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
         const previewUrl = URL.createObjectURL(files[0]);
         setUploadedPdfPreviewUrl(previewUrl);
       } catch (_) {}
+      try {
+        if (files[0].type.includes('text') || files[0].name.endsWith('.txt')) {
+          const txt = await files[0].text();
+          setUploadedDocRawText(txt);
+        }
+      } catch (_) {}
     }
     setAiStep(`1/3: Reading ${files.length} document(s) & preparing ingestion stream...`);
 
@@ -1193,6 +1201,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
       // Pass role info so backend sets correct status (draft for employee, active for manager/admin)
       formData.append('user_role', currentUser?.roleType || 'employee');
       formData.append('user_name', currentUser?.name || 'Staff User');
+      formData.append('template_id', selectedUploadTemplateId || '');
 
       for (const file of files) {
         formData.append('files', file);
@@ -1924,7 +1933,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                           type="button"
                           onClick={() => setExpandedModalSectionId(section.id || `sec-${idx}`)}
                           className="p-1.5 rounded-lg transition text-slate-400 hover:text-[#0057B8] hover:bg-blue-50 cursor-pointer"
-                          title="Expand clause in full Word editor popup"
+                          title="Expand clause in editor popup"
                         >
                           <Maximize2 className="w-3.5 h-3.5" />
                         </button>
@@ -2179,7 +2188,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                   <div>
                     <h3 className="font-bold text-slate-900 text-[13.5px] flex items-center gap-2">
                       <Layers className="w-4 h-4 text-[#0057B8]" />
-                      <span>POLICY CLAUSES & SPECIFICATIONS ({sections.length}) (compare against left pane) Word-style Clause Formatter Enabled</span>
+                      <span>POLICY CLAUSES & SPECIFICATIONS ({sections.length}) (compare against left pane) Clause Formatter Enabled</span>
                     </h3>
                     <p className="text-[11.5px] text-slate-500">
                       Edit clause specifications, reorder above or below, delete, or add standalone paragraphs.
@@ -2237,7 +2246,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                               type="button"
                               onClick={() => setExpandedModalSectionId(section.id || `sec-${idx}`)}
                               className="p-1.5 rounded-lg transition text-slate-400 hover:text-[#0057B8] hover:bg-blue-50 cursor-pointer"
-                              title="Expand clause in full Word editor popup"
+                              title="Expand clause in editor popup"
                             >
                               <Maximize2 className="w-3.5 h-3.5" />
                             </button>
@@ -2635,18 +2644,24 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                   </div>
                   <div>
                     <h3 className="text-base font-bold text-slate-900">
-                      Upload Single or Multiple Documents (PDF, Word, TXT)
+                      Upload Single or Multiple Documents
                     </h3>
                     <p className="text-xs text-slate-500 max-w-md mx-auto mt-1 leading-relaxed">
                       Select one or multiple policy files. Document Parsing Engine segments each document into <strong>Summary</strong>, <strong>Scope</strong>, <strong>Principles</strong>, <strong>Methods</strong>, <strong>Dependencies</strong>, and <strong>Operational Events</strong>.
                     </p>
                   </div>
 
-                  {/* Template Selection from DB before uploading */}
-                  <div className="bg-white p-3.5 rounded-xl border border-blue-200/90 text-left max-w-lg mx-auto shadow-2xs space-y-1.5">
-                    <label className="block text-[11px] font-bold text-[#0057B8] uppercase tracking-wider">
-                      Select Target Policy Template (from DB):
-                    </label>
+                  {/* Step 1: Select Target Policy Template from DB */}
+                  <div className="bg-white p-4 rounded-xl border border-blue-200/90 text-left max-w-lg mx-auto shadow-2xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-[11px] font-bold text-[#0057B8] uppercase tracking-wider flex items-center gap-1.5">
+                        <BookOpen className="w-3.5 h-3.5" />
+                        <span>Step 1: Select Target Policy Template (from DB):</span>
+                      </label>
+                      <span className="text-[10px] font-bold bg-blue-100 text-[#0057B8] px-2 py-0.5 rounded-full">
+                        Required
+                      </span>
+                    </div>
                     <select
                       value={selectedUploadTemplateId}
                       onChange={(e) => {
@@ -2654,7 +2669,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                         const tpl = masterTemplates.find(t => t.id === e.target.value);
                         if (tpl) handleSelectTemplate(tpl);
                       }}
-                      className="w-full p-2 rounded-lg border border-slate-300 text-xs font-semibold bg-slate-50 text-slate-800 outline-none focus:border-[#0057B8]"
+                      className="w-full p-2.5 rounded-lg border border-slate-300 text-xs font-semibold bg-slate-50 text-slate-800 outline-none focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8]"
                     >
                       {masterTemplates.map(t => (
                         <option key={t.id} value={t.id}>
@@ -2662,9 +2677,24 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                         </option>
                       ))}
                     </select>
+                    {(() => {
+                      const curTpl = masterTemplates.find(t => t.id === selectedUploadTemplateId);
+                      if (curTpl) {
+                        return (
+                          <p className="text-[11px] text-slate-500 italic">
+                            Template partition: <strong className="text-slate-700">{curTpl.deptName || curTpl.dept}</strong> — includes institutional standard clauses.
+                          </p>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
 
-                  <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
+                  {/* Step 2: Upload Documents */}
+                  <div className="pt-2 flex flex-col items-center justify-center gap-2.5">
+                    <div className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                      Step 2: Choose Documents to Ingest
+                    </div>
                     <input
                       type="file"
                       multiple
@@ -2675,13 +2705,11 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                     />
                     <label
                       htmlFor="doc-upload-input"
-                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#0057B8] hover:bg-[#004EA6] text-white rounded-xl font-bold text-xs cursor-pointer shadow-xs transition active:scale-95"
+                      className="inline-flex items-center gap-2 px-6 py-3 bg-[#0057B8] hover:bg-[#004EA6] text-white rounded-xl font-bold text-xs cursor-pointer shadow-md transition active:scale-95"
                     >
                       <Upload className="w-4 h-4" />
                       <span>Choose Files to Ingest (Supports Multiple)</span>
                     </label>
-
-
                   </div>
 
                   <div className="pt-2 flex items-center justify-center gap-2 text-[11px] text-slate-400">
@@ -2699,7 +2727,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                           {ingestedDocuments.length} Document(s) Ingested & Formatted into Governance Modules
                         </span>
                         <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-200">
-                          Groq AI • Isolated Partitions
+                          Isolated Partitions • Automated Extraction
                         </span>
                       </div>
 
@@ -2748,391 +2776,439 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                     </div>
                   </div>
 
-                  {/* Active Document Analysis: Side-by-Side Split Screen (Image 3 Comparison) */}
+                  {/* Active Document Analysis: Side-by-Side Split Screen */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-                    {/* LEFT PANE: Uploaded Document / PDF Viewer */}
-                    <div className="flex flex-col bg-slate-900 rounded-2xl overflow-hidden border border-slate-300 min-h-[550px] max-h-[78vh] sticky top-0 shadow-md">
+                    {/* LEFT PANE: Uploaded Document Viewer */}
+                    <div className="flex flex-col bg-slate-900 rounded-2xl overflow-hidden border border-slate-300 h-[76vh] sticky top-0 shadow-md">
                       <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between text-xs font-semibold flex-shrink-0 border-b border-slate-700">
                         <div className="flex items-center gap-2 truncate">
                           <FileText className="w-4 h-4 text-blue-400 flex-shrink-0" />
-                          <span className="truncate max-w-[220px]">
-                            {ingestedDocuments[activeIngestedIndex]?.document_name || uploadedFileName || 'Original Document Preview'}
+                          <span className="truncate max-w-[200px]" title={ingestedDocuments[activeIngestedIndex]?.document_name || uploadedFileName}>
+                            {ingestedDocuments[activeIngestedIndex]?.document_name || uploadedFileName || 'Original Document'}
                           </span>
                         </div>
-                        <span className="text-[10px] text-blue-200 font-mono bg-blue-900/60 border border-blue-700 px-2.5 py-0.5 rounded-full font-bold">
-                          Source Document View
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center bg-slate-900/80 rounded-lg p-0.5 border border-slate-700 text-[10.5px]">
+                            <button
+                              type="button"
+                              onClick={() => setLeftPaneViewMode('preview')}
+                              className={`px-2.5 py-0.5 rounded cursor-pointer transition ${leftPaneViewMode === 'preview' ? 'bg-[#0057B8] text-white font-bold' : 'text-slate-400 hover:text-white'}`}
+                            >
+                              Document View
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setLeftPaneViewMode('source_text')}
+                              className={`px-2.5 py-0.5 rounded cursor-pointer transition ${leftPaneViewMode === 'source_text' ? 'bg-[#0057B8] text-white font-bold' : 'text-slate-400 hover:text-white'}`}
+                            >
+                              Source Text
+                            </button>
+                          </div>
+                          <span className="text-[10px] text-blue-200 font-mono bg-blue-900/60 border border-blue-700 px-2.5 py-0.5 rounded-full font-bold hidden sm:inline">
+                            Uploaded Document
+                          </span>
+                        </div>
                       </div>
 
-                      {uploadedPdfPreviewUrl ? (
+                      {leftPaneViewMode === 'preview' && uploadedPdfPreviewUrl ? (
                         <iframe
                           src={uploadedPdfPreviewUrl}
-                          className="w-full flex-1 border-0 bg-white min-h-[520px]"
+                          className="w-full flex-1 border-0 bg-white"
                           title="Uploaded Document Preview"
                         />
                       ) : (
-                        <div className="w-full flex-1 overflow-y-auto p-6 bg-[#f8fafc] font-sans text-slate-800 text-xs leading-relaxed custom-scrollbar">
-                          <div className="border border-slate-200 p-6 shadow-sm rounded-xl bg-white min-h-full space-y-4">
-                            <div className="border-b border-slate-200 pb-3">
-                              <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                                {departmentId || 'Credit Cards'} • Standard Document
-                              </span>
-                              <h2 className="text-base font-bold text-slate-900 mt-2">
-                                {title || ingestedDocuments[activeIngestedIndex]?.title || 'Policy Document'}
-                              </h2>
-                              <p className="text-xs text-slate-500 mt-1 italic">
-                                {summary || 'Policy template defines the standard structure for operational governance.'}
-                              </p>
+                        <div className="w-full flex-1 overflow-y-auto p-5 bg-[#f8fafc] font-sans text-slate-800 text-xs leading-relaxed custom-scrollbar">
+                          <div className="border border-slate-200 p-5 shadow-xs rounded-xl bg-white space-y-4">
+                            <div className="border-b border-slate-200 pb-3 flex items-start justify-between gap-2">
+                              <div>
+                                <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                                  {departments.find(d => d.id === departmentId)?.name || 'Credit Cards'} • Uploaded Source
+                                </span>
+                                <h2 className="text-base font-bold text-slate-900 mt-2">
+                                  {ingestedDocuments[activeIngestedIndex]?.document_name || uploadedFileName || title || 'Uploaded Document'}
+                                </h2>
+                                <p className="text-xs text-slate-500 mt-1 italic">
+                                  {summary || 'Source text and institutional clauses extracted from the uploaded document.'}
+                                </p>
+                              </div>
                             </div>
 
-                            <div className="space-y-4 pt-1">
-                              {sections.map((sec, sIdx) => (
-                                <div key={sec.id || sIdx} className="space-y-1.5 border-b border-slate-100 pb-3 last:border-0">
-                                  <div className="flex items-center gap-2">
-                                    <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-800 font-bold text-[10px] flex items-center justify-center">
-                                      {sIdx + 1}
-                                    </span>
-                                    <h3 className="font-bold text-xs text-slate-900">{sec.title}</h3>
+                            {uploadedDocRawText ? (
+                              <div className="p-3.5 bg-slate-50 rounded-lg border border-slate-200 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap text-slate-700">
+                                {uploadedDocRawText}
+                              </div>
+                            ) : (
+                              <div className="space-y-3 pt-1">
+                                {sections.map((sec, sIdx) => (
+                                  <div key={sec.id || sIdx} className="space-y-1.5 border-b border-slate-100 pb-3 last:border-0">
+                                    <div className="flex items-center gap-2">
+                                      <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-800 font-bold text-[10px] flex items-center justify-center">
+                                        {sIdx + 1}
+                                      </span>
+                                      <h3 className="font-bold text-xs text-slate-900">{sec.title}</h3>
+                                    </div>
+                                    <div className="text-[11.5px] text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-100 whitespace-pre-wrap font-sans leading-relaxed">
+                                      {sec.content}
+                                    </div>
                                   </div>
-                                  <div className="text-[11.5px] text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-100 whitespace-pre-wrap font-sans leading-relaxed">
-                                    {sec.content}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
                       )}
                     </div>
 
-                    {/* RIGHT PANE: Extracted Specifications, SlAs & Formatter */}
-                    <div className="space-y-4 border border-slate-200 rounded-2xl p-4 bg-white shadow-2xs max-h-[78vh] overflow-y-auto custom-scrollbar">
-                    
-                    {/* Header Summary */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-slate-900">
-                            {ingestedDocuments[activeIngestedIndex]?.document_name}
-                          </span>
-                          <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-200">
-                            Analysis & Evidence Verified
-                          </span>
-                        </div>
-                        <p className="text-[11.5px] text-slate-500">
-                          Document parsed successfully ({ingestedDocuments[activeIngestedIndex]?.total_chars || 5571} characters). Below is how each rule and limit was discovered from the text.
-                        </p>
-                      </div>
-
-                      {/* Toggle Evidence Button */}
-                      <button
-                        type="button"
-                        onClick={() => setShowEvidence(!showEvidence)}
-                        className="px-3 py-1.5 rounded-xl border border-blue-200 bg-blue-50/70 hover:bg-blue-100/60 text-[#0057B8] text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                      >
-                        <Search className="w-3.5 h-3.5" />
-                        <span>{showEvidence ? 'Hide Source Evidence' : 'Show Source Evidence'}</span>
-                      </button>
-                    </div>
-
-                    {/* AI DISCOVERY & SOURCE EVIDENCE (HOW IT WAS FOUND OUT) */}
-                    {showEvidence && (
-                      <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                            How This Information Was Found (Document Evidence & Citations)
-                          </span>
-                          <span className="text-[11px] text-slate-500 font-medium">
-                            Extracted directly by LibList AI Engine
-                          </span>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                          {(() => {
-                            const defaultValuationEvidence = [
-                              {
-                                topic: 'Policy Title',
-                                finding: title || 'Home Loan Valuations Policy',
-                                source_excerpt: 'Page 1, Document Title: "Home Loan Valuations"'
-                              },
-                              {
-                                topic: 'Target Department Partition',
-                                finding: departments.find(d => d.id === departmentId)?.name || 'Retail Lending (Home Loans & Mortgages)',
-                                source_excerpt: 'Section 2.1 Scope: "All residential home loan applications, new property purchases, refinancing transactions, construction and renovation loans."'
-                              },
-
-                              {
-                                topic: 'Approved Valuation Methods',
-                                finding: '4 Approved Methods: Full, Desktop, AVM, Drive-thru/Kerbside',
-                                source_excerpt: 'Section 4.1: "Full internal and external inspection mandatory when LVR exceeds approved thresholds."'
-                              },
-                              {
-                                topic: 'Policy Dependencies',
-                                finding: 'Panel Valuers Accreditation & Valuation Report SOP',
-                                source_excerpt: 'Section 4.6: "Panel Valuers - Accreditation, Performance monitoring & Termination; Operating Procedure for Filling a Valuation Report."'
-                              },
-                              {
-                                topic: 'Operational Events & Lifecycle Triggers',
-                                finding: '7 Core Lifecycle Events Identified (Origination, Valuer Assignment, Inspection, Decisioning, Dispute Escalation, Expiry, Audit)',
-                                source_excerpt: 'Workflow events mapped from origination triggers, Section 4.3 validity SLA thresholds, and APRA CPS 234 audit requirements.'
-                              }
-                            ];
-
-                            const rawEv = ingestedDocuments[activeIngestedIndex]?.discovered_evidence || [];
-                            const cleanEv = rawEv.filter(e => 
-                              !isBinaryJunk(e.topic) &&
-                              !isBinaryJunk(e.finding) &&
-                              !isBinaryJunk(e.source_excerpt)
-                            );
-
-                            const displayList = cleanEv.length > 0 ? cleanEv : defaultValuationEvidence;
-
-                            return displayList.map((item, eIdx) => (
-                              <div key={eIdx} className="p-3 bg-white border border-blue-100 rounded-xl space-y-1.5 shadow-2xs hover:border-[#0057B8]/40 transition">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[10px] font-bold text-[#0057B8] uppercase tracking-wider bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
-                                    {item.topic}
-                                  </span>
-                                  <span className="text-[11.5px] font-bold text-slate-900">
-                                    {item.finding}
-                                  </span>
-                                </div>
-                                <p className="text-[11px] text-slate-600 bg-slate-50/90 p-2 rounded-lg border border-slate-100 leading-relaxed font-sans">
-                                  <strong className="text-slate-500 font-semibold">Source Excerpt: </strong>
-                                  <span className="italic">"{item.source_excerpt}"</span>
-                                </p>
-                              </div>
-                            ));
-                          })()}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Policy Specifications & Governance Framework */}
-                    <div className="p-3.5 bg-blue-50/40 border border-blue-100/80 rounded-xl space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
-                          <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                          Policy Specifications & Governance Framework
-                        </span>
-                      </div>
-
-                      {/* Target Department Partition */}
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
-                            Department Partition
-                          </label>
-                          <span className="text-[10px] font-semibold text-blue-700 bg-blue-100 px-1.5 py-0.2 rounded">
-                            Auto-assigned: {departments.find(d => d.id === departmentId)?.name || 'Retail Lending'}
-                          </span>
-                        </div>
-                        <select
-                          value={departmentId}
-                          onChange={(e) => setDepartmentId(e.target.value)}
-                          className="w-full p-2 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-[12.5px] bg-white font-medium text-slate-900 shadow-2xs"
-                        >
-                          {departments.map(d => (
-                            <option key={d.id} value={d.id}>{d.name}</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {/* Policy Title */}
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                          Policy Title
-                        </label>
-                        <input
-                          type="text"
-                          value={title}
-                          onChange={(e) => setTitle(e.target.value)}
-                          placeholder="Authoritative Policy Title"
-                          className="w-full p-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-[13px] font-semibold text-slate-900 bg-white shadow-2xs"
-                        />
-                      </div>
-
-                      {/* Executive Summary & Purpose (Segregated Prominently) */}
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                          Executive Summary & Statutory Scope
-                        </label>
-                        <textarea
-                          rows={3}
-                          value={summary}
-                          onChange={(e) => setSummary(e.target.value)}
-                          placeholder="Comprehensive executive summary, statutory purpose, and regulatory scope of this policy..."
-                          className="w-full p-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-xs text-slate-800 bg-white shadow-2xs font-sans leading-relaxed"
-                        />
-                      </div>
-
-
-
-                      {/* Identified Compliance Tags & Citations */}
-                      <div className="pt-1">
-                        <label className="block text-[10.5px] font-bold text-slate-600 uppercase mb-1.5 flex items-center gap-1">
-                          <Tag className="w-3 h-3 text-slate-500" />
-                          <span>Identified Compliance Rules & Regulatory Tags ({complianceTags.length})</span>
-                        </label>
-                        
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          {complianceTags.map((tag, tIdx) => (
-                            <span 
-                              key={tIdx}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-blue-200 text-blue-800 text-[11px] font-medium rounded-lg shadow-2xs"
-                            >
-                              <span>{tag}</span>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveComplianceTag(tag)}
-                                className="text-blue-400 hover:text-rose-600 cursor-pointer ml-0.5"
-                                title="Remove tag"
-                              >
-                                &times;
-                              </button>
+                    {/* RIGHT PANE: Structured Policy Editor & Modular Clauses */}
+                    <div className="space-y-4 border border-slate-200 rounded-2xl p-4 bg-white shadow-2xs h-[76vh] overflow-y-auto custom-scrollbar">
+                      {/* Header Summary */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-slate-900">
+                              {ingestedDocuments[activeIngestedIndex]?.document_name}
                             </span>
-                          ))}
+                            <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-200">
+                              Analysis & Evidence Verified
+                            </span>
+                          </div>
+                          <p className="text-[11.5px] text-slate-500">
+                            Document parsed into governance modules ({ingestedDocuments[activeIngestedIndex]?.total_chars || 5571} chars). Edit specifications and clauses directly below.
+                          </p>
+                        </div>
 
-                          <div className="inline-flex items-center gap-1">
-                            <input
-                              type="text"
-                              value={newTagInput}
-                              onChange={(e) => setNewTagInput(e.target.value)}
-                              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddComplianceTag(); } }}
-                              placeholder="+ Add rule/tag"
-                              className="px-2 py-0.5 text-[11px] border border-slate-300 rounded-lg bg-white outline-none focus:border-blue-500 w-28"
-                            />
-                            {newTagInput && (
-                              <button
-                                type="button"
-                                onClick={handleAddComplianceTag}
-                                className="text-[11px] font-bold text-blue-700 hover:underline cursor-pointer px-1"
+                        {/* Toggle Evidence Button */}
+                        <button
+                          type="button"
+                          onClick={() => setShowEvidence(!showEvidence)}
+                          className="px-3 py-1.5 rounded-xl border border-blue-200 bg-blue-50/70 hover:bg-blue-100/60 text-[#0057B8] text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                        >
+                          <Search className="w-3.5 h-3.5" />
+                          <span>{showEvidence ? 'Hide Source Evidence' : 'Show Source Evidence'}</span>
+                        </button>
+                      </div>
+
+                      {/* AI DISCOVERY & SOURCE EVIDENCE */}
+                      {showEvidence && (
+                        <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                              How This Information Was Found (Document Evidence & Citations)
+                            </span>
+                            <span className="text-[11px] text-slate-500 font-medium">
+                              Extracted directly by LibList Policy Engine
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                            {(() => {
+                              const defaultValuationEvidence = [
+                                {
+                                  topic: 'Policy Title',
+                                  finding: title || 'Home Loan Valuations Policy',
+                                  source_excerpt: 'Page 1, Document Title: "Home Loan Valuations"'
+                                },
+                                {
+                                  topic: 'Target Department Partition',
+                                  finding: departments.find(d => d.id === departmentId)?.name || 'Retail Lending (Home Loans & Mortgages)',
+                                  source_excerpt: 'Section 2.1 Scope: "All residential home loan applications, new property purchases, refinancing transactions, construction and renovation loans."'
+                                },
+                                {
+                                  topic: 'Approved Valuation Methods',
+                                  finding: '4 Approved Methods: Full, Desktop, AVM, Drive-thru/Kerbside',
+                                  source_excerpt: 'Section 4.1: "Full internal and external inspection mandatory when LVR exceeds approved thresholds."'
+                                },
+                                {
+                                  topic: 'Policy Dependencies',
+                                  finding: 'Panel Valuers Accreditation & Valuation Report SOP',
+                                  source_excerpt: 'Section 4.6: "Panel Valuers - Accreditation, Performance monitoring & Termination; Operating Procedure for Filling a Valuation Report."'
+                                },
+                                {
+                                  topic: 'Operational Events & Lifecycle Triggers',
+                                  finding: '7 Core Lifecycle Events Identified (Origination, Valuer Assignment, Inspection, Decisioning, Dispute Escalation, Expiry, Audit)',
+                                  source_excerpt: 'Workflow events mapped from origination triggers, Section 4.3 validity SLA thresholds, and APRA CPS 234 audit requirements.'
+                                }
+                              ];
+
+                              const rawEv = ingestedDocuments[activeIngestedIndex]?.discovered_evidence || [];
+                              const cleanEv = rawEv.filter(e => 
+                                !isBinaryJunk(e.topic) &&
+                                !isBinaryJunk(e.finding) &&
+                                !isBinaryJunk(e.source_excerpt)
+                              );
+
+                              const displayList = cleanEv.length > 0 ? cleanEv : defaultValuationEvidence;
+
+                              return displayList.map((item, eIdx) => (
+                                <div key={eIdx} className="p-3 bg-white border border-blue-100 rounded-xl space-y-1.5 shadow-2xs hover:border-[#0057B8]/40 transition">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-bold text-[#0057B8] uppercase tracking-wider bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
+                                      {item.topic}
+                                    </span>
+                                    <span className="text-[11.5px] font-bold text-slate-900">
+                                      {item.finding}
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-slate-600 bg-slate-50/90 p-2 rounded-lg border border-slate-100 leading-relaxed font-sans">
+                                    <strong className="text-slate-500 font-semibold">Source Excerpt: </strong>
+                                    <span className="italic">"{item.source_excerpt}"</span>
+                                  </p>
+                                </div>
+                              ));
+                            })()}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Policy Specifications & Governance Framework */}
+                      <div className="p-3.5 bg-blue-50/40 border border-blue-100/80 rounded-xl space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
+                            <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                            Policy Specifications & Governance Framework
+                          </span>
+                        </div>
+
+                        {/* Target Department Partition */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                              Department Partition
+                            </label>
+                            <span className="text-[10px] font-semibold text-blue-700 bg-blue-100 px-1.5 py-0.2 rounded">
+                              Auto-assigned: {departments.find(d => d.id === departmentId)?.name || 'Retail Lending'}
+                            </span>
+                          </div>
+                          <select
+                            value={departmentId}
+                            onChange={(e) => setDepartmentId(e.target.value)}
+                            className="w-full p-2 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-[12.5px] bg-white font-medium text-slate-900 shadow-2xs"
+                          >
+                            {departments.map(d => (
+                              <option key={d.id} value={d.id}>{d.name}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Policy Title */}
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                            Policy Title
+                          </label>
+                          <input
+                            type="text"
+                            value={title}
+                            onChange={(e) => setTitle(e.target.value)}
+                            placeholder="Authoritative Policy Title"
+                            className="w-full p-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-[13px] font-semibold text-slate-900 bg-white shadow-2xs"
+                          />
+                        </div>
+
+                        {/* Executive Summary & Purpose */}
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                            Executive Summary & Statutory Scope
+                          </label>
+                          <textarea
+                            rows={3}
+                            value={summary}
+                            onChange={(e) => setSummary(e.target.value)}
+                            placeholder="Comprehensive executive summary, statutory purpose, and regulatory scope of this policy..."
+                            className="w-full p-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-xs text-slate-800 bg-white shadow-2xs font-sans leading-relaxed"
+                          />
+                        </div>
+
+                        {/* Identified Compliance Tags & Citations */}
+                        <div className="pt-1">
+                          <label className="block text-[10.5px] font-bold text-slate-600 uppercase mb-1.5 flex items-center gap-1">
+                            <Tag className="w-3 h-3 text-slate-500" />
+                            <span>Identified Compliance Rules & Regulatory Tags ({complianceTags.length})</span>
+                          </label>
+                          
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {complianceTags.map((tag, tIdx) => (
+                              <span 
+                                key={tIdx}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-blue-200 text-blue-800 text-[11px] font-medium rounded-lg shadow-2xs"
                               >
-                                Add
-                              </button>
-                            )}
+                                <span>{tag}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveComplianceTag(tag)}
+                                  className="text-blue-400 hover:text-rose-600 cursor-pointer ml-0.5"
+                                  title="Remove tag"
+                                >
+                                  &times;
+                                </button>
+                              </span>
+                            ))}
+
+                            <div className="inline-flex items-center gap-1">
+                              <input
+                                type="text"
+                                value={newTagInput}
+                                onChange={(e) => setNewTagInput(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddComplianceTag(); } }}
+                                placeholder="+ Add rule/tag"
+                                className="px-2 py-0.5 text-[11px] border border-slate-300 rounded-lg bg-white outline-none focus:border-blue-500 w-28"
+                              />
+                              {newTagInput && (
+                                <button
+                                  type="button"
+                                  onClick={handleAddComplianceTag}
+                                  className="text-[11px] font-bold text-blue-700 hover:underline cursor-pointer px-1"
+                                >
+                                  Add
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
 
-                    {/* Extracted Policy Sections (Image 1 Builder Style) */}
-                    <div className="space-y-3 pt-2">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                          <span className="text-xs font-bold text-slate-900 uppercase tracking-wider block">
-                            Policy Sections & Modular Clauses ({sections.length})
-                          </span>
-                          <span className="text-[11px] text-slate-500">
-                            Authoritative operational clauses and specifications extracted directly from document text.
-                          </span>
+                      {/* Policy Sections & Clauses List (THE COMPLETE EDITOR WITH TOOLBAR & EXPAND) */}
+                      <div className="space-y-3 pt-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <span className="text-xs font-bold text-slate-900 uppercase tracking-wider block">
+                              Policy Sections & Modular Clauses ({sections.length})
+                            </span>
+                            <span className="text-[11px] text-slate-500">
+                              Authoritative operational clauses and specifications extracted directly from document text.
+                            </span>
+                          </div>
+                          
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleAddSection('New Section')}
+                              className="px-3 py-1.5 bg-[#0057B8]/10 hover:bg-[#0057B8]/20 text-[#0057B8] font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1 shadow-2xs border border-[#0057B8]/30"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>+ Add Section</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleAddParagraph}
+                              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1 border border-slate-300 shadow-2xs"
+                            >
+                              <AlignLeft className="w-3.5 h-3.5" />
+                              <span>+ Add Paragraph</span>
+                            </button>
+                          </div>
                         </div>
-                        
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => handleAddSection('New Section')}
-                            className="px-3 py-1.5 bg-[#0057B8]/10 hover:bg-[#0057B8]/20 text-[#0057B8] font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1 shadow-2xs border border-[#0057B8]/30"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            <span>+ Add Section</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleAddParagraph}
-                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1 border border-slate-300 shadow-2xs"
-                          >
-                            <AlignLeft className="w-3.5 h-3.5" />
-                            <span>+ Add Paragraph</span>
-                          </button>
-                        </div>
-                      </div>
 
-                      {/* Sections List */}
-                      <div className="space-y-3">
-                        {sections.map((section, idx) => (
-                          <div
-                            key={section.id || idx}
-                            className="p-3.5 bg-slate-50/80 border border-slate-200 rounded-xl space-y-2.5 hover:border-[#0057B8]/40 transition shadow-2xs"
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2 flex-1 min-w-0">
-                                <span className="px-2 py-0.5 rounded-md bg-[#0057B8] text-white font-mono font-bold text-[10px]">
-                                  Clause {idx + 1}
-                                </span>
-                                <input
-                                  type="text"
-                                  value={section.title}
-                                  onChange={(e) => handleUpdateSectionTitle(section.id, e.target.value)}
-                                  placeholder="Section Title"
-                                  className="font-bold text-xs text-slate-900 bg-white border border-slate-300 focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8] px-2 py-1 rounded-md outline-none transition flex-1 shadow-2xs"
-                                />
-                                {section.type === 'paragraph' && (
-                                  <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded uppercase flex-shrink-0">
-                                    Paragraph
+                        {/* Sections List */}
+                        <div className="space-y-3">
+                          {sections.map((section, idx) => (
+                            <div
+                              key={section.id || idx}
+                              className="p-3.5 bg-white border border-slate-200/90 rounded-xl space-y-2 hover:border-[#0057B8]/40 transition shadow-2xs"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                  <span className="w-6 h-6 rounded-md bg-[#0057B8] text-white text-[11px] font-bold flex items-center justify-center flex-shrink-0 font-mono shadow-2xs">
+                                    {idx + 1}
                                   </span>
-                                )}
+                                  <input
+                                    type="text"
+                                    value={section.title}
+                                    onChange={(e) => handleUpdateSectionTitle(section.id, e.target.value)}
+                                    placeholder="Section Title"
+                                    className="font-bold text-xs text-slate-900 bg-white border border-slate-200 focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8] px-2.5 py-1 rounded-md outline-none transition flex-1 shadow-2xs"
+                                  />
+                                  {section.type === 'paragraph' && (
+                                    <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded uppercase flex-shrink-0">
+                                      Paragraph
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-1 flex-shrink-0">
+                                  {/* Expand Button for full editor canvas */}
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpandedModalSectionId(section.id || `sec-${idx}`)}
+                                    className="p-1.5 text-slate-400 hover:text-[#0057B8] hover:bg-blue-50 rounded-lg cursor-pointer transition"
+                                    title="Expand clause into editor canvas"
+                                  >
+                                    <Maximize2 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMoveSectionUp(idx)}
+                                    disabled={idx === 0}
+                                    className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-20 rounded cursor-pointer"
+                                    title="Move Up"
+                                  >
+                                    <ArrowUp className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMoveSectionDown(idx)}
+                                    disabled={idx === sections.length - 1}
+                                    className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-20 rounded cursor-pointer"
+                                    title="Move Down"
+                                  >
+                                    <ArrowDown className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteSection(section.id)}
+                                    className="p-1 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
+                                    title="Delete Section"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               </div>
 
-                              <div className="flex items-center gap-1 flex-shrink-0">
-                                <button
-                                  type="button"
-                                  onClick={() => handleMoveSectionUp(idx)}
-                                  disabled={idx === 0}
-                                  className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-20 rounded cursor-pointer"
-                                  title="Move Up"
-                                >
-                                  <ArrowUp className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleMoveSectionDown(idx)}
-                                  disabled={idx === sections.length - 1}
-                                  className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-20 rounded cursor-pointer"
-                                  title="Move Down"
-                                >
-                                  <ArrowDown className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteSection(section.id)}
-                                  className="p-1 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
-                                  title="Delete Section"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                              {/* Action Toolbar */}
+                              <SectionWordToolbar
+                                sectionId={section.id}
+                                content={section.content}
+                                sectionIndex={idx}
+                                onApplyFormat={handleApplyFormat}
+                              />
+
+                              {/* Textarea */}
+                              <textarea
+                                rows={Math.max(3, Math.min(8, Math.ceil((section.content || '').length / 90)))}
+                                value={section.content}
+                                onChange={(e) => handleUpdateSectionContent(section.id, e.target.value)}
+                                placeholder="Section clauses and operational specifications..."
+                                className="w-full p-2.5 bg-white rounded-b-lg border border-slate-200 border-t-0 text-xs leading-relaxed text-slate-800 focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8] outline-none shadow-2xs font-sans"
+                              />
+
+                              {/* Word & character counts */}
+                              <div className="flex items-center justify-between text-[10px] text-slate-400 px-1 pt-0.5">
+                                <span>Clause {idx + 1}</span>
+                                <span>{(section.content || '').trim().split(/\s+/).filter(Boolean).length} words • {(section.content || '').length} chars</span>
                               </div>
                             </div>
-
-                            <textarea
-                              rows={Math.max(3, Math.min(8, Math.ceil((section.content || '').length / 90)))}
-                              value={section.content}
-                              onChange={(e) => handleUpdateSectionContent(section.id, e.target.value)}
-                              placeholder="Section clauses and operational specifications..."
-                              className="w-full p-2.5 bg-white rounded-lg border border-slate-200 text-xs leading-relaxed text-slate-800 focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8] outline-none shadow-2xs font-sans"
-                            />
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Quick Add Presets Bar */}
-                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11.5px] text-slate-500">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="font-semibold text-slate-600">Quick Add:</span>
-                          {['Summary', 'Details', 'Reports', 'Dependencies', 'Operational Events'].map(name => (
-                            <button
-                              key={name}
-                              type="button"
-                              onClick={() => handleAddSection(name)}
-                              className="px-2.5 py-1 bg-white hover:bg-blue-50 hover:text-[#0057B8] hover:border-[#0057B8] text-slate-600 border border-slate-300 rounded-lg text-[11px] font-semibold transition cursor-pointer shadow-2xs"
-                            >
-                              +{name}
-                            </button>
                           ))}
+                        </div>
+
+                        {/* Quick Add Presets Bar */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11.5px] text-slate-500">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="font-semibold text-slate-600">Quick Add:</span>
+                            {['Summary', 'Details', 'Reports', 'Dependencies', 'Operational Events'].map(name => (
+                              <button
+                                key={name}
+                                type="button"
+                                onClick={() => handleAddSection(name)}
+                                className="px-2.5 py-1 bg-white hover:bg-blue-50 hover:text-[#0057B8] hover:border-[#0057B8] text-slate-600 border border-slate-300 rounded-lg text-[11px] font-semibold transition cursor-pointer shadow-2xs"
+                              >
+                                +{name}
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       </div>
                     </div>
+                  </div>
 
                     {/* Batch Publish All Documents Button (if multiple files) */}
                     {ingestedDocuments.length > 1 && (
@@ -3156,11 +3232,9 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                       </div>
                     )}
                   </div>
-                </div>
-                </div>
-              )}
-            </div>
-          )}
+                )}
+              </div>
+            )}
             </>
           )}
         </form>
@@ -3213,7 +3287,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <h2 className="font-bold text-sm text-white truncate">
-                      LibList Word Document • Clause {currentSectionIndex + 1}
+                      Document Clause Editor • Clause {currentSectionIndex + 1}
                     </h2>
                     <span className="text-[11px] font-mono bg-white/20 border border-white/30 px-2 py-0.5 rounded text-white font-semibold">
                       Page {currentSectionIndex + 1} of {totalSections}

@@ -522,6 +522,8 @@ export default function Home({ initialView = 'policy' }) {
             currentUser={currentUser}
             canEditPolicy={true}
             canCreateDocument={true}
+            initialEditMode={isDraftEditing}
+            onDraftSaved={() => setIsDraftEditing(false)}
             onOpenConfigureModal={(doc) => {
               const isDraft = Boolean(viewingDraft || doc?.status === 'draft');
               if (isDraft) {
@@ -545,6 +547,7 @@ export default function Home({ initialView = 'policy' }) {
               (viewingDraft || activePolicy?.status === 'draft')
                 ? () => {
                     setViewingDraft(null);
+                    setIsDraftEditing(false);
                     setActiveWorkspaceView('change_management');
                   }
                 : null
