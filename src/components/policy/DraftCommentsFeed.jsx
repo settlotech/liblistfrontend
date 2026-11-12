@@ -47,28 +47,45 @@ export default function DraftCommentsFeed({
 
   // Load real registered bank users
   useEffect(() => {
-    apiService.getUsers()
+    taskApi.getAssignableUsers()
       .then(users => {
         if (Array.isArray(users) && users.length > 0) {
           const formatted = users.map(u => ({
             id: u.id,
             name: u.name || `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email,
-            role: u.role || u.roleType || 'Staff Officer',
+            role: u.role || u.role_type || 'Staff Officer',
             avatar: (u.name || u.first_name || 'U').slice(0, 2).toUpperCase(),
             color: 'bg-blue-600'
           }));
           setSquadUsers(prev => {
-            const combined = [...formatted];
-            prev.forEach(p => {
-              if (!combined.some(c => c.name.toLowerCase() === p.name.toLowerCase())) {
-                combined.push(p);
-              }
-            });
-            return combined;
+            const map = new Map();
+            formatted.forEach(u => map.set(u.id, u));
+            prev.forEach(u => { if (!map.has(u.id)) map.set(u.id, u); });
+            return Array.from(map.values());
           });
         }
       })
-      .catch(err => console.warn('Squad users notice:', err));
+      .catch(() => {
+        apiService.getUsers()
+          .then(users => {
+            if (Array.isArray(users) && users.length > 0) {
+              const formatted = users.map(u => ({
+                id: u.id,
+                name: u.name || `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email,
+                role: u.role || u.roleType || 'Staff Officer',
+                avatar: (u.name || u.first_name || 'U').slice(0, 2).toUpperCase(),
+                color: 'bg-blue-600'
+              }));
+              setSquadUsers(prev => {
+                const map = new Map();
+                formatted.forEach(u => map.set(u.id, u));
+                prev.forEach(u => { if (!map.has(u.id)) map.set(u.id, u); });
+                return Array.from(map.values());
+              });
+            }
+          })
+          .catch(err => console.warn('Squad users notice:', err));
+      });
   }, []);
 
   // Load comments for currently opened document from PostgreSQL DB
@@ -221,24 +238,43 @@ export default function DraftCommentsFeed({
     const text = inputText.trim();
     if (!text) return;
 
-    // Support @First Last or @First
-    const mentionMatch = text.match(/@([a-zA-Z0-9_\s]+?)(?=\s|$|[.,!?])/);
-    const mentionedName = mentionMatch ? mentionMatch[1].trim() : null;
-    const mentionedUser = squadUsers.find(u =>
-      u.name.toLowerCase() === mentionedName?.toLowerCase() ||
-      (mentionedName && u.name.toLowerCase().startsWith(mentionedName.toLowerCase()))
-    );
+    // Support @First Last, @First, or @username by sorting squad by longest name
+    const sortedSquad = [...squadUsers].sort((a, b) => (b.name?.length || 0) - (a.name?.length || 0));
+    let mentionedUser = null;
+    for (const u of sortedSquad) {
+      if (!u.name) continue;
+      const escaped = u.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`@${escaped}(?:\\b|\\s|$|[.,!?])`, 'i');
+      if (regex.test(text)) {
+        mentionedUser = u;
+        break;
+      }
+    }
+    // Fallback: check first name or user ID
+    if (!mentionedUser) {
+      const genericMatch = text.match(/@([a-zA-Z0-9_.-]+)/);
+      if (genericMatch) {
+        const query = genericMatch[1].toLowerCase();
+        mentionedUser = squadUsers.find(u => 
+          u.name.toLowerCase().startsWith(query) ||
+          u.name.toLowerCase().split(' ')[0].toLowerCase() === query ||
+          u.email?.toLowerCase().startsWith(query) ||
+          u.id?.toLowerCase() === query
+        );
+      }
+    }
 
     const isTask = isTaskCommand || Boolean(mentionedUser);
-    const originPolicyId = openedDocument?.id || 'credit-card-limits-policy';
+    const originPolicyId = openedDocument?.id || openedDocument?.policy_id || 'credit-card-limits-policy';
     const originPolicyTitle = openedDocument?.title || 'Operational Policy';
+    const originSection = openedDocument?.section_id || (openedDocument?.version ? `Draft v${openedDocument.version}` : 'General Clause');
 
     let backendTaskId = null;
-    let targetAssigneeName = mentionedUser ? mentionedUser.name : (mentionedName || null);
-    let targetAssigneeId = mentionedUser?.id || (mentionedName ? `u_cba_${mentionedName.toLowerCase().replace(/\s+/g, '_')}` : null);
+    let targetAssigneeName = mentionedUser ? mentionedUser.name : 'David Miller';
+    let targetAssigneeId = mentionedUser ? mentionedUser.id : null;
 
     if (isTask) {
-      const cleanTaskTitle = text.replace(/@([a-zA-Z0-9_\s]+?)(?=\s|$|[.,!?])/g, '').trim() || 'Review Policy & Operational Specifications';
+      const cleanTaskTitle = text.replace(/@([a-zA-Z0-9_\s.-]+?)(?=\s|$|[.,!?])/g, '').trim() || 'Review Policy & Operational Specifications';
       const taskTitle = `[Task] ${cleanTaskTitle.length > 55 ? cleanTaskTitle.slice(0, 55) + '...' : cleanTaskTitle}`;
 
       try {
@@ -248,47 +284,35 @@ export default function DraftCommentsFeed({
           category: 'general',
           assigned_to: targetAssigneeId || targetAssigneeName,
           library_id: originPolicyId,
-          section_id: openedDocument?.version ? `Draft v${openedDocument.version}` : null
+          section_id: originSection,
+          linked_policy_id: originPolicyId,
+          policy_title: originPolicyTitle
         });
-        if (res?.success && res.data?.id) {
-          backendTaskId = res.data.id;
+        if (res?.data?.id || res?.id) {
+          backendTaskId = res?.data?.id || res?.id;
+          if (res?.data?.assigned_to_name) targetAssigneeName = res.data.assigned_to_name;
         }
       } catch (err) {
         console.warn('taskApi.createTask note:', err);
       }
 
-      try {
-        const legacyRes = await apiService.createTask({
-          id: backendTaskId,
-          title: taskTitle,
-          description: text,
-          assigned_to: targetAssigneeName || 'David Miller',
-          assigned_by: `${currentUserName} (${currentUser?.roleType === 'manager' ? 'Bank Administrator' : 'Staff Officer'})`,
-          priority: 'high',
-          status: 'pending',
-          due_date: 'Today, EOD',
-          category: 'Draft Review Task',
-          linked_policy_id: originPolicyId,
-          policy_title: originPolicyTitle
-        });
-        if (!backendTaskId && legacyRes?.id) {
-          backendTaskId = legacyRes.id;
-        }
-      } catch (legacyErr) {
-        console.warn('apiService.createTask note:', legacyErr);
-      }
-
       window.dispatchEvent(new CustomEvent('liblist:task_created', {
         detail: {
-          id: backendTaskId,
+          id: backendTaskId || `TASK-${Date.now().toString().slice(-5)}`,
           title: taskTitle,
           description: text,
           assigned_to: targetAssigneeName,
+          assigned_to_name: targetAssigneeName,
           assigned_by: currentUserName,
+          created_by_name: currentUserName,
           linked_policy_id: originPolicyId,
           policy_id: originPolicyId,
           library_id: originPolicyId,
-          status: 'pending'
+          section_id: originSection,
+          policy_title: originPolicyTitle,
+          is_draft: Boolean(openedDocument?.is_draft || String(originPolicyId).includes('draft')),
+          status: 'pending',
+          created_at: new Date().toISOString()
         }
       }));
     }

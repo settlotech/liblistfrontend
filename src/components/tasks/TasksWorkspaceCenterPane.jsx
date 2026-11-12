@@ -17,6 +17,7 @@ import {
   FileText
 } from 'lucide-react';
 import { apiService } from '../../services/apiService';
+import { taskApi } from '../../services/api/taskApi';
 
 export function TasksWorkspaceCenterPane({
   currentUser,
@@ -31,6 +32,7 @@ export function TasksWorkspaceCenterPane({
   const [searchQuery, setSearchQuery] = useState('');
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [assignableUsers, setAssignableUsers] = useState([]);
 
   // New task form state
   const [newTask, setNewTask] = useState({
@@ -44,6 +46,17 @@ export function TasksWorkspaceCenterPane({
   });
 
   const isBankOwner = currentUser?.roleType === 'manager' || currentUser?.roleType === 'admin';
+
+  // Load assignable bank users for filters and assignments
+  useEffect(() => {
+    taskApi.getAssignableUsers()
+      .then(users => {
+        if (Array.isArray(users) && users.length > 0) {
+          setAssignableUsers(users);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const loadTasks = async () => {
     setIsLoading(true);
@@ -59,6 +72,20 @@ export function TasksWorkspaceCenterPane({
 
   useEffect(() => {
     loadTasks();
+  }, []);
+
+  // Listen for real-time task creation from chat/copilot
+  useEffect(() => {
+    const handleTaskCreated = (e) => {
+      if (e.detail) {
+        setTasks(prev => {
+          if (prev.some(t => t.id === e.detail.id)) return prev;
+          return [e.detail, ...prev];
+        });
+      }
+    };
+    window.addEventListener('liblist:task_created', handleTaskCreated);
+    return () => window.removeEventListener('liblist:task_created', handleTaskCreated);
   }, []);
 
   const handleCreateTask = async (e) => {
@@ -112,11 +139,13 @@ export function TasksWorkspaceCenterPane({
   const filteredTasks = useMemo(() => {
     return tasks.filter(t => {
       const matchesStatus = filterStatus === 'all' || t.status === filterStatus;
+      const assigneeStr = `${t.assigned_to_name || ''} ${t.assigned_to || ''}`.toLowerCase();
       const matchesAssignee = filterAssignee === 'all' || 
-        (t.assigned_to && t.assigned_to.toLowerCase().includes(filterAssignee.toLowerCase()));
+        assigneeStr.includes(filterAssignee.toLowerCase());
       const matchesSearch = !searchQuery || 
         (t.title && t.title.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (t.description && t.description.toLowerCase().includes(searchQuery.toLowerCase()));
+        (t.description && t.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (t.task_code && t.task_code.toLowerCase().includes(searchQuery.toLowerCase()));
       return matchesStatus && matchesAssignee && matchesSearch;
     });
   }, [tasks, filterStatus, filterAssignee, searchQuery]);
@@ -227,8 +256,17 @@ export function TasksWorkspaceCenterPane({
             className="text-xs p-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-[#0057B8]"
           >
             <option value="all">All Assignees</option>
-            <option value="Sarah Jenkins">Sarah Jenkins (Employee)</option>
-            <option value="Marcus Vance">Marcus Vance (Approver)</option>
+            {assignableUsers.length > 0 ? (
+              assignableUsers.map(u => (
+                <option key={u.id} value={u.name}>{u.name} ({u.role || u.role_type || 'Staff'})</option>
+              ))
+            ) : (
+              <>
+                <option value="Sarah Jenkins">Sarah Jenkins (Employee)</option>
+                <option value="Marcus Vance">Marcus Vance (Approver)</option>
+                <option value="David Miller">David Miller (Underwriter)</option>
+              </>
+            )}
           </select>
 
           <div className="relative w-48 sm:w-64">
@@ -283,7 +321,7 @@ export function TasksWorkspaceCenterPane({
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2 mb-1">
                         <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
-                          TASK-#{t.id}
+                          {t.task_code ? t.task_code : `TASK-#${t.id}`}
                         </span>
                         <span className={`text-[10.5px] font-semibold px-2 py-0.5 rounded ${
                           t.priority === 'high' 
@@ -323,14 +361,14 @@ export function TasksWorkspaceCenterPane({
                       <div className="flex flex-wrap items-center gap-4 text-[11px] text-slate-500 mt-3 pt-2.5 border-t border-slate-100">
                         <span className="flex items-center gap-1.5 font-medium text-slate-700">
                           <User className="w-3.5 h-3.5 text-[#0057B8]" />
-                          <span>Assigned to: <strong>{t.assigned_to}</strong></span>
+                          <span>Assigned to: <strong>{t.assigned_to_name || t.assigned_to || 'Unassigned'}</strong></span>
                         </span>
                         <span className="flex items-center gap-1.5">
                           <Calendar className="w-3.5 h-3.5 text-slate-400" />
                           <span>Due: <strong>{t.due_date || 'Ongoing'}</strong></span>
                         </span>
                         <span className="text-slate-400">
-                          Delegated by {t.assigned_by || 'Marcus Vance'}
+                          Delegated by <strong>{t.created_by_name || t.assigned_by || 'Marcus Vance'}</strong>
                         </span>
                       </div>
                     </div>
@@ -346,18 +384,22 @@ export function TasksWorkspaceCenterPane({
                       </button>
                     )}
 
-                    {t.linked_policy_id && onOpenPolicy && (() => {
+                    {(() => {
+                      const linkedDocId = t.linked_policy_id || t.library_id;
+                      if (!linkedDocId || !onOpenPolicy) return null;
+
                       const isDraftTask = Boolean(
                         t.is_draft || 
-                        String(t.linked_policy_id).toLowerCase().includes('draft') ||
+                        String(linkedDocId).toLowerCase().includes('draft') ||
                         String(t.title).toLowerCase().includes('draft') ||
-                        String(t.category).toLowerCase().includes('draft')
+                        String(t.category).toLowerCase().includes('draft') ||
+                        String(t.section_id).toLowerCase().includes('draft')
                       );
 
                       return (
                         <button
                           type="button"
-                          onClick={() => onOpenPolicy(t.linked_policy_id)}
+                          onClick={() => onOpenPolicy(linkedDocId)}
                           className={`px-3 py-1.5 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${
                             isDraftTask
                               ? 'bg-[#0057B8] hover:bg-[#004EA6] text-white shadow-xs active:scale-95'

@@ -64,31 +64,48 @@ export default function ShidneyAIChat({
   const [isTaskMode, setIsTaskMode] = useState(false);
 
   useEffect(() => {
-    // Load real registered bank users
-    apiService.getUsers()
+    // Load real registered bank users from task API
+    taskApi.getAssignableUsers()
       .then(users => {
         if (Array.isArray(users) && users.length > 0) {
           const formatted = users.map(u => ({
             id: u.id,
             name: u.name || `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email,
-            role: u.role || u.roleType || 'Staff User',
+            role: u.role || u.role_type || 'Staff User',
             department: u.department || 'Retail Banking',
             avatar: (u.name || u.first_name || 'U').slice(0, 2).toUpperCase(),
             color: 'bg-blue-600'
           }));
-          // Combine and deduplicate
           setBankUsers(prev => {
-            const combined = [...formatted];
-            prev.forEach(p => {
-              if (!combined.some(c => c.name.toLowerCase() === p.name.toLowerCase())) {
-                combined.push(p);
-              }
-            });
-            return combined;
+            const map = new Map();
+            formatted.forEach(u => map.set(u.id, u));
+            prev.forEach(u => { if (!map.has(u.id)) map.set(u.id, u); });
+            return Array.from(map.values());
           });
         }
       })
-      .catch(err => console.warn('Could not load bank users for mentions:', err));
+      .catch(() => {
+        apiService.getUsers()
+          .then(users => {
+            if (Array.isArray(users) && users.length > 0) {
+              const formatted = users.map(u => ({
+                id: u.id,
+                name: u.name || `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email,
+                role: u.role || u.roleType || 'Staff User',
+                department: u.department || 'Retail Banking',
+                avatar: (u.name || u.first_name || 'U').slice(0, 2).toUpperCase(),
+                color: 'bg-blue-600'
+              }));
+              setBankUsers(prev => {
+                const map = new Map();
+                formatted.forEach(u => map.set(u.id, u));
+                prev.forEach(u => { if (!map.has(u.id)) map.set(u.id, u); });
+                return Array.from(map.values());
+              });
+            }
+          })
+          .catch(err => console.warn('Could not load bank users for mentions:', err));
+      });
   }, []);
 
   const scrollToBottom = () => {
@@ -155,8 +172,30 @@ export default function ShidneyAIChat({
     );
   });
 
-  // Check if current input contains any @mentions
-  const detectedMention = bankUsers.find(u => inputPrompt.includes(`@${u.name}`));
+  // Check if text contains any @mentions (support full name or first name)
+  const getMentionedUser = (inputText) => {
+    if (!inputText) return null;
+    const sorted = [...bankUsers].sort((a, b) => (b.name?.length || 0) - (a.name?.length || 0));
+    for (const u of sorted) {
+      if (!u.name) continue;
+      const escaped = u.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`@${escaped}(?:\\b|\\s|$|[.,!?])`, 'i');
+      if (regex.test(inputText)) return u;
+    }
+    const genericMatch = inputText.match(/@([a-zA-Z0-9_.-]+)/);
+    if (genericMatch) {
+      const q = genericMatch[1].toLowerCase();
+      return bankUsers.find(u => 
+        u.name.toLowerCase().startsWith(q) ||
+        u.name.toLowerCase().split(' ')[0].toLowerCase() === q ||
+        u.email?.toLowerCase().startsWith(q) ||
+        u.id?.toLowerCase() === q
+      ) || null;
+    }
+    return null;
+  };
+
+  const detectedMention = getMentionedUser(inputPrompt);
 
   // Handle Action Click
   const handleActionClick = (actionUrl) => {
@@ -278,53 +317,37 @@ export default function ShidneyAIChat({
     if (!text || isLoading) return;
 
     // Check if task mode is active or @user is mentioned
-    const isTaskAssignment = isTaskMode || Boolean(detectedMention);
-    const assignedUser = detectedMention ? detectedMention.name : (currentUser?.name || 'Sarah Jenkins');
+    const activeMention = getMentionedUser(text);
+    const isTaskAssignment = isTaskMode || Boolean(activeMention);
+    const targetUser = activeMention || (isTaskMode ? bankUsers.find(u => u.name !== currentUser?.name) : null);
+    const assignedUser = targetUser ? targetUser.name : 'Sarah Jenkins';
+    const targetUserId = targetUser?.id || null;
 
     if (isTaskAssignment) {
-      const taskTitle = text
-        .replace(/@\w+(\s+\w+)?/g, '')
-        .trim() || 'Review Policy & Modular Clause Specifications';
+      const cleanTitleText = text.replace(/@([a-zA-Z0-9_\s.-]+?)(?=\s|$|[.,!?])/g, '').trim() || 'Review Policy & Modular Clause Specifications';
+      const cleanTaskTitle = `[Task] ${cleanTitleText.length > 60 ? cleanTitleText.slice(0, 60) + '...' : cleanTitleText}`;
+      const originPolicyId = activePolicy?.id || 'credit-card-limits-policy';
+      const originPolicyTitle = activePolicy?.title || 'Operational Policy';
+      const originSection = activePolicy?.version ? `Policy v${activePolicy.version}` : 'Active Policy';
 
       let createdTaskObj = null;
-      const cleanTaskTitle = `[Task] ${taskTitle.length > 60 ? taskTitle.slice(0, 60) + '...' : taskTitle}`;
-      const originPolicyId = activePolicy?.id || 'credit-card-limits-policy';
-      const targetUserObj = bankMembers.find(m => m.name.toLowerCase() === assignedUser.toLowerCase());
 
       try {
         const primaryRes = await taskApi.createTask({
           title: cleanTaskTitle,
           description: text,
           category: 'general',
-          assigned_to: targetUserObj?.id || null,
+          assigned_to: targetUserId || assignedUser,
           library_id: originPolicyId,
-          section_id: activePolicy?.version ? `Policy v${activePolicy.version}` : null
+          section_id: originSection,
+          linked_policy_id: originPolicyId,
+          policy_title: originPolicyTitle
         });
-        if (primaryRes?.success && primaryRes.data?.id) {
-          createdTaskObj = primaryRes.data;
+        if (primaryRes?.data?.id || primaryRes?.id) {
+          createdTaskObj = primaryRes.data || primaryRes;
         }
       } catch (primaryErr) {
         console.warn('taskApi.createTask note:', primaryErr);
-      }
-
-      try {
-        const fallbackRes = await apiService.createTask({
-          id: createdTaskObj?.id,
-          title: cleanTaskTitle,
-          description: text,
-          assigned_to: assignedUser,
-          assigned_by: `${currentUser?.name || 'Marcus Vance'} (${currentUser?.roleType === 'manager' ? 'Bank Administrator' : 'Staff'})`,
-          priority: 'high',
-          status: 'pending',
-          due_date: 'Today, EOD',
-          category: 'Chat Task',
-          linked_policy_id: originPolicyId
-        });
-        if (!createdTaskObj && fallbackRes) {
-          createdTaskObj = fallbackRes;
-        }
-      } catch (taskErr) {
-        console.warn('apiService.createTask note:', taskErr);
       }
 
       // Broadcast task creation across application workspaces
@@ -335,10 +358,16 @@ export default function ShidneyAIChat({
           title: cleanTaskTitle,
           description: text,
           assigned_to: assignedUser,
+          assigned_to_name: assignedUser,
           assigned_by: currentUser?.name || 'Marcus Vance',
+          created_by_name: currentUser?.name || 'Marcus Vance',
           linked_policy_id: originPolicyId,
           library_id: originPolicyId,
-          status: 'pending'
+          policy_id: originPolicyId,
+          section_id: originSection,
+          policy_title: originPolicyTitle,
+          status: 'pending',
+          created_at: new Date().toISOString()
         }
       }));
 
@@ -351,8 +380,10 @@ export default function ShidneyAIChat({
         isTask: true,
         task: createdTaskObj || {
           id: `TASK-${Date.now().toString().slice(-5)}`,
-          title: taskTitle,
+          title: cleanTaskTitle,
           assigned_to: assignedUser,
+          assigned_to_name: assignedUser,
+          assigned_by: currentUser?.name || 'Marcus Vance',
           status: 'pending',
           priority: 'high'
         }
@@ -362,7 +393,7 @@ export default function ShidneyAIChat({
         id: `ai-${Date.now()}`,
         sender: 'assistant',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        text: `**Task Created & Dispatched to @${assignedUser}!**\n\n- **Title**: ${taskTitle}\n- **Assignee**: @${assignedUser}\n- **Status**: \`PENDING\` • **Priority**: \`HIGH\`\n\nThis task is now live in the **Requests** tab and synced with the team's Task Workspace.`
+        text: `**Task Created & Dispatched to @${assignedUser}!**\n\n- **Title**: ${cleanTaskTitle}\n- **Assignee**: @${assignedUser}\n- **Linked Document**: ${originPolicyTitle}\n- **Status**: \`PENDING\` • **Priority**: \`HIGH\`\n\nThis task is now live in the **Requests** tab and synced with the team's Task Workspace.`
       };
 
       setMessages(prev => [...prev, taskMessage, aiConfirmMessage]);
