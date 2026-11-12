@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pin, PinOff, User, Calendar, Circle } from 'lucide-react';
+import { Pin, PinOff, User, Calendar, Circle, ExternalLink, FileText } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const STATUS_CONFIG = {
@@ -62,6 +62,17 @@ export default function TaskCard({ task, onClick, onPin, onUnpin, isSelected }) 
                             § {task.section_id}
                         </span>
                     )}
+                    {(task.library_id || task.linked_policy_id) && (
+                        <a
+                            href={`/home?policy=${encodeURIComponent(task.library_id || task.linked_policy_id)}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100/70 text-[#0057B8] border border-blue-200 hover:bg-blue-200/80 transition max-w-[170px] truncate"
+                            title={`Origin Policy: ${task.library_id || task.linked_policy_id} (Click to open)`}
+                        >
+                            <ExternalLink className="w-2.5 h-2.5 flex-shrink-0" />
+                            <span className="truncate">Policy: {task.library_id || task.linked_policy_id}</span>
+                        </a>
+                    )}
                 </div>
 
                 {/* Pin button */}
@@ -96,7 +107,7 @@ export default function TaskCard({ task, onClick, onPin, onUnpin, isSelected }) 
             <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">
                 <span className="flex items-center gap-1 font-medium">
                     <User className="w-3 h-3 text-[#0057B8]" />
-                    {task.assigned_to_name || 'Unassigned'}
+                    {task.assigned_to_name || task.assigned_to || 'Unassigned'}
                 </span>
                 <span className="flex items-center gap-1">
                     <Calendar className="w-3 h-3 text-slate-400" />

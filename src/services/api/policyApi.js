@@ -91,6 +91,61 @@ export const policyApi = {
       console.warn('API error fetching policy artifacts:', e);
       return [];
     }
+  },
+
+  // ── VERSION CONTROL SNAPSHOTS & RESTORE ──
+  async getPolicyVersions(id) {
+    try {
+      const res = await apiFetch(`/policies/${id}/versions`);
+      return res?.versions || res?.data || res || [];
+    } catch (e) {
+      console.warn('API error fetching policy versions:', e);
+      return [];
+    }
+  },
+
+  async restorePolicyVersion(id, versionId, userName = 'Marcus Vance') {
+    return await apiFetch(`/policies/${id}/restore`, {
+      method: 'POST',
+      body: JSON.stringify({ versionId, user_name: userName })
+    });
+  },
+
+  // ── DOCUMENT COMMENTS (PostgreSQL DB Persistent) ──
+  async getPolicyComments(id) {
+    try {
+      const res = await apiFetch(`/policies/${id}/comments`);
+      return res?.comments || res?.data || [];
+    } catch (e) {
+      console.warn('API error fetching policy comments:', e);
+      return [];
+    }
+  },
+
+  async postPolicyComment(id, commentData) {
+    return await apiFetch(`/policies/${id}/comments`, {
+      method: 'POST',
+      body: JSON.stringify(commentData)
+    });
+  },
+
+  async toggleCommentLike(id, commentId) {
+    return await apiFetch(`/policies/${id}/comments/${commentId}/like`, {
+      method: 'PUT'
+    });
+  },
+
+  async updateCommentTaskStatus(id, commentId, status) {
+    return await apiFetch(`/policies/${id}/comments/${commentId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status })
+    });
+  },
+
+  async postCommentReply(id, commentId, replyData) {
+    return await apiFetch(`/policies/${id}/comments/${commentId}/replies`, {
+      method: 'POST',
+      body: JSON.stringify(replyData)
+    });
   }
 };
-

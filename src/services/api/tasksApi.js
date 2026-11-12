@@ -45,15 +45,19 @@ const DEFAULT_MOCK_TASKS = [
 export const tasksApi = {
   async getTasks(assignedTo = 'all', status = 'all') {
     try {
-      const url = new URL(`${API_BASE}/tasks`);
-      if (assignedTo && assignedTo !== 'all') url.searchParams.append('assigned_to', assignedTo);
-      if (status && status !== 'all') url.searchParams.append('status', status);
+      const params = new URLSearchParams();
+      if (assignedTo && assignedTo !== 'all') params.append('assigned_to', assignedTo);
+      if (status && status !== 'all') params.append('status', status);
+      const qs = params.toString();
+      const endpoint = qs ? `/tasks?${qs}` : '/tasks';
 
-      const res = await fetch(url);
-      if (!res.ok) throw new Error('Network error');
-      const data = await res.json();
-      console.log(`%c📋 [DB FETCH] Loaded ${data.length} Tasks from Database:`, 'color: #0057B8; font-weight: bold; font-size: 12px;', data);
-      return data;
+      const res = await apiFetch(endpoint);
+      const list = res?.data?.tasks || res?.data || (Array.isArray(res) ? res : []);
+      if (Array.isArray(list) && list.length > 0) {
+        console.log(`%c📋 [DB FETCH] Loaded ${list.length} Tasks from Database:`, 'color: #0057B8; font-weight: bold; font-size: 12px;', list);
+        return list;
+      }
+      throw new Error('No remote tasks returned');
     } catch (e) {
       console.warn('API error fetching tasks, using cached fallback:', e);
       const local = localStorage.getItem('libtrak_tasks');
@@ -70,7 +74,7 @@ export const tasksApi = {
         method: 'POST',
         body: JSON.stringify(taskData)
       });
-      return res;
+      return res?.data || res;
     } catch (e) {
       console.warn('API error creating task, saving locally:', e);
       const newTask = {
@@ -89,7 +93,7 @@ export const tasksApi = {
   async updateTask(id, updateData) {
     try {
       return await apiFetch(`/tasks/${id}`, {
-        method: 'PATCH',
+        method: 'PUT',
         body: JSON.stringify(updateData)
       });
     } catch (e) {
@@ -117,4 +121,3 @@ export const tasksApi = {
     }
   }
 };
-

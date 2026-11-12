@@ -777,15 +777,8 @@ export default function PdfComparisonPage() {
           >
             <ArrowLeftRight className="w-3.5 h-3.5 text-[#0057B8]" />
             <span className="hidden sm:inline">Swap Panes</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => navigate('/home')}
-            className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition border border-slate-200 cursor-pointer"
-          >
-            Exit Comparison
-          </button>
+          </button> 
+      
         </div>
       </div>
 

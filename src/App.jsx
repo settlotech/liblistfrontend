@@ -10,6 +10,7 @@ import Signup from './components/signup/signup';
 import Dashboard from './components/dashboard/dashboard';
 import DocumentManagementView from './components/documents/DocumentManagementView';
 import PdfComparisonPage from './components/policy/PdfComparisonPage';
+import NotesWorkspace from './components/notes/NotesWorkspace';
 import './App.css';
 import Task from './components/demotask/task';
 
@@ -80,8 +81,8 @@ function App() {
             <Route path="/home" element={<ProtectedRoute><Home initialView="policy" /></ProtectedRoute>} />
             <Route path="/compare-policy" element={<ProtectedRoute><PdfComparisonPage /></ProtectedRoute>} />
             {/* Document Management System (DMS) & Notes */}
-            <Route path="/notes" element={<ProtectedRoute><DocumentManagementView /></ProtectedRoute>} />
-            <Route path="/notes/:id" element={<ProtectedRoute><DocumentManagementView /></ProtectedRoute>} />
+            <Route path="/notes" element={<ProtectedRoute><NotesWorkspace /></ProtectedRoute>} />
+            <Route path="/notes/:id" element={<ProtectedRoute><NotesWorkspace /></ProtectedRoute>} />
             <Route path="/documents" element={<ProtectedRoute><DocumentManagementView /></ProtectedRoute>} />
             <Route path="/documents/:id" element={<ProtectedRoute><DocumentManagementView /></ProtectedRoute>} />
             <Route path="/demotask" element={<ProtectedRoute><Task /></ProtectedRoute>} />

@@ -269,14 +269,19 @@ export default function Sidebar() {
         if (!query) return activeDepartments;
         return activeDepartments.filter(d =>
             d.name.toLowerCase().includes(query) ||
-            policies.some(p => p.department_id === d.id && p.title.toLowerCase().includes(query))
+            masterPolicies.some(p => p.department_id === d.id && p.title.toLowerCase().includes(query))
         );
     }, [activeDepartments, policies, searchQuery]);
 
-    // Pinned policies objects
+    // Master Library Policies (Active, Approved Policies only - strictly NO drafts)
+    const masterPolicies = useMemo(() => {
+        return policies.filter(p => p.status !== 'draft' && !p.is_draft);
+    }, [policies]);
+
+    // Pinned policies objects (from published Master Library policies only)
     const pinnedPolicies = useMemo(() => {
-        return policies.filter(p => pinnedPolicyIds.includes(p.id));
-    }, [policies, pinnedPolicyIds]);
+        return masterPolicies.filter(p => pinnedPolicyIds.includes(p.id));
+    }, [masterPolicies, pinnedPolicyIds]);
 
     return (
         <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
@@ -424,7 +429,7 @@ export default function Sidebar() {
                         <div className="sidebar-master-tree">
                             {displayedDepartments.map((dept) => {
                                 const isExpanded = expandedDeptIds.includes(dept.id);
-                                const deptPolicies = policies.filter(p => p.department_id === dept.id);
+                                const deptPolicies = masterPolicies.filter(p => p.department_id === dept.id);
 
                                 return (
                                     <div key={dept.id} className="sidebar-dept-container">
@@ -479,7 +484,6 @@ export default function Sidebar() {
                                                     deptPolicies.map((pol) => {
                                                         const isPolSelected = (location.pathname === '/home' || location.pathname === '/documents') && selectedPolicyId === pol.id;
                                                         const isPinned = pinnedPolicyIds.includes(pol.id);
-                                                        const isDraft = pol.status === 'draft';
 
                                                         return (
                                                             <div
@@ -487,20 +491,10 @@ export default function Sidebar() {
                                                                 className={`sidebar-policy-row ${isPolSelected ? 'active' : ''}`}
                                                                 onClick={() => handlePolicyClick(pol.id)}
                                                                 onContextMenu={(e) => handleContextMenu(pol.id, e)}
-                                                                title={`${pol.title}${isDraft ? ' (Draft - pending approval)' : ''} (Right-click to pin)`}
+                                                                title={`${pol.title} (Right-click to pin)`}
                                                             >
                                                                 <div className="sidebar-policy-main">
-                                                                    {isDraft ? (
-                                                                        <span
-                                                                            style={{
-                                                                                width: '6px',
-                                                                                height: '6px',
-                                                                                borderRadius: '50%',
-                                                                                background: '#f59e0b',
-                                                                                flexShrink: 0
-                                                                            }}
-                                                                        />
-                                                                    ) : pol.is_product ? (
+                                                                    {pol.is_product ? (
                                                                         <CreditCard size={11} style={{ flexShrink: 0, opacity: 0.8 }} />
                                                                     ) : (
                                                                         <FileText size={11} style={{ flexShrink: 0, opacity: 0.8 }} />
@@ -509,9 +503,6 @@ export default function Sidebar() {
                                                                 </div>
 
                                                                 <div className="sidebar-policy-meta">
-                                                                    {isDraft && (
-                                                                        <span className="sidebar-draft-tag">Draft</span>
-                                                                    )}
                                                                     <span className="sidebar-ver-tag">v{pol.version || '1.0'}</span>
                                                                     <button
                                                                         type="button"

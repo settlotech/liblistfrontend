@@ -3,7 +3,7 @@ import {
   FileEdit, 
   Lock, 
   Unlock, 
-  History, 
+  History as HistoryIcon, 
   FileText,
   GraduationCap,
   FileCheck,
@@ -11,6 +11,7 @@ import {
   HelpCircle,
   ExternalLink,
   Layers,
+  ArrowLeft,
   ChevronRight,
   Calculator,
   DollarSign,
@@ -39,7 +40,9 @@ export default function PolicyWorkspacePane({
   onOpenExportModal,
   refreshTrigger = 0,
   canEditPolicy = true,
-  canCreateDocument = true
+  canCreateDocument = true,
+  onBackToChangeManagement = null,
+  isDraftView = false
 }) {
   const [detailedPolicy, setDetailedPolicy] = useState(policy || null);
   const [isLoading, setIsLoading] = useState(false);
@@ -262,6 +265,17 @@ export default function PolicyWorkspacePane({
 
   const activeDoc = detailedPolicy || policy;
 
+  const resolvedContent = activeDoc?.content || (() => {
+    if (!activeDoc) return '';
+    const params = typeof activeDoc.parameters === 'string'
+      ? JSON.parse(activeDoc.parameters || '{}')
+      : (activeDoc.parameters || {});
+    if (Array.isArray(params.sections) && params.sections.length > 0) {
+      return params.sections.map((s, idx) => `### ${idx + 1}. ${s.title || 'Section'}\n${s.content || ''}`).join('\n\n');
+    }
+    return '';
+  })();
+
   if (!activeDoc) {
     return (
       <main className="flex-1 flex flex-col h-full overflow-y-auto bg-[#f0f4f9] p-5 sm:p-7 space-y-5 custom-scrollbar select-none text-slate-800">
@@ -331,6 +345,24 @@ export default function PolicyWorkspacePane({
         </div>
       )}
       
+      {/* Back to Change Management button (When viewing a draft document) */}
+      {onBackToChangeManagement && (
+        <div className="flex items-center justify-between pb-1">
+          <button
+            type="button"
+            onClick={onBackToChangeManagement}
+            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl border border-blue-200 bg-white hover:bg-blue-50 text-[#0057B8] font-bold text-xs transition cursor-pointer shadow-2xs active:scale-95"
+            title="Return to Change Management Hub"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>← Back to Change Management</span>
+          </button>
+          <span className="text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-300 px-3 py-1 rounded-xl shadow-2xs">
+            Draft Document View • Change Management
+          </span>
+        </div>
+      )}
+
       {/* ----------------- TOP SEPARATE CARD: DOCUMENT HEADER & ACTIONS ----------------- */}
       <div className="p-5 sm:p-6 rounded-2xl border border-slate-200/90 bg-white shadow-2xs space-y-3.5">
         
@@ -357,7 +389,7 @@ export default function PolicyWorkspacePane({
                 title={isEmployee ? "Submit Proposed Amendments (Bank Employee)" : "Configure Clauses & Thresholds directly"}
               >
                 <FileEdit className="w-3.5 h-3.5" />
-                <span>Configure</span>
+                <span>{activeDoc.status === 'draft' || isDraftView ? "Edit Draft" : "Configure"}</span>
               </button>
             ) : (
               <div 
@@ -490,10 +522,10 @@ export default function PolicyWorkspacePane({
         </div>
 
           <FormattedPolicyContent
-            content={activeDoc.content}
+            content={resolvedContent}
             policyId={activeDoc?.id || detailedPolicy?.id || policy?.id}
             policyTitle={activeDoc?.title || detailedPolicy?.title || policy?.title}
-            onAssignTask={(taskData) => setAssignTaskModalData(taskData)}
+            onAssignTask={null}
           />
 
             {/* PHASE-WISE BREAKDOWN — Rendered when phases are stored in DB parameters */}
@@ -525,20 +557,6 @@ export default function PolicyWorkspacePane({
                             Phase {phase.phase_number}: {phase.title}
                           </h5>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setAssignTaskModalData({
-                            library_id: String(activeDoc?.id || detailedPolicy?.id || policy?.id || ''),
-                            section_id: `Phase ${phase.phase_number}: ${phase.title}`,
-                            title: `[Phase ${phase.phase_number}] ${phase.title}`,
-                            description: phase.summary || (Array.isArray(phase.key_rules) ? phase.key_rules.join('\n') : '') || `Operational execution for Phase ${phase.phase_number}`
-                          })}
-                          className="opacity-70 group-hover:opacity-100 transition-opacity inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-[#0057B8] hover:text-white bg-blue-50 hover:bg-[#0057B8] border border-blue-200 rounded-lg cursor-pointer shadow-2xs shrink-0"
-                          title={`Assign task for Phase ${phase.phase_number}`}
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>Assign Task</span>
-                        </button>
                       </div>
 
                       {/* Phase summary */}
@@ -1370,7 +1388,7 @@ export default function PolicyWorkspacePane({
         <div className="p-5 rounded-xl border border-[#e5e7eb] bg-white space-y-2.5">
           <div className="flex items-center justify-between">
             <h4 className="text-[12px] font-bold text-slate-700 flex items-center gap-1.5 uppercase tracking-wider">
-              <History className="w-3.5 h-3.5 text-slate-500" />
+              <HistoryIcon className="w-3.5 h-3.5 text-slate-500" />
               Version Control Timeline
             </h4>
             <span className="text-[11.5px] text-slate-400">

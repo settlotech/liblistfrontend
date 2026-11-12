@@ -94,7 +94,7 @@ export default function TaskAssignment({
                     </div>
                     <div>
                         <span className="text-xs font-semibold text-slate-800 block">
-                            {task?.assigned_to_name || 'Unassigned (Self-Reminder)'}
+                            {task?.assigned_to_name || task?.assigned_to || 'Unassigned (Self-Reminder)'}
                         </span>
                         {task?.assigned_to_name && (
                             <span className="text-[10.5px] text-slate-400">

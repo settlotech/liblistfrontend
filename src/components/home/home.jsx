@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useLocation, useNavigate } from 'react-router-dom';
 import PolicyWorkspacePane from '../PolicyWorkspacePane';
 import ContextualFeedPane from '../ContextualFeedPane';
 import MakerCheckerModal from '../MakerCheckerModal';
@@ -18,10 +18,15 @@ import './home.css';
 
 export default function Home({ initialView = 'policy' }) {
   const { user: authUser, logout: authLogout } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const urlPolicyId = searchParams.get('policy');
   const urlEdit = searchParams.get('edit');
   const urlSection = searchParams.get('section');
+  const urlTab = searchParams.get('tab');
+  const urlItem = searchParams.get('item');
+  const urlView = searchParams.get('view');
 
   // Current active user persona
   const [currentUser, setCurrentUser] = useState(() => {
@@ -98,6 +103,8 @@ export default function Home({ initialView = 'policy' }) {
   const [isConfigureModalOpen, setIsConfigureModalOpen] = useState(false);
   const [isAddPolicyModalOpen, setIsAddPolicyModalOpen] = useState(false);
   const [editingPolicy, setEditingPolicy] = useState(null);
+  const [selectedDraft, setSelectedDraft] = useState(null);
+  const [viewingDraft, setViewingDraft] = useState(null);
   const [preselectedDept, setPreselectedDept] = useState({ id: null, name: '' });
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isNotificationsModalOpen, setIsNotificationsModalOpen] = useState(false);
@@ -106,16 +113,33 @@ export default function Home({ initialView = 'policy' }) {
   const [isRoleLoginOpen, setIsRoleLoginOpen] = useState(false);
   const [isVectorSpaceOpen, setIsVectorSpaceOpen] = useState(false);
 
-  // Sync initial view if prop changes
+  // Strict route path synchronizer: guarantees correct view based on URL pathname
   useEffect(() => {
-    if (initialView) {
+    if (location.pathname === '/changelogs') {
+      setActiveWorkspaceView('change_management');
+    } else if (location.pathname === '/tasks' || location.pathname === '/demotask') {
+      setActiveWorkspaceView('tasks');
+    } else if (location.pathname === '/templates') {
+      setActiveWorkspaceView('templates');
+    } else if (location.pathname === '/home') {
+      if (urlView) {
+        setActiveWorkspaceView(urlView);
+      } else {
+        setActiveWorkspaceView('policy');
+      }
+    } else if (initialView) {
       setActiveWorkspaceView(initialView);
     }
-  }, [initialView]);
 
-  // Sync policy and auto-open edit modal if requested from Task location navigation
+    if (urlItem) {
+      setFocusedReviewItemId(urlItem);
+      setActiveWorkspaceView('change_management');
+    }
+  }, [location.pathname, initialView, urlView, urlItem]);
+
+  // Sync policy and auto-open edit modal if requested from Task location navigation (never override /changelogs)
   useEffect(() => {
-    if (urlPolicyId) {
+    if (urlPolicyId && location.pathname !== '/changelogs') {
       setSelectedPolicyId(urlPolicyId);
       setActiveWorkspaceView('policy');
       if (urlEdit === 'true') {
@@ -208,7 +232,9 @@ export default function Home({ initialView = 'policy' }) {
     const handleSelectPolicyEvent = (e) => {
       if (e.detail) {
         setSelectedPolicyId(e.detail);
-        setActiveWorkspaceView('policy');
+        if (location.pathname !== '/changelogs') {
+          setActiveWorkspaceView('policy');
+        }
       }
     };
 
@@ -217,7 +243,11 @@ export default function Home({ initialView = 'policy' }) {
       loadPolicies();
       if (e.detail?.id) {
         setSelectedPolicyId(e.detail.id);
-        setActiveWorkspaceView('policy');
+        if (e.detail?.status !== 'draft') {
+          setActiveWorkspaceView('policy');
+        } else {
+          setActiveWorkspaceView('change_management');
+        }
       }
     };
 
@@ -383,6 +413,8 @@ export default function Home({ initialView = 'policy' }) {
       drafts: [savedDraft, ...(prev.drafts || [])]
     }));
     setAllPolicies(prev => [savedDraft, ...(Array.isArray(prev) ? prev : [])]);
+    setActiveWorkspaceView('change_management');
+    setSelectedDraft(savedDraft);
     setEditingPolicy(savedDraft);
     setPreselectedDept({
       id: savedDraft.department_id,
@@ -409,10 +441,7 @@ export default function Home({ initialView = 'policy' }) {
             inReviewItems={makerCheckerData.pending}
             historyItems={makerCheckerData.history}
             policies={allPolicies}
-            onBackToPolicy={() => {
-              setActiveWorkspaceView('policy');
-              setFocusedReviewItemId(null);
-            }}
+            onBackToPolicy={null}
             onOpenAddPolicyModal={handleOpenAddPolicyModal}
             onEditDraft={(draft) => {
               const fullPolicy = allPolicies.find(p => p.id === draft.id) || draft;
@@ -428,16 +457,41 @@ export default function Home({ initialView = 'policy' }) {
               loadMakerChecker();
               loadPolicies();
             }}
-            initialTab={focusedReviewItemId ? 'in_review' : 'drafts'}
+            initialTab={urlTab || (focusedReviewItemId ? 'in_review' : 'drafts')}
             focusedItemId={focusedReviewItemId}
+            onSelectDraft={(draft) => setSelectedDraft(draft)}
+            selectedDraftId={selectedDraft?.id}
+            onViewDraft={(draft) => {
+              const fullPolicy = allPolicies.find(p => p.id === draft.id) || draft;
+              setViewingDraft(fullPolicy);
+              setSelectedPolicyId(fullPolicy.id);
+              setActiveWorkspaceView('policy');
+            }}
           />
         ) : activeWorkspaceView === 'tasks' ? (
           <TasksWorkspaceCenterPane
             currentUser={currentUser}
             onBackToPolicy={() => setActiveWorkspaceView('policy')}
             onOpenPolicy={(policyId) => {
-              setSelectedPolicyId(policyId);
-              setActiveWorkspaceView('policy');
+              const isDraft = allPolicies.some(p => String(p.id) === String(policyId) && p.status === 'draft') || 
+                              makerCheckerData.drafts?.some(d => String(d.id) === String(policyId)) ||
+                              String(policyId).toLowerCase().includes('draft');
+              if (isDraft) {
+                const foundDraft = allPolicies.find(p => String(p.id) === String(policyId)) || 
+                                   makerCheckerData.drafts?.find(d => String(d.id) === String(policyId)) ||
+                                   { id: policyId, status: 'draft', title: 'Assigned Draft Policy' };
+                setSelectedDraft(foundDraft);
+                setEditingPolicy(foundDraft);
+                setActiveWorkspaceView('change_management');
+                setPreselectedDept({
+                  id: foundDraft.department_id || foundDraft.deptId || null,
+                  name: foundDraft.department_name || ''
+                });
+                setIsAddPolicyModalOpen(true);
+              } else {
+                setSelectedPolicyId(policyId);
+                setActiveWorkspaceView('policy');
+              }
               setRefreshTrigger(prev => prev + 1);
             }}
             onOpenAddPolicyModal={handleOpenAddPolicyModal}
@@ -465,15 +519,37 @@ export default function Home({ initialView = 'policy' }) {
           />
         ) : (
           <PolicyWorkspacePane
-            policy={activePolicy}
+            policy={viewingDraft || activePolicy}
             currentUser={currentUser}
             canEditPolicy={true}
             canCreateDocument={true}
-            onOpenConfigureModal={handleConfigurePolicyCopy}
+            onOpenConfigureModal={(doc) => {
+              const isDraft = Boolean(viewingDraft || doc?.status === 'draft');
+              if (isDraft) {
+                const target = viewingDraft || doc;
+                setEditingPolicy(target);
+                setPreselectedDept({
+                  id: target.department_id || target.deptId || null,
+                  name: target.department_name || ''
+                });
+                setIsAddPolicyModalOpen(true);
+              } else {
+                handleConfigurePolicyCopy(doc);
+              }
+            }}
             onToggleStatus={handleTogglePolicyStatus}
             onToggleMasking={handleTogglePolicyMasking}
             onOpenExportModal={() => setIsExportModalOpen(true)}
             refreshTrigger={refreshTrigger}
+            isDraftView={Boolean(viewingDraft || activePolicy?.status === 'draft')}
+            onBackToChangeManagement={
+              (viewingDraft || activePolicy?.status === 'draft')
+                ? () => {
+                    setViewingDraft(null);
+                    setActiveWorkspaceView('change_management');
+                  }
+                : null
+            }
           />
         )}
 
@@ -487,11 +563,23 @@ export default function Home({ initialView = 'policy' }) {
             />
 
             <ContextualFeedPane
-              activePolicy={activePolicy}
+              openedDocument={
+                viewingDraft || (
+                  activeWorkspaceView === 'change_management'
+                    ? (selectedDraft || makerCheckerData.drafts?.[0] || allPolicies.find(p => p.status === 'draft') || null)
+                    : activePolicy
+                )
+              }
+              activePolicy={viewingDraft || activePolicy}
               currentUser={currentUser}
               isCollapsed={!isRightOpen}
               width={rightWidth}
               refreshTrigger={refreshTrigger}
+              onOpenDraft={(draft) => {
+                setSelectedDraft(draft);
+                setEditingPolicy(draft);
+                setIsAddPolicyModalOpen(true);
+              }}
               onOpenMakerChecker={() => {
                 setActiveWorkspaceView('change_management');
                 setFocusedReviewItemId(null);
@@ -552,7 +640,11 @@ export default function Home({ initialView = 'policy' }) {
         isOpen={isAddPolicyModalOpen}
         onClose={() => {
           setIsAddPolicyModalOpen(false);
+          const wasDraft = editingPolicy?.status === 'draft';
           setEditingPolicy(null);
+          if (wasDraft) {
+            setActiveWorkspaceView('change_management');
+          }
         }}
         editingPolicy={editingPolicy}
         preselectedDepartmentId={preselectedDept.id}
@@ -566,7 +658,11 @@ export default function Home({ initialView = 'policy' }) {
           const pId = typeof newPolicy === 'string' ? newPolicy : (newPolicy && newPolicy.id);
           if (pId) {
             setSelectedPolicyId(pId);
-            setActiveWorkspaceView('policy');
+            if (newPolicy?.status !== 'draft') {
+              setActiveWorkspaceView('policy');
+            } else {
+              setActiveWorkspaceView('change_management');
+            }
           }
           if (newPolicy && typeof newPolicy === 'object' && newPolicy.id) {
             setAllPolicies(prev => {

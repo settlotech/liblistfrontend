@@ -17,13 +17,14 @@ import {
   FileEdit
 } from 'lucide-react';
 import { apiService } from '../../services/apiService';
+import { taskApi } from '../../services/api/taskApi';
 
 const BANK_SQUAD = [
-  { id: 'usr-1', name: 'Marcus Vance', role: 'Bank Administrator', avatar: 'MV', color: 'bg-indigo-600' },
-  { id: 'usr-2', name: 'Sarah Jenkins', role: 'Senior Credit Risk Officer', avatar: 'SJ', color: 'bg-emerald-600' },
-  { id: 'usr-3', name: 'David Miller', role: 'Credit Underwriter', avatar: 'DM', color: 'bg-blue-600' },
-  { id: 'usr-4', name: 'Settlo Admin', role: 'APRA Compliance Lead', avatar: 'SA', color: 'bg-purple-600' },
-  { id: 'usr-5', name: 'Alex Morgan', role: 'Operations Squad Lead', avatar: 'AM', color: 'bg-amber-600' }
+  { id: 'u_cba_marcus', name: 'Marcus Vance', role: 'Bank Administrator', avatar: 'MV', color: 'bg-indigo-600' },
+  { id: 'u_cba_sarah', name: 'Sarah Jenkins', role: 'Senior Credit Risk Officer', avatar: 'SJ', color: 'bg-emerald-600' },
+  { id: 'u_cba_david', name: 'David Miller', role: 'Credit Underwriter', avatar: 'DM', color: 'bg-blue-600' },
+  { id: 'u_cba_settlo_lead', name: 'Settlo Admin', role: 'APRA Compliance Lead', avatar: 'SA', color: 'bg-purple-600' },
+  { id: 'u_cba_alex', name: 'Alex Morgan', role: 'Operations Squad Lead', avatar: 'AM', color: 'bg-amber-600' }
 ];
 
 export default function DraftCommentsFeed({
@@ -70,67 +71,51 @@ export default function DraftCommentsFeed({
       .catch(err => console.warn('Squad users notice:', err));
   }, []);
 
-  // Load comments for currently opened document
+  // Load comments for currently opened document from PostgreSQL DB
   useEffect(() => {
     if (!docKey) {
       setComments([]);
       return;
     }
 
+    let isMounted = true;
     const storageKey = `liblist_doc_comments_${docKey}`;
-    const stored = localStorage.getItem(storageKey);
-    if (stored) {
-      try {
-        setComments(JSON.parse(stored));
-        return;
-      } catch (_) {}
-    }
 
-    // Default Seed Comments for this opened policy / draft
-    const defaultComments = [
-      {
-        id: `c-seed-1`,
-        author: openedDocument?.created_by || 'Marcus Vance',
-        authorRole: 'Bank Administrator',
-        avatar: (openedDocument?.created_by || 'Marcus').slice(0, 2).toUpperCase(),
-        avatarColor: 'bg-indigo-600',
-        text: `${openedDocument?.status === 'draft' ? 'Draft revision' : 'Master policy'} ${openedDocument?.version || 'v1.0'} opened for review. Please check the statutory thresholds, SLA turnaround, and delegated officer caps.`,
-        time: '1h ago',
-        likes: 3,
-        likedByMe: false,
-        isTask: false,
-        replies: []
-      },
-      {
-        id: `c-seed-2`,
-        author: 'Sarah Jenkins',
-        authorRole: 'Senior Credit Risk Officer',
-        avatar: 'SJ',
-        avatarColor: 'bg-emerald-600',
-        text: '@David Miller verify Clause 2 underwriting limits and ensure 4-hour SLA aligns with APRA CPS 234.',
-        time: '25m ago',
-        likes: 2,
-        likedByMe: true,
-        isTask: true,
-        taskAssignee: 'David Miller',
-        taskStatus: 'in_progress',
-        replies: [
-          {
-            id: `rep-seed-1`,
-            author: 'David Miller',
-            authorRole: 'Credit Underwriter',
-            avatar: 'DM',
-            avatarColor: 'bg-blue-600',
-            text: '@Sarah Jenkins Underwriting limits and 4-hour buffer verified.',
-            time: '15m ago',
-            likes: 1
-          }
-        ]
+    // Retrieve cached comments if non-seed
+    let localComments = [];
+    try {
+      const stored = localStorage.getItem(storageKey);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        localComments = Array.isArray(parsed)
+          ? parsed.filter(c => !String(c.id).startsWith('c-seed'))
+          : [];
       }
-    ];
+    } catch (_) {}
 
-    setComments(defaultComments);
-    localStorage.setItem(storageKey, JSON.stringify(defaultComments));
+    // Fetch persistent comments from PostgreSQL backend DB (starts empty/none for clean real chat)
+    apiService.getPolicyComments(docKey)
+      .then(remoteComments => {
+        if (!isMounted) return;
+        const filtered = Array.isArray(remoteComments)
+          ? remoteComments.filter(c => !String(c.id).startsWith('c-seed'))
+          : [];
+        if (filtered.length > 0) {
+          setComments(filtered);
+          try { localStorage.setItem(storageKey, JSON.stringify(filtered)); } catch (_) {}
+        } else if (localComments.length > 0) {
+          setComments(localComments);
+        } else {
+          setComments([]);
+          try { localStorage.setItem(storageKey, JSON.stringify([])); } catch (_) {}
+        }
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setComments(localComments);
+      });
+
+    return () => { isMounted = false; };
   }, [docKey, openedDocument]);
 
   // Persist comments when updated
@@ -180,7 +165,7 @@ export default function DraftCommentsFeed({
     inputRef.current?.focus();
   };
 
-  // Toggle Like (Instagram Heart)
+  // Toggle Like (Instagram Heart) with DB persistence
   const handleToggleLike = (commentId) => {
     const updated = comments.map(c => {
       if (c.id === commentId) {
@@ -194,10 +179,14 @@ export default function DraftCommentsFeed({
       return c;
     });
     updateCommentsState(updated);
+    if (docKey) {
+      apiService.toggleCommentLike(docKey, commentId).catch(() => {});
+    }
   };
 
-  // Update Task Status
-  const handleUpdateTaskStatus = (commentId, nextStatus) => {
+  // Update Task Status with backend sync, DB persistence, and cross-module broadcast
+  const handleUpdateTaskStatus = async (commentId, nextStatus) => {
+    const comment = comments.find(c => c.id === commentId);
     const updated = comments.map(c => {
       if (c.id === commentId) {
         return { ...c, taskStatus: nextStatus };
@@ -205,18 +194,104 @@ export default function DraftCommentsFeed({
       return c;
     });
     updateCommentsState(updated);
+
+    if (docKey) {
+      apiService.updateCommentTaskStatus(docKey, commentId, nextStatus).catch(() => {});
+    }
+
+    if (comment?.taskId) {
+      const statusForBackend = (nextStatus === 'completed' || nextStatus === 'resolved') ? 'completed' : nextStatus;
+      try {
+        await taskApi.updateTaskStatus(comment.taskId, { status: statusForBackend });
+      } catch (_) {
+        try {
+          await apiService.updateTask(comment.taskId, { status: statusForBackend });
+        } catch (err) {
+          console.warn('Task status update warning:', err);
+        }
+      }
+      window.dispatchEvent(new CustomEvent('liblist:task_updated', {
+        detail: { id: comment.taskId, status: statusForBackend }
+      }));
+    }
   };
 
-  // Post a new comment or reply
-  const handlePostComment = () => {
+  // Post a new comment or reply with real Task Creation in Task Management and DB persistence
+  const handlePostComment = async () => {
     const text = inputText.trim();
     if (!text) return;
 
-    const mentionMatch = text.match(/@(\w+(\s+\w+)?)/);
+    // Support @First Last or @First
+    const mentionMatch = text.match(/@([a-zA-Z0-9_\s]+?)(?=\s|$|[.,!?])/);
     const mentionedName = mentionMatch ? mentionMatch[1].trim() : null;
-    const mentionedUser = squadUsers.find(u => u.name.toLowerCase() === mentionedName?.toLowerCase());
+    const mentionedUser = squadUsers.find(u =>
+      u.name.toLowerCase() === mentionedName?.toLowerCase() ||
+      (mentionedName && u.name.toLowerCase().startsWith(mentionedName.toLowerCase()))
+    );
 
     const isTask = isTaskCommand || Boolean(mentionedUser);
+    const originPolicyId = openedDocument?.id || 'credit-card-limits-policy';
+    const originPolicyTitle = openedDocument?.title || 'Operational Policy';
+
+    let backendTaskId = null;
+    let targetAssigneeName = mentionedUser ? mentionedUser.name : (mentionedName || null);
+    let targetAssigneeId = mentionedUser?.id || (mentionedName ? `u_cba_${mentionedName.toLowerCase().replace(/\s+/g, '_')}` : null);
+
+    if (isTask) {
+      const cleanTaskTitle = text.replace(/@([a-zA-Z0-9_\s]+?)(?=\s|$|[.,!?])/g, '').trim() || 'Review Policy & Operational Specifications';
+      const taskTitle = `[Task] ${cleanTaskTitle.length > 55 ? cleanTaskTitle.slice(0, 55) + '...' : cleanTaskTitle}`;
+
+      try {
+        const res = await taskApi.createTask({
+          title: taskTitle,
+          description: text,
+          category: 'general',
+          assigned_to: targetAssigneeId || targetAssigneeName,
+          library_id: originPolicyId,
+          section_id: openedDocument?.version ? `Draft v${openedDocument.version}` : null
+        });
+        if (res?.success && res.data?.id) {
+          backendTaskId = res.data.id;
+        }
+      } catch (err) {
+        console.warn('taskApi.createTask note:', err);
+      }
+
+      try {
+        const legacyRes = await apiService.createTask({
+          id: backendTaskId,
+          title: taskTitle,
+          description: text,
+          assigned_to: targetAssigneeName || 'David Miller',
+          assigned_by: `${currentUserName} (${currentUser?.roleType === 'manager' ? 'Bank Administrator' : 'Staff Officer'})`,
+          priority: 'high',
+          status: 'pending',
+          due_date: 'Today, EOD',
+          category: 'Draft Review Task',
+          linked_policy_id: originPolicyId,
+          policy_title: originPolicyTitle
+        });
+        if (!backendTaskId && legacyRes?.id) {
+          backendTaskId = legacyRes.id;
+        }
+      } catch (legacyErr) {
+        console.warn('apiService.createTask note:', legacyErr);
+      }
+
+      window.dispatchEvent(new CustomEvent('liblist:task_created', {
+        detail: {
+          id: backendTaskId,
+          title: taskTitle,
+          description: text,
+          assigned_to: targetAssigneeName,
+          assigned_by: currentUserName,
+          linked_policy_id: originPolicyId,
+          policy_id: originPolicyId,
+          library_id: originPolicyId,
+          status: 'pending'
+        }
+      }));
+    }
 
     if (replyingTo) {
       const replyObj = {
@@ -242,6 +317,10 @@ export default function DraftCommentsFeed({
 
       updateCommentsState(updated);
       setReplyingTo(null);
+
+      if (docKey) {
+        apiService.postCommentReply(docKey, replyingTo.id, replyObj).catch(() => {});
+      }
     } else {
       const newComment = {
         id: `c-${Date.now()}`,
@@ -254,12 +333,30 @@ export default function DraftCommentsFeed({
         likes: 0,
         likedByMe: false,
         isTask: isTask,
-        taskAssignee: mentionedUser ? mentionedUser.name : (mentionedName || null),
+        taskId: backendTaskId || `TASK-${Date.now().toString().slice(-5)}`,
+        taskAssignee: targetAssigneeName,
+        taskAssigneeId: targetAssigneeId,
         taskStatus: isTask ? 'pending' : null,
+        linkedPolicyId: originPolicyId,
+        policyTitle: originPolicyTitle,
         replies: []
       };
 
       updateCommentsState([...comments, newComment]);
+
+      if (docKey) {
+        apiService.postPolicyComment(docKey, {
+          text: newComment.text,
+          author: newComment.author,
+          authorRole: newComment.authorRole,
+          avatar: newComment.avatar,
+          avatarColor: newComment.avatarColor,
+          isTask: newComment.isTask,
+          targetAssigneeId: newComment.taskAssigneeId,
+          targetAssigneeName: newComment.taskAssignee,
+          section_id: openedDocument?.version ? `Draft v${openedDocument.version}` : null
+        }).catch(() => {});
+      }
     }
 
     setInputText('');
@@ -315,71 +412,20 @@ export default function DraftCommentsFeed({
   return (
     <div className="flex flex-col h-full bg-[#f8fafc] relative select-none">
       
-      {/* TOP CARD: The Opened Policy or Draft Card */}
-      <div className="p-3 bg-white border-b border-slate-200 shadow-2xs space-y-2">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse"></span>
-              <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${
-                isDraft 
-                  ? 'text-amber-800 bg-amber-50 border-amber-300' 
-                  : 'text-blue-700 bg-blue-50 border-blue-200'
-              }`}>
-                {isDraft ? 'Draft Revision' : 'Master Policy'} • {openedDocument.version || 'v1.0'}
-              </span>
-              <span className="text-[10px] font-mono text-slate-400">
-                {new Date().toLocaleDateString()}
-              </span>
-            </div>
-            <h3 className="font-bold text-slate-900 text-xs mt-1 truncate">
-              {openedDocument.title || 'Operational Document'}
-            </h3>
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              Authored by <strong className="text-slate-700">{openedDocument.created_by || 'Marcus Vance'}</strong>
-            </p>
-          </div>
-
-          {/* Direct Open in Full Editor Button if it's a draft */}
-          {isDraft && onOpenDraft && (
-            <button
-              type="button"
-              onClick={() => onOpenDraft(openedDocument)}
-              className="px-2.5 py-1.5 bg-[#0057B8] hover:bg-[#004EA6] text-white rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1 flex-shrink-0 shadow-primary-sm active:scale-95"
-              title="Open this draft in Full Editor with all modular options"
-            >
-              <FileEdit className="w-3.5 h-3.5" />
-              <span>Open in Editor</span>
-            </button>
-          )}
-        </div>
-
-        {/* Shared with team members */}
-        <div className="p-2 bg-slate-50 rounded-lg border border-slate-200/80 flex items-center justify-between text-[11px]">
-          <div className="flex items-center gap-1.5">
-            <span className="font-bold text-slate-700">Access:</span>
-            <div className="flex -space-x-1 overflow-hidden">
-              {squadUsers.slice(0, 3).map(u => (
-                <span 
-                  key={u.id} 
-                  className={`w-4 h-4 rounded-full ${u.color || 'bg-blue-600'} text-white text-[8px] font-bold flex items-center justify-center border border-white`}
-                  title={u.name}
-                >
-                  {u.avatar}
-                </span>
-              ))}
-            </div>
-            <span className="text-slate-500 text-[10.5px]">All squad members have access</span>
-          </div>
-          <span className="text-[10px] font-bold text-blue-700 bg-blue-100/70 px-1.5 py-0.2 rounded">
-            Full Access
-          </span>
-        </div>
-      </div>
-
       {/* COMMENTS STREAM */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
-        {comments.map((comment) => {
+        {comments.length === 0 ? (
+          <div className="text-center py-12 px-4 bg-white/70 rounded-2xl border border-dashed border-slate-200">
+            <div className="w-10 h-10 rounded-full bg-blue-50 text-[#0057B8] flex items-center justify-center mx-auto mb-2.5">
+              <MessageSquare className="w-5 h-5" />
+            </div>
+            <h4 className="font-bold text-slate-800 text-xs">No comments yet</h4>
+            <p className="text-[11px] text-slate-500 mt-1 max-w-xs mx-auto leading-relaxed">
+              Start the discussion by typing a message below. Use <span className="font-semibold text-[#0057B8]">@name</span> to assign an operational task to a squad member.
+            </p>
+          </div>
+        ) : (
+          comments.map((comment) => {
           const isTask = comment.isTask;
           const isResolved = comment.taskStatus === 'completed';
           const isInProgress = comment.taskStatus === 'in_progress';
@@ -523,8 +569,9 @@ export default function DraftCommentsFeed({
 
             </div>
           );
-        })}
-        <div ref={commentsEndRef} />
+        })
+      )}
+      <div ref={commentsEndRef} />
       </div>
 
       {/* Mention Dropdown Floating Menu */}

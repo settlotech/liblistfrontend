@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { History, ShieldAlert, FileText, User } from 'lucide-react';
+import { History as HistoryIcon, ShieldAlert, FileText, User } from 'lucide-react';
 import { documentManagementApi } from '../../services/api/documentManagementApi';
 
 export default function ActivityLogView({ documentId }) {
@@ -21,7 +21,7 @@ export default function ActivityLogView({ documentId }) {
         <div className="dms-editor-area">
             <div className="dms-paper" style={{ padding: '32px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-                    <History size={20} style={{ color: 'var(--dms-primary)' }} />
+                    <HistoryIcon size={20} style={{ color: 'var(--dms-primary)' }} />
                     <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: '#0f172a' }}>
                         Document Audit Trail & Activity Log
                     </h2>

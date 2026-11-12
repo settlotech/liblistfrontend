@@ -16,6 +16,7 @@ import {
   Trash2,
   ArrowUp,
   ArrowDown,
+  ArrowLeft,
   Plus,
   AlignLeft,
   Layers,
@@ -100,6 +101,9 @@ export default function AddPolicyModal({
   const [dailyLimit, setDailyLimit] = useState('$25,000 AUD');
   const [officerCap, setOfficerCap] = useState('$100,000 AUD');
   const [uploadedFileName, setUploadedFileName] = useState('');
+  const [uploadedPdfPreviewUrl, setUploadedPdfPreviewUrl] = useState(null);
+  const [isTemplateEditorActive, setIsTemplateEditorActive] = useState(false);
+  const [selectedUploadTemplateId, setSelectedUploadTemplateId] = useState('template-01-pdf');
   const [complianceTags, setComplianceTags] = useState([]);
   const [newTagInput, setNewTagInput] = useState('');
   const [masterSearchQuery, setMasterSearchQuery] = useState('');
@@ -569,14 +573,39 @@ export default function AddPolicyModal({
       const existingVersions = existingParams.versions || [];
       const currentVerStr = editingPolicy?.version || existingParams.version || 'v1.0';
       const numVer = parseFloat(String(currentVerStr).replace(/[^0-9.]/g, '')) || 1.0;
-      const nextVer = `v${(numVer + 0.1).toFixed(1)}`;
+      const nextVer = `${(numVer + 0.1).toFixed(1)}`;
 
       const newVersionSnapshot = {
         version: nextVer,
+        version_author: currentUser?.name || 'Bank Staff',
+        author: currentUser?.name || 'Bank Staff',
+        title: draftTitle,
+        summary: summary.trim() || draftTitle,
+        content: finalContent,
+        sections: sections.map(s => ({ ...s })),
+        turnaround_sla: turnaroundSla,
+        daily_limit: dailyLimit,
         timestamp: new Date().toISOString(),
-        author: currentUser?.name || 'Marcus Vance',
-        summary: `Saved draft update with ${sections.length} clauses (${turnaroundSla} SLA, ${dailyLimit} Daily Limit)`
+        notes: `Draft revision saved with ${sections.length} clauses (${turnaroundSla} SLA, ${dailyLimit} Daily Limit)`
       };
+
+      const baselineVersion = {
+        version: '1.0',
+        version_author: editingPolicy?.created_by || currentUser?.name || 'Bank Staff',
+        author: editingPolicy?.created_by || currentUser?.name || 'Bank Staff',
+        title: editingPolicy?.title || draftTitle,
+        summary: editingPolicy?.summary || summary.trim() || draftTitle,
+        content: editingPolicy?.content || finalContent,
+        sections: (existingParams.sections || sections).map(s => ({ ...s })),
+        turnaround_sla: existingParams.turnaround_sla || turnaroundSla,
+        daily_limit: existingParams.daily_limit || dailyLimit,
+        timestamp: editingPolicy?.created_at || new Date().toISOString(),
+        notes: 'Initial draft baseline'
+      };
+
+      const allVersions = existingVersions.length > 0
+        ? [newVersionSnapshot, ...existingVersions]
+        : [newVersionSnapshot, baselineVersion];
 
       const payload = {
         department_id: departmentId || 'company-policies',
@@ -591,7 +620,7 @@ export default function AddPolicyModal({
           mandatory_dvs: true,
           sections: sections,
           version: nextVer,
-          versions: [newVersionSnapshot, ...existingVersions]
+          versions: allVersions
         },
         created_by: currentUser?.name || 'Marcus Vance',
         creation_mode: creationMode,
@@ -617,19 +646,8 @@ export default function AddPolicyModal({
         if (savedPolicy?.id) setEditingDraftId(savedPolicy.id);
       }
 
-      const targetDeptName = departments.find(d => d.id === departmentId)?.name || 'Retail Banking';
-      try {
-        await apiService.createMakerCheckerItem({
-          type: 'create_policy',
-          title: `[Draft] ${draftTitle}`,
-          department: targetDeptName,
-          requested_by: `${currentUser?.name || 'Staff User'} (${currentUser?.role || 'Staff'})`,
-          change_details: `Policy draft authored in system (${nextVer}). Mode: ${creationMode}. SLA: ${turnaroundSla}. Sections: ${sections.length}.`,
-          status: 'draft'
-        });
-      } catch (mcErr) {
-        console.warn('Maker checker draft sync note:', mcErr.message);
-      }
+      // Drafts belong exclusively in the policies table (status: 'draft') and are managed in Change Management.
+      // They are not maker-checker approval requests until submitted for approval.
 
       alert(`Policy draft "${draftTitle}" (${nextVer}) saved to drafts successfully!`);
       if (onPolicyCreated) onPolicyCreated(savedPolicy);
@@ -1179,6 +1197,8 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
       ]
     };
 
+    setUploadedPdfPreviewUrl('/hl_valuation.pdf');
+    setUploadedFileName('hl_valuation.pdf');
     setIngestedDocuments([valuationDoc]);
     setActiveIngestedIndex(0);
     setTitle(valuationDoc.title);
@@ -1246,6 +1266,12 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
 
     setIsAiThinking(true);
     setUploadedFileName(files.length === 1 ? files[0].name : `${files.length} Documents Selected`);
+    if (files[0]) {
+      try {
+        const previewUrl = URL.createObjectURL(files[0]);
+        setUploadedPdfPreviewUrl(previewUrl);
+      } catch (_) {}
+    }
     setAiStep(`1/3: Reading ${files.length} document(s) & preparing ingestion stream...`);
 
     try {
@@ -1893,8 +1919,9 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-      <div className="bg-[#f0f6fc] rounded-2xl shadow-2xl border border-blue-200/80 w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden">
+    <>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+      <div className={`bg-[#f0f6fc] rounded-2xl shadow-2xl border border-blue-200/80 w-full ${creationMode === 'upload' && ingestedDocuments.length > 0 ? 'max-w-[96vw] w-[96vw]' : 'max-w-3xl'} max-h-[94vh] flex flex-col overflow-hidden transition-all duration-200`}>
         
         {/* Header */}
         <div className="px-6 py-4 border-b border-blue-200/70 flex items-center justify-between bg-white">
@@ -1931,8 +1958,8 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
           </button>
         </div>
 
-        {/* 3 Creation Modes Tab Bar (Hidden when editing draft or configuring) */}
-        {!editingPolicy && (
+        {/* 3 Creation Modes Tab Bar (Hidden when editing draft, or active template editor, or document extracted) */}
+        {!editingPolicy && !isTemplateEditorActive && !(creationMode === 'upload' && ingestedDocuments.length > 0) && (
         <div className="p-3 bg-[#e8f1fb] border-b border-blue-200/70 grid grid-cols-3 gap-2 text-[12.5px]">
           <button
             type="button"
@@ -1974,7 +2001,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
             }`}
           >
             <Bot className="w-4 h-4 text-[#0057B8]" />
-            <span>3. Document Upload (AI)</span>
+            <span>3. Document Upload</span>
           </button>
         </div>
         )}
@@ -2288,7 +2315,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                   <div>
                     <h3 className="font-bold text-slate-900 text-[13.5px] flex items-center gap-2">
                       <Layers className="w-4 h-4 text-[#0057B8]" />
-                      <span>Policy Sections & Modular Clauses ({sections.length})</span>
+                      <span>POLICY CLAUSES & SPECIFICATIONS ({sections.length}) (compare against left pane) Word-style Clause Formatter Enabled</span>
                     </h3>
                     <p className="text-[11.5px] text-slate-500">
                       Edit clause specifications, reorder above or below, delete, or add standalone paragraphs.
@@ -2446,45 +2473,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                     />
                   </div>
 
-                  {/* SLA and Ceilings Grid (Image 1 Inputs) */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                        Turnaround SLA
-                      </label>
-                      <input
-                        type="text"
-                        value={turnaroundSla}
-                        onChange={(e) => setTurnaroundSla(e.target.value)}
-                        placeholder="e.g. 4 Hours"
-                        className="w-full p-2 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-xs bg-white font-medium shadow-2xs"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                        Daily Limit
-                      </label>
-                      <input
-                        type="text"
-                        value={dailyLimit}
-                        onChange={(e) => setDailyLimit(e.target.value)}
-                        placeholder="e.g. $25,000 AUD"
-                        className="w-full p-2 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-xs bg-white font-medium shadow-2xs"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                        Officer Cap
-                      </label>
-                      <input
-                        type="text"
-                        value={officerCap}
-                        onChange={(e) => setOfficerCap(e.target.value)}
-                        placeholder="e.g. $100,000 AUD"
-                        className="w-full p-2 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-xs bg-white font-medium shadow-2xs"
-                      />
-                    </div>
-                  </div>
+
                 </div>
               )}
 
@@ -2497,125 +2486,122 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
           {/* MODE 2: MASTER LIBRARY */}
           {creationMode === 'library' && (
             <div className="space-y-4 animate-in fade-in duration-150">
-              {/* Target Department Partition for adopted policy */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Target Department Partition
-                </label>
-                <select
-                  value={departmentId}
-                  onChange={(e) => setDepartmentId(e.target.value)}
-                  className="w-full p-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-[13px] bg-white font-medium text-slate-900 shadow-2xs"
-                >
-                  {departments.map(d => (
-                    <option key={d.id} value={d.id}>{d.name}</option>
-                  ))}
-                </select>
-                <span className="text-[11px] text-slate-500 mt-1 block">
-                  Select which department library this master standard will be adopted into.
-                </span>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
-                    Master Repository Standards ({filteredMasterTemplates.length} Available)
-                  </span>
-                  <span className="text-[11px] text-[#0057B8] font-bold">
-                    Click any blue card to open & edit
-                  </span>
-                </div>
-                
-                {/* Search Bar for Master Library */}
-                <div className="relative mb-2.5">
-                  <Search className="w-4 h-4 text-[#0057B8] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="text"
-                    value={masterSearchQuery}
-                    onChange={(e) => setMasterSearchQuery(e.target.value)}
-                    placeholder="Search master library templates (credit cards, lending, KYC, security, AML)..."
-                    className="w-full text-xs pl-9 pr-3 py-2.5 rounded-xl border-2 border-blue-200 hover:border-[#0057B8] bg-white focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/20 outline-none transition font-medium shadow-2xs"
-                  />
-                </div>
-              </div>
-
-              {/* Master Templates List - Vibrant Blue Cards */}
-              <div className="grid grid-cols-1 gap-3 max-h-72 overflow-y-auto custom-scrollbar pr-1">
-                {filteredMasterTemplates.map(t => {
-                  const isSelected = selectedTemplateId === t.id;
-                  return (
-                    <div
-                      key={t.id}
-                      onClick={() => handleSelectTemplate(t)}
-                      className={`p-4 rounded-2xl border-2 transition-all cursor-pointer text-left relative ${
-                        isSelected 
-                          ? 'border-[#0057B8] bg-gradient-to-br from-blue-100/90 via-sky-50/70 to-white ring-2 ring-[#0057B8]/30 shadow-md' 
-                          : 'border-blue-200/90 bg-gradient-to-br from-white via-blue-50/40 to-sky-50/20 hover:border-[#0057B8] hover:bg-blue-50/70 shadow-2xs'
-                      }`}
+              {!isTemplateEditorActive ? (
+                <>
+                  {/* Target Department Partition for adopted policy */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                      Target Department Partition
+                    </label>
+                    <select
+                      value={departmentId}
+                      onChange={(e) => setDepartmentId(e.target.value)}
+                      className="w-full p-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-[13px] bg-white font-medium text-slate-900 shadow-2xs"
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition ${
-                            isSelected 
-                              ? 'border-[#0057B8] bg-[#0057B8] text-white shadow-2xs' 
-                              : 'border-blue-400 bg-white'
-                          }`}>
-                            {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                          </div>
-                          <h4 className={`font-bold text-[14px] truncate ${isSelected ? 'text-[#0057B8]' : 'text-slate-900 group-hover:text-[#0057B8]'}`}>
-                            {t.title}
-                          </h4>
-                        </div>
-                        {isSelected ? (
-                          <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-white bg-[#0057B8] px-3.5 py-1.5 rounded-xl flex-shrink-0 shadow-xs">
-                            <Check className="w-3.5 h-3.5 stroke-[3]" /> Currently Open & Editable Below
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#0057B8] bg-blue-100/90 hover:bg-[#0057B8] hover:text-white px-3 py-1.5 rounded-xl transition shadow-2xs flex-shrink-0">
-                            Click to Open & Edit →
-                          </span>
-                        )}
-                      </div>
-
-                      <p className="text-slate-600 text-xs mt-1.5 pl-7.5 leading-relaxed">
-                        {t.summary}
-                      </p>
-
-                      <div className="flex flex-wrap items-center gap-2 mt-2.5 pl-7.5 text-xs">
-                        <span className="bg-[#0057B8] text-white px-2.5 py-0.5 rounded-md font-bold text-[10.5px] shadow-2xs">
-                          Partition: {t.deptName || t.dept}
-                        </span>
-                        <span>•</span>
-                        <span className="bg-white border border-blue-200 text-blue-950 px-2 py-0.5 rounded-md font-medium text-[11px] shadow-2xs">
-                          SLA: <strong className="font-bold text-[#0057B8]">{t.sla}</strong>
-                        </span>
-                        <span>•</span>
-                        <span className="bg-white border border-blue-200 text-blue-950 px-2 py-0.5 rounded-md font-medium text-[11px] shadow-2xs">
-                          Daily Limit: <strong className="font-bold text-[#0057B8]">{t.daily}</strong>
-                        </span>
-                        <span>•</span>
-                        <span className="bg-white border border-blue-200 text-blue-950 px-2 py-0.5 rounded-md font-medium text-[11px] shadow-2xs">
-                          Approval Cap: <strong className="font-bold text-[#0057B8]">{t.cap}</strong>
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* OPEN LIVE POLICY EDITOR FOR SELECTED MASTER TEMPLATE */}
-              <div className="mt-4 pt-4 border-t-2 border-[#0057B8]/20 space-y-4 animate-in fade-in duration-200">
-                <div className="flex items-center justify-between bg-gradient-to-r from-blue-100/90 via-sky-50 to-white p-3.5 rounded-xl border-2 border-[#0057B8]/30 shadow-2xs">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="font-bold text-xs text-[#0057B8] uppercase tracking-wider">
-                      Currently Editing Adopted Master Standard: {title || selectedTemplate.title}
+                      {departments.map(d => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                    </select>
+                    <span className="text-[11px] text-slate-500 mt-1 block">
+                      Select which department library this master standard will be adopted into.
                     </span>
                   </div>
-                  <span className="text-[11px] text-slate-600 font-semibold hidden sm:inline">
-                    Open for direct customization & publishing
-                  </span>
-                </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                        Master Repository Standards ({filteredMasterTemplates.length} Available)
+                      </span>
+                      <span className="text-[11px] text-[#0057B8] font-bold">
+                        Click any blue card to open & edit
+                      </span>
+                    </div>
+                    
+                    {/* Search Bar for Master Library */}
+                    <div className="relative mb-2.5">
+                      <Search className="w-4 h-4 text-[#0057B8] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={masterSearchQuery}
+                        onChange={(e) => setMasterSearchQuery(e.target.value)}
+                        placeholder="Search master library templates (credit cards, lending, KYC, security, AML)..."
+                        className="w-full text-xs pl-9 pr-3 py-2.5 rounded-xl border-2 border-blue-200 hover:border-[#0057B8] bg-white focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/20 outline-none transition font-medium shadow-2xs"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Master Templates List - Vibrant Blue Cards */}
+                  <div className="grid grid-cols-1 gap-3 max-h-72 overflow-y-auto custom-scrollbar pr-1">
+                    {filteredMasterTemplates.map(t => {
+                      const isSelected = selectedTemplateId === t.id;
+                      return (
+                        <div
+                          key={t.id}
+                          onClick={() => {
+                            handleSelectTemplate(t);
+                            setIsTemplateEditorActive(true);
+                          }}
+                          className={`p-4 rounded-2xl border-2 transition-all cursor-pointer text-left relative ${
+                            isSelected 
+                              ? 'border-[#0057B8] bg-gradient-to-br from-blue-100/90 via-sky-50/70 to-white ring-2 ring-[#0057B8]/30 shadow-md' 
+                              : 'border-blue-200/90 bg-gradient-to-br from-white via-blue-50/40 to-sky-50/20 hover:border-[#0057B8] hover:bg-blue-50/70 shadow-2xs'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition ${
+                                isSelected 
+                                  ? 'border-[#0057B8] bg-[#0057B8] text-white shadow-2xs' 
+                                  : 'border-blue-400 bg-white'
+                              }`}>
+                                {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                              </div>
+                              <h4 className={`font-bold text-[14px] truncate ${isSelected ? 'text-[#0057B8]' : 'text-slate-900 group-hover:text-[#0057B8]'}`}>
+                                {t.title}
+                              </h4>
+                            </div>
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#0057B8] bg-blue-100/90 hover:bg-[#0057B8] hover:text-white px-3 py-1.5 rounded-xl transition shadow-2xs flex-shrink-0">
+                              Click to Open & Edit Template →
+                            </span>
+                          </div>
+
+                          <p className="text-slate-600 text-xs mt-1.5 pl-7.5 leading-relaxed">
+                            {t.summary}
+                          </p>
+
+                          <div className="flex flex-wrap items-center gap-2 mt-2.5 pl-7.5 text-xs">
+                            <span className="bg-[#0057B8] text-white px-2.5 py-0.5 rounded-md font-bold text-[10.5px] shadow-2xs">
+                              Partition: {t.deptName || t.dept}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* OPEN LIVE POLICY EDITOR FOR SELECTED MASTER TEMPLATE (DIRECT AT TOP, NO SCROLLING) */}
+                  <div className="space-y-4 animate-in fade-in duration-200">
+                    <div className="flex items-center justify-between bg-gradient-to-r from-blue-100/90 via-sky-50 to-white p-3.5 rounded-xl border-2 border-[#0057B8]/30 shadow-2xs">
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setIsTemplateEditorActive(false)}
+                          className="px-3 py-1.5 bg-white hover:bg-slate-50 text-[#0057B8] border border-blue-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95"
+                        >
+                          <ArrowLeft className="w-3.5 h-3.5" />
+                          <span>← Choose Different Template</span>
+                        </button>
+                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="font-bold text-xs text-[#0057B8] uppercase tracking-wider">
+                          Currently Editing: {title || selectedTemplate?.title}
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-slate-600 font-semibold hidden sm:inline">
+                        Direct Editor Active
+                      </span>
+                    </div>
 
                 {/* Policy Specifications & Framework */}
                 <div className="p-4 bg-white border border-slate-200 rounded-2xl space-y-3.5 shadow-2xs">
@@ -2663,42 +2649,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                     />
                   </div>
 
-                  {/* SLA & Ceilings Grid (Image 1 Inputs) */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                        Turnaround SLA
-                      </label>
-                      <input
-                        type="text"
-                        value={turnaroundSla}
-                        onChange={(e) => setTurnaroundSla(e.target.value)}
-                        className="w-full p-2 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-xs bg-white font-medium shadow-2xs"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                        Daily Limit
-                      </label>
-                      <input
-                        type="text"
-                        value={dailyLimit}
-                        onChange={(e) => setDailyLimit(e.target.value)}
-                        className="w-full p-2 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-xs bg-white font-medium shadow-2xs"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                        Officer Cap
-                      </label>
-                      <input
-                        type="text"
-                        value={officerCap}
-                        onChange={(e) => setOfficerCap(e.target.value)}
-                        className="w-full p-2 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-xs bg-white font-medium shadow-2xs"
-                      />
-                    </div>
-                  </div>
+
                 </div>
 
                 {/* Modular Policy Sections & Clauses (Image 1 Builder) */}
@@ -2790,6 +2741,8 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
 
                 </div>
               </div>
+                </>
+              )}
             </div>
           )}
 
@@ -2825,6 +2778,28 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                     </p>
                   </div>
 
+                  {/* Template Selection from DB before uploading */}
+                  <div className="bg-white p-3.5 rounded-xl border border-blue-200/90 text-left max-w-lg mx-auto shadow-2xs space-y-1.5">
+                    <label className="block text-[11px] font-bold text-[#0057B8] uppercase tracking-wider">
+                      Select Target Policy Template (from DB):
+                    </label>
+                    <select
+                      value={selectedUploadTemplateId}
+                      onChange={(e) => {
+                        setSelectedUploadTemplateId(e.target.value);
+                        const tpl = masterTemplates.find(t => t.id === e.target.value);
+                        if (tpl) handleSelectTemplate(tpl);
+                      }}
+                      className="w-full p-2 rounded-lg border border-slate-300 text-xs font-semibold bg-slate-50 text-slate-800 outline-none focus:border-[#0057B8]"
+                    >
+                      {masterTemplates.map(t => (
+                        <option key={t.id} value={t.id}>
+                          {t.name || t.title} • {t.deptName || t.dept}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
                     <input
                       type="file"
@@ -2842,14 +2817,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                       <span>Choose Files to Ingest (Supports Multiple)</span>
                     </label>
 
-                    <button
-                      type="button"
-                      onClick={handleLoadSampleValuationDocument}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-[#0057B8] hover:from-[#0057B8] hover:to-[#004EA6] text-white rounded-xl font-bold text-xs cursor-pointer shadow-xs transition active:scale-95"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                      <span>Demo: Load Home Loan Valuations Document (hl_valuation.pdf)</span>
-                    </button>
+
                   </div>
 
                   <div className="pt-2 flex items-center justify-center gap-2 text-[11px] text-slate-400">
@@ -2926,8 +2894,65 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                     </div>
                   </div>
 
-                  {/* Active Document Analysis & Discovered Evidence */}
-                  <div className="space-y-4 border border-slate-200 rounded-2xl p-4 bg-white shadow-2xs">
+                  {/* Active Document Analysis: Side-by-Side Split Screen (Image 3 Comparison) */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+                    {/* LEFT PANE: Uploaded Document / PDF Viewer */}
+                    <div className="flex flex-col bg-slate-900 rounded-2xl overflow-hidden border border-slate-300 min-h-[550px] max-h-[78vh] sticky top-0 shadow-md">
+                      <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between text-xs font-semibold flex-shrink-0 border-b border-slate-700">
+                        <div className="flex items-center gap-2 truncate">
+                          <FileText className="w-4 h-4 text-blue-400 flex-shrink-0" />
+                          <span className="truncate max-w-[220px]">
+                            {ingestedDocuments[activeIngestedIndex]?.document_name || uploadedFileName || 'Original Document Preview'}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-blue-200 font-mono bg-blue-900/60 border border-blue-700 px-2.5 py-0.5 rounded-full font-bold">
+                          Source Document View
+                        </span>
+                      </div>
+
+                      {uploadedPdfPreviewUrl ? (
+                        <iframe
+                          src={uploadedPdfPreviewUrl}
+                          className="w-full flex-1 border-0 bg-white min-h-[520px]"
+                          title="Uploaded Document Preview"
+                        />
+                      ) : (
+                        <div className="w-full flex-1 overflow-y-auto p-6 bg-[#f8fafc] font-sans text-slate-800 text-xs leading-relaxed custom-scrollbar">
+                          <div className="border border-slate-200 p-6 shadow-sm rounded-xl bg-white min-h-full space-y-4">
+                            <div className="border-b border-slate-200 pb-3">
+                              <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                                {departmentId || 'Credit Cards'} • Standard Document
+                              </span>
+                              <h2 className="text-base font-bold text-slate-900 mt-2">
+                                {title || ingestedDocuments[activeIngestedIndex]?.title || 'Policy Document'}
+                              </h2>
+                              <p className="text-xs text-slate-500 mt-1 italic">
+                                {summary || 'Policy template defines the standard structure for operational governance.'}
+                              </p>
+                            </div>
+
+                            <div className="space-y-4 pt-1">
+                              {sections.map((sec, sIdx) => (
+                                <div key={sec.id || sIdx} className="space-y-1.5 border-b border-slate-100 pb-3 last:border-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-800 font-bold text-[10px] flex items-center justify-center">
+                                      {sIdx + 1}
+                                    </span>
+                                    <h3 className="font-bold text-xs text-slate-900">{sec.title}</h3>
+                                  </div>
+                                  <div className="text-[11.5px] text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-100 whitespace-pre-wrap font-sans leading-relaxed">
+                                    {sec.content}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* RIGHT PANE: Extracted Specifications, SlAs & Formatter */}
+                    <div className="space-y-4 border border-slate-200 rounded-2xl p-4 bg-white shadow-2xs max-h-[78vh] overflow-y-auto custom-scrollbar">
                     
                     {/* Header Summary */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
@@ -2994,16 +3019,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                                 finding: departments.find(d => d.id === departmentId)?.name || 'Retail Lending (Home Loans & Mortgages)',
                                 source_excerpt: 'Section 2.1 Scope: "All residential home loan applications, new property purchases, refinancing transactions, construction and renovation loans."'
                               },
-                              {
-                                topic: 'Validity & Turnaround SLA',
-                                finding: turnaroundSla || '90 Days Validity (Full & Desktop), 30 Days (AVM)',
-                                source_excerpt: 'Section 4.3 Table 1 (Valuation Table): Full Valuation 90 days, Desktop Valuation 90 days, Automated Valuation Models 30 days.'
-                              },
-                              {
-                                topic: 'Underwriting & Prudence Rule',
-                                finding: dailyLimit || 'Lower of Purchase Price or Assessed Market Value',
-                                source_excerpt: 'Section 3.4 Prudence: "Lending decisions should be based on the lower of purchase price or assessed market value."'
-                              },
+
                               {
                                 topic: 'Approved Valuation Methods',
                                 finding: '4 Approved Methods: Full, Desktop, AVM, Drive-thru/Kerbside',
@@ -3109,36 +3125,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                         />
                       </div>
 
-                      {/* SLA and Ceilings Grid (Image 1 Inputs) */}
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                        <div>
-                          <label className="block text-[10.5px] font-bold text-slate-600 uppercase mb-1">Turnaround / Validity SLA</label>
-                          <input
-                            type="text"
-                            value={turnaroundSla}
-                            onChange={(e) => setTurnaroundSla(e.target.value)}
-                            className="w-full p-2 rounded-lg border border-slate-300 text-xs bg-white font-medium shadow-2xs"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10.5px] font-bold text-slate-600 uppercase mb-1">Underwriting Limit / Rule</label>
-                          <input
-                            type="text"
-                            value={dailyLimit}
-                            onChange={(e) => setDailyLimit(e.target.value)}
-                            className="w-full p-2 rounded-lg border border-slate-300 text-xs bg-white font-medium shadow-2xs"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10.5px] font-bold text-slate-600 uppercase mb-1">Officer Cap / Approval</label>
-                          <input
-                            type="text"
-                            value={officerCap}
-                            onChange={(e) => setOfficerCap(e.target.value)}
-                            className="w-full p-2 rounded-lg border border-slate-300 text-xs bg-white font-medium shadow-2xs"
-                          />
-                        </div>
-                      </div>
+
 
                       {/* Identified Compliance Tags & Citations */}
                       <div className="pt-1">
@@ -3328,6 +3315,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                     )}
                   </div>
                 </div>
+                </div>
               )}
             </div>
           )}
@@ -3335,36 +3323,26 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
           )}
         </form>
 
-        {/* Footer */}
+        {/* Footer: Cancel and Save as Draft ONLY (No Submit for Approval) */}
         <div className="px-6 py-3 border-t border-blue-200/80 flex items-center justify-between bg-white">
-          <div>
-            <button
-              type="button"
-              onClick={handleSaveDraft}
-              disabled={isSubmitting || isAiThinking}
-              className="px-4 py-2 text-[12.5px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-xl shadow-2xs transition cursor-pointer flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
-            >
-              <Save className="w-3.5 h-3.5 text-amber-600" />
-              <span>Save to Draft</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleRequestClose}
+            className="px-4 py-2 text-[13px] font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+          >
+            Cancel
+          </button>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleRequestClose}
-              className="px-4 py-2 text-[13px] text-slate-600 hover:bg-slate-100 rounded-lg transition cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={isSubmitting || isAiThinking}
-              className="px-5 py-2 text-[13px] font-semibold text-white bg-[#0057B8] hover:bg-[#004EA6] rounded-lg shadow-xs transition cursor-pointer"
-            >
-              {isSubmitting ? 'Submitting...' : 'Submit for Approval'}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleSaveDraft}
+            disabled={isSubmitting || isAiThinking}
+            className="px-5 py-2 text-[13px] font-bold text-white bg-[#0057B8] hover:bg-[#004EA6] rounded-xl shadow-xs transition cursor-pointer flex items-center gap-2 active:scale-95 disabled:opacity-50"
+          >
+            <Save className="w-4 h-4 text-white" />
+            <span>{isSubmitting ? 'Saving Draft...' : 'Save as Draft'}</span>
+          </button>
+        </div>
         </div>
       </div>
 
@@ -3613,6 +3591,6 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
