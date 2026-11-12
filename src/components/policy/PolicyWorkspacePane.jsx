@@ -43,14 +43,17 @@ export default function PolicyWorkspacePane({
   canEditPolicy = true,
   canCreateDocument = true,
   onBackToChangeManagement = null,
-  isDraftView = false
+  isDraftView = false,
+  initialEditMode = false,
+  onDraftSaved = null
 }) {
   const [detailedPolicy, setDetailedPolicy] = useState(policy || null);
+  const activeDoc = detailedPolicy || policy;
   const [isLoading, setIsLoading] = useState(false);
   const [activeSupplementaryTab, setActiveSupplementaryTab] = useState('parameters'); // 'parameters' | 'training' | 'reports' | 'incidents' | 'faqs' | 'reg_reference'
   const [assignTaskModalData, setAssignTaskModalData] = useState(null);
   const [taskSuccessToast, setTaskSuccessToast] = useState(null);
-  const [isDocumentEditMode, setIsDocumentEditMode] = useState(initialEditMode);
+  const [isDocumentEditMode, setIsDocumentEditMode] = useState(Boolean(typeof initialEditMode !== "undefined" ? initialEditMode : false));
   const [isSavingDraft, setIsSavingDraft] = useState(false);
 
   useEffect(() => {
@@ -368,8 +371,6 @@ export default function PolicyWorkspacePane({
       setIsSavingTraining(false);
     }
   };
-
-  const activeDoc = detailedPolicy || policy;
 
   const resolvedContent = activeDoc?.content || (() => {
     if (!activeDoc) return '';
