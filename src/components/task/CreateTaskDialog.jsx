@@ -226,8 +226,7 @@ export default function CreateTaskDialog({ onClose, onTaskCreated, initialData =
                                 onChange={handleChange('category')}
                                 className="w-full p-2.5 rounded-xl border border-slate-300 bg-white text-xs font-medium focus:outline-none focus:border-[#0057B8]"
                             >
-                                <option value="general">General (Mine)</option>
-                                <option value="common">Common (Workspace)</option>
+                                <option value="general">Assigned Task</option>
                             </select>
                         </div>
 

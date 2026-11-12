@@ -156,16 +156,11 @@ export default function TaskPane() {
         });
     }, [tasks, statusFilter]);
 
-    // Categorize tasks into Common, Pinned, and General
-    const commonTasks = useMemo(() => {
-        return filteredTasks.filter(t => t.category === 'common');
-    }, [filteredTasks]);
-
     const pinnedTasks = useMemo(() => {
         return filteredTasks.filter(t => t.is_pinned || t.display_category === 'pinned');
     }, [filteredTasks]);
 
-        const assignedTasks = useMemo(() => {
+    const assignedTasks = useMemo(() => {
         const myName = (user?.name || '').toLowerCase();
         const myId = (user?.id || '').toLowerCase();
         return filteredTasks.filter(t => {
@@ -174,8 +169,8 @@ export default function TaskPane() {
         });
     }, [filteredTasks, user]);
 
-    const generalTasks = useMemo(() => {
-        return filteredTasks.filter(t => t.category === 'general' && !t.is_pinned && t.display_category !== 'pinned');
+    const allAssignedTasks = useMemo(() => {
+        return filteredTasks.filter(t => !t.is_pinned && t.display_category !== 'pinned');
     }, [filteredTasks]);
 
     const totalPages = Math.ceil(totalTasks / pageSize) || 1;
@@ -251,18 +246,18 @@ export default function TaskPane() {
                                     : 'text-slate-600 hover:bg-slate-100'
                             }`}
                         >
-                            All ({filteredTasks.length})
+                            All Tasks ({filteredTasks.length})
                         </button>
                         <button
                             type="button"
-                            onClick={() => setActiveTab('common')}
+                            onClick={() => setActiveTab('assigned')}
                             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-                                activeTab === 'common'
+                                activeTab === 'assigned'
                                     ? 'bg-[#0057B8] text-white shadow-xs'
                                     : 'text-slate-600 hover:bg-slate-100'
                             }`}
                         >
-                            Common ({commonTasks.length})
+                            Assigned to Me ({assignedTasks.length})
                         </button>
                         <button
                             type="button"
@@ -274,17 +269,6 @@ export default function TaskPane() {
                             }`}
                         >
                             Pinned ({pinnedTasks.length})
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setActiveTab('general')}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-                                activeTab === 'general'
-                                    ? 'bg-[#0057B8] text-white shadow-xs'
-                                    : 'text-slate-600 hover:bg-slate-100'
-                            }`}
-                        >
-                            General ({generalTasks.length})
                         </button>
                     </div>
 
@@ -346,20 +330,6 @@ export default function TaskPane() {
                                 />
                             )}
 
-                            {/* Common Tasks Category */}
-                            {(activeTab === 'all' || activeTab === 'common') && (
-                                <TaskList
-                                    title="Common Tasks (Workspace Shared)"
-                                    tasks={commonTasks}
-                                    isLoading={isLoading}
-                                    selectedTaskId={selectedTask?.id}
-                                    onTaskClick={(t) => setSelectedTask(t)}
-                                    onPin={handlePin}
-                                    onUnpin={handleUnpin}
-                                    emptyMessage="No common tasks shared across workspace"
-                                />
-                            )}
-
                             {/* Assigned to Me Category */}
                             {activeTab === 'assigned' && (
                                 <TaskList
@@ -374,17 +344,17 @@ export default function TaskPane() {
                                 />
                             )}
 
-                            {/* General Tasks Category */}
+                            {/* All Assigned Workflow Tasks */}
                             {(activeTab === 'all' || activeTab === 'general') && (
                                 <TaskList
-                                    title="General Tasks"
-                                    tasks={generalTasks}
+                                    title="Assigned Workflow Tasks"
+                                    tasks={allAssignedTasks}
                                     isLoading={isLoading}
                                     selectedTaskId={selectedTask?.id}
                                     onTaskClick={(t) => setSelectedTask(t)}
                                     onPin={handlePin}
                                     onUnpin={handleUnpin}
-                                    emptyMessage="No general tasks assigned or created by you"
+                                    emptyMessage="No assigned tasks found"
                                 />
                             )}
                         </>
