@@ -510,9 +510,9 @@ export function ChangeManagementCenterPane({
                             </p>
                           </div>
 
-                          {/* Col 4: Actions Toolbar */}
-                          <div className="col-span-12 sm:col-span-2 flex items-center justify-end gap-1.5 flex-wrap">
-                            {/* 1. View Draft Document like Master Library with Chat */}
+                          {/* Col 4: Actions Toolbar - Only Edit and Delete options per user instruction */}
+                          <div className="col-span-12 sm:col-span-2 flex items-center justify-end gap-2 flex-wrap">
+                            {/* 1. View Draft Document - Commented out per user request
                             <button
                               type="button"
                               onClick={() => {
@@ -523,12 +523,13 @@ export function ChangeManagementCenterPane({
                                 }
                               }}
                               className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-blue-50 text-[#0057B8] transition cursor-pointer"
-                              title="View Draft Document with Chat & Collaboration"
+                              title="View Draft Document with Chat and Collaboration"
                             >
                               <Eye className="w-3.5 h-3.5" />
                             </button>
+                            */}
 
-                            {/* 1.5. Chat & Assign Task Panel */}
+                            {/* 1.5. Chat and Assign Task Panel - Commented out per user request
                             <button
                               type="button"
                               onClick={(e) => {
@@ -540,25 +541,29 @@ export function ChangeManagementCenterPane({
                                   ? 'bg-[#0057B8] text-white border-[#0057B8] shadow-xs'
                                   : 'border-slate-200 bg-white hover:bg-blue-50 text-[#0057B8]'
                               }`}
-                              title="Open Draft Chat & Assign Tasks to Squad"
+                              title="Open Draft Chat and Assign Tasks to Squad"
                             >
                               <MessageSquare className="w-3.5 h-3.5" />
                             </button>
+                            */}
 
-                            {/* 2. Re-edit in Full Editor (Blue/Indigo accent) */}
+                            {/* 2. Edit Draft in Workspace View */}
                             {onEditDraft && (
                               <button
                                 type="button"
-                                onClick={() => onEditDraft(draft)}
-                                className="px-2.5 py-1.5 rounded-lg border border-slate-300 hover:border-[#0057B8] bg-white hover:bg-blue-50/50 text-[#0057B8] text-[11px] font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs"
-                                title="Open in Full Editor with all draft specifications"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onEditDraft(draft);
+                                }}
+                                className="px-3 py-1.5 rounded-xl border border-blue-200 bg-blue-50 hover:bg-[#0057B8] text-[#0057B8] hover:text-white text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs active:scale-95"
+                                title="Edit Draft Document in workspace view"
                               >
                                 <FileEdit className="w-3.5 h-3.5" />
                                 <span>Edit</span>
                               </button>
                             )}
 
-                            {/* 2.5. Version History & Commit Snapshots */}
+                            {/* 2.5. Version History - Commented out per user request
                             <button
                               type="button"
                               onClick={() => handleToggleVersionHistory(draft.id)}
@@ -567,13 +572,14 @@ export function ChangeManagementCenterPane({
                                   ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
                                   : 'border-slate-300 hover:border-[#0057B8] bg-white hover:bg-blue-50/50 text-[#0057B8]'
                               }`}
-                              title="Inspect Version History & Commit Snapshots for this Draft"
+                              title="Inspect Version History and Commit Snapshots for this Draft"
                             >
                               <HistoryIcon className="w-3.5 h-3.5" />
                               <span>History</span>
                             </button>
+                            */}
 
-                            {/* 3. Submit for Approval (Blue per user request) */}
+                            {/* 3. Submit for Approval - Commented out per user request
                             {isEmployee ? (
                               <button
                                 type="button"
@@ -596,16 +602,21 @@ export function ChangeManagementCenterPane({
                                 <span>Publish</span>
                               </button>
                             )}
+                            */}
 
                             {/* 4. Delete Draft */}
                             <button
                               type="button"
-                              onClick={() => handleDeleteDraft(draft.id, draft.title)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteDraft(draft.id, draft.title);
+                              }}
                               disabled={isSubmitting}
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                              className="px-2.5 py-1.5 rounded-xl border border-rose-200 bg-rose-50/60 hover:bg-rose-100 text-rose-600 hover:text-rose-700 text-xs font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs active:scale-95"
                               title="Delete Draft"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
+                              <span>Delete</span>
                             </button>
                           </div>
                         </div>

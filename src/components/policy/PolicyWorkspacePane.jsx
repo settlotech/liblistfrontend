@@ -30,6 +30,7 @@ import {
 import { apiService } from '../../services/apiService';
 
 import FormattedPolicyContent from './FormattedPolicyContent';
+import RichSectionAccordion from './RichSectionAccordion';
 import CreateTaskDialog from '../task/CreateTaskDialog';
 export default function PolicyWorkspacePane({
   policy,
@@ -49,6 +50,111 @@ export default function PolicyWorkspacePane({
   const [activeSupplementaryTab, setActiveSupplementaryTab] = useState('parameters'); // 'parameters' | 'training' | 'reports' | 'incidents' | 'faqs' | 'reg_reference'
   const [assignTaskModalData, setAssignTaskModalData] = useState(null);
   const [taskSuccessToast, setTaskSuccessToast] = useState(null);
+  const [isDocumentEditMode, setIsDocumentEditMode] = useState(initialEditMode);
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
+
+  useEffect(() => {
+    setIsDocumentEditMode(initialEditMode);
+  }, [initialEditMode]);
+
+  // Extract structured sections from policy parameters or content
+  const docSections = useMemo(() => {
+    const params = typeof activeDoc?.parameters === 'string'
+      ? JSON.parse(activeDoc.parameters || '{}')
+      : (activeDoc?.parameters || {});
+
+    if (Array.isArray(params.sections) && params.sections.length > 0) {
+      return params.sections;
+    }
+
+    const contentStr = activeDoc?.content || '';
+    if (!contentStr.trim()) {
+      return [
+        { id: 'sec-1', title: '1. Purpose & Scope', content: '' },
+        { id: 'sec-2', title: '2. Underwriting Limits & Approvals', content: '' }
+      ];
+    }
+
+    const rawLines = contentStr.split('\n');
+    const parsedSections = [];
+    let curSec = null;
+    let curLines = [];
+
+    for (let i = 0; i < rawLines.length; i++) {
+      const line = rawLines[i];
+      if (/^#{1,3}\s+/.test(line)) {
+        if (curSec) {
+          curSec.content = curLines.join('\n').trim();
+          parsedSections.push(curSec);
+        }
+        curSec = {
+          id: `sec-${parsedSections.length + 1}`,
+          title: line.replace(/^#{1,3}\s*/, '').trim(),
+          content: ''
+        };
+        curLines = [];
+      } else {
+        curLines.push(line);
+      }
+    }
+
+    if (curSec) {
+      curSec.content = curLines.join('\n').trim();
+      parsedSections.push(curSec);
+    }
+
+    return parsedSections.length > 0 ? parsedSections : [
+      { id: 'sec-1', title: activeDoc?.title || '1. Purpose & Scope', content: contentStr }
+    ];
+  }, [activeDoc]);
+
+  const handleSaveDocumentSections = async (updatedSections) => {
+    if (!activeDoc?.id) return;
+    setIsSavingDraft(true);
+    try {
+      const currentParams = typeof activeDoc.parameters === 'string'
+        ? JSON.parse(activeDoc.parameters || '{}')
+        : (activeDoc?.parameters || {});
+
+      const updatedParams = {
+        ...currentParams,
+        sections: updatedSections
+      };
+
+      const textContent = updatedSections
+        .map((s, idx) => `### ${s.title || `Section ${idx + 1}`}\n${s.content || ''}`)
+        .join('\n\n');
+
+      await apiService.updatePolicy(activeDoc.id, {
+        title: activeDoc.title,
+        summary: activeDoc.summary,
+        content: textContent,
+        parameters: updatedParams,
+        status: activeDoc.status || 'draft',
+        user_name: currentUser?.name || 'Staff User',
+        updated_by: currentUser?.name || 'Staff User'
+      });
+
+      setDetailedPolicy(prev => ({
+        ...prev,
+        content: textContent,
+        parameters: updatedParams
+      }));
+
+      if (onDraftSaved) {
+        onDraftSaved({
+          ...activeDoc,
+          content: textContent,
+          parameters: updatedParams
+        });
+      }
+    } catch (err) {
+      console.error('Failed to save draft sections:', err);
+      alert('Failed to save draft sections: ' + (err.message || 'Unknown error'));
+    } finally {
+      setIsSavingDraft(false);
+    }
+  };
 
   const isBankOwner = currentUser?.roleType === 'manager' || currentUser?.roleType === 'admin';
   const isEmployee = currentUser?.roleType === 'employee';

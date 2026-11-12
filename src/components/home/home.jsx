@@ -105,6 +105,7 @@ export default function Home({ initialView = 'policy' }) {
   const [editingPolicy, setEditingPolicy] = useState(null);
   const [selectedDraft, setSelectedDraft] = useState(null);
   const [viewingDraft, setViewingDraft] = useState(null);
+  const [isDraftEditing, setIsDraftEditing] = useState(false);
   const [preselectedDept, setPreselectedDept] = useState({ id: null, name: '' });
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isNotificationsModalOpen, setIsNotificationsModalOpen] = useState(false);
@@ -443,14 +444,12 @@ export default function Home({ initialView = 'policy' }) {
             policies={allPolicies}
             onBackToPolicy={null}
             onOpenAddPolicyModal={handleOpenAddPolicyModal}
-            onEditDraft={(draft) => {
+                        onEditDraft={(draft) => {
               const fullPolicy = allPolicies.find(p => p.id === draft.id) || draft;
-              setEditingPolicy(fullPolicy);
-              setPreselectedDept({
-                id: fullPolicy.department_id || fullPolicy.deptId || null,
-                name: fullPolicy.department_name || ''
-              });
-              setIsAddPolicyModalOpen(true);
+              setViewingDraft(fullPolicy);
+              setSelectedPolicyId(fullPolicy.id);
+              setActiveWorkspaceView('policy');
+              setIsDraftEditing(true);
             }}
             onRefresh={() => {
               setRefreshTrigger(prev => prev + 1);
