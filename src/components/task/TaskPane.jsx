@@ -46,8 +46,8 @@ export default function TaskPane() {
 
     // Filters
     const [searchQuery, setSearchQuery] = useState('');
-    const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'pending' | 'responded' | 'completed' | 'approved' | 'cancelled'
-    const [activeTab, setActiveTab] = useState('all'); // 'all' | 'common' | 'pinned' | 'general'
+    const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'pending' | 'in_progress' | 'responded' | 'completed' | 'approved' | 'cancelled'
+    const [activeTab, setActiveTab] = useState('all'); // 'assigned' | 'assigned_by_me' | 'all' | 'pinned'
 
     // Selected task for details pane
     const [selectedTask, setSelectedTask] = useState(null);
@@ -152,20 +152,65 @@ export default function TaskPane() {
     const filteredTasks = useMemo(() => {
         return tasks.filter(t => {
             if (statusFilter !== 'all' && t.status !== statusFilter) return false;
+            if (searchQuery.trim()) {
+                const q = searchQuery.toLowerCase().trim();
+                const code = (t.task_code || '').toLowerCase();
+                const title = (t.title || '').toLowerCase();
+                const desc = (t.description || '').toLowerCase();
+                const assignedTo = (t.assigned_to_name || t.assigned_to || '').toLowerCase();
+                const assignedBy = (t.created_by_name || t.assigned_by || t.created_by || '').toLowerCase();
+                if (!code.includes(q) && !title.includes(q) && !desc.includes(q) && !assignedTo.includes(q) && !assignedBy.includes(q)) {
+                    return false;
+                }
+            }
             return true;
         });
-    }, [tasks, statusFilter]);
+    }, [tasks, statusFilter, searchQuery]);
 
     const pinnedTasks = useMemo(() => {
         return filteredTasks.filter(t => t.is_pinned || t.display_category === 'pinned');
     }, [filteredTasks]);
 
     const assignedTasks = useMemo(() => {
-        const myName = (user?.name || '').toLowerCase();
-        const myId = (user?.id || '').toLowerCase();
+        const myName = (user?.name || '').toLowerCase().trim();
+        const myId = (user?.id || '').toLowerCase().trim();
+        const myEmail = (user?.email || '').toLowerCase().trim();
+        const myUsername = (user?.username || '').toLowerCase().trim();
+
         return filteredTasks.filter(t => {
-            const an = (t.assigned_to_name || t.assigned_to || '').toLowerCase();
-            return (myName && an.includes(myName)) || (myId && an.includes(myId));
+            const an = (t.assigned_to_name || '').toLowerCase().trim();
+            const at = (t.assigned_to || '').toLowerCase().trim();
+
+            const matchesName = myName && (an === myName || an.includes(myName) || myName.includes(an) || at === myName || at.includes(myName));
+            const matchesId = myId && (at === myId || an === myId);
+            const matchesEmail = myEmail && (at === myEmail || an === myEmail);
+            const matchesUsername = myUsername && (at === myUsername || an === myUsername);
+
+            return Boolean(matchesName || matchesId || matchesEmail || matchesUsername);
+        });
+    }, [filteredTasks, user]);
+
+    const assignedByMeTasks = useMemo(() => {
+        const myName = (user?.name || '').toLowerCase().trim();
+        const myId = (user?.id || '').toLowerCase().trim();
+        const myEmail = (user?.email || '').toLowerCase().trim();
+        const myUsername = (user?.username || '').toLowerCase().trim();
+
+        return filteredTasks.filter(t => {
+            const cbn = (t.created_by_name || '').toLowerCase().trim();
+            const cb = (t.created_by || '').toLowerCase().trim();
+            const ab = (t.assigned_by || '').toLowerCase().trim();
+
+            const matchesName = myName && (
+                cbn === myName || cbn.includes(myName) || myName.includes(cbn) ||
+                ab === myName || ab.includes(myName) || myName.includes(ab) ||
+                cb === myName || cb.includes(myName)
+            );
+            const matchesId = myId && (cb === myId || cbn === myId || ab === myId);
+            const matchesEmail = myEmail && (cb === myEmail || cbn === myEmail || ab === myEmail);
+            const matchesUsername = myUsername && (cb === myUsername || cbn === myUsername || ab === myUsername);
+
+            return Boolean(matchesName || matchesId || matchesEmail || matchesUsername);
         });
     }, [filteredTasks, user]);
 
@@ -195,7 +240,7 @@ export default function TaskPane() {
                                     Library Workspace – Task Management
                                 </h1>
                                 <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-[#0057B8] border border-blue-200">
-                                    {totalTasks} Total
+                                    {filteredTasks.length} Total
                                 </span>
                             </div>
                              
@@ -239,6 +284,17 @@ export default function TaskPane() {
                         </button>
                         <button
                             type="button"
+                            onClick={() => setActiveTab('assigned_by_me')}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                                activeTab === 'assigned_by_me'
+                                    ? 'bg-[#0057B8] text-white shadow-xs'
+                                    : 'text-slate-600 hover:bg-slate-100'
+                            }`}
+                        >
+                            Assigned by Me ({assignedByMeTasks.length})
+                        </button>
+                        <button
+                            type="button"
                             onClick={() => setActiveTab('all')}
                             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
                                 activeTab === 'all'
@@ -247,17 +303,6 @@ export default function TaskPane() {
                             }`}
                         >
                             All Tasks ({filteredTasks.length})
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setActiveTab('assigned')}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-                                activeTab === 'assigned'
-                                    ? 'bg-[#0057B8] text-white shadow-xs'
-                                    : 'text-slate-600 hover:bg-slate-100'
-                            }`}
-                        >
-                            Assigned to Me ({assignedTasks.length})
                         </button>
                         <button
                             type="button"
@@ -282,6 +327,7 @@ export default function TaskPane() {
                         >
                             <option value="all">All Statuses</option>
                             <option value="pending">Pending</option>
+                            <option value="in_progress">In Progress</option>
                             <option value="responded">Responded</option>
                             <option value="completed">Completed</option>
                             <option value="approved">Approved</option>
@@ -316,20 +362,6 @@ export default function TaskPane() {
                         </div>
                     ) : (
                         <>
-                            {/* Pinned Tasks Category */}
-                            {(activeTab === 'all' || activeTab === 'pinned') && pinnedTasks.length > 0 && (
-                                <TaskList
-                                    title="Pinned Tasks"
-                                    tasks={pinnedTasks}
-                                    isLoading={isLoading}
-                                    selectedTaskId={selectedTask?.id}
-                                    onTaskClick={(t) => setSelectedTask(t)}
-                                    onPin={handlePin}
-                                    onUnpin={handleUnpin}
-                                    emptyMessage="No pinned tasks"
-                                />
-                            )}
-
                             {/* Assigned to Me Category */}
                             {activeTab === 'assigned' && (
                                 <TaskList
@@ -344,17 +376,59 @@ export default function TaskPane() {
                                 />
                             )}
 
-                            {/* All Assigned Workflow Tasks */}
-                            {(activeTab === 'all' || activeTab === 'general') && (
+                            {/* Assigned by Me Category */}
+                            {activeTab === 'assigned_by_me' && (
                                 <TaskList
-                                    title="Assigned Workflow Tasks"
-                                    tasks={allAssignedTasks}
+                                    title="Tasks Delegated / Assigned by You"
+                                    tasks={assignedByMeTasks}
                                     isLoading={isLoading}
                                     selectedTaskId={selectedTask?.id}
                                     onTaskClick={(t) => setSelectedTask(t)}
                                     onPin={handlePin}
                                     onUnpin={handleUnpin}
-                                    emptyMessage="No assigned tasks found"
+                                    emptyMessage="No tasks have been delegated or created by you yet"
+                                />
+                            )}
+
+                            {/* All Tasks Category */}
+                            {activeTab === 'all' && (
+                                <>
+                                    {pinnedTasks.length > 0 && (
+                                        <TaskList
+                                            title="Pinned Tasks"
+                                            tasks={pinnedTasks}
+                                            isLoading={isLoading}
+                                            selectedTaskId={selectedTask?.id}
+                                            onTaskClick={(t) => setSelectedTask(t)}
+                                            onPin={handlePin}
+                                            onUnpin={handleUnpin}
+                                            emptyMessage="No pinned tasks"
+                                        />
+                                    )}
+                                    <TaskList
+                                        title="Assigned Workflow Tasks"
+                                        tasks={allAssignedTasks}
+                                        isLoading={isLoading}
+                                        selectedTaskId={selectedTask?.id}
+                                        onTaskClick={(t) => setSelectedTask(t)}
+                                        onPin={handlePin}
+                                        onUnpin={handleUnpin}
+                                        emptyMessage="No assigned tasks found"
+                                    />
+                                </>
+                            )}
+
+                            {/* Pinned Tasks Only Category */}
+                            {activeTab === 'pinned' && (
+                                <TaskList
+                                    title="Pinned Tasks"
+                                    tasks={pinnedTasks}
+                                    isLoading={isLoading}
+                                    selectedTaskId={selectedTask?.id}
+                                    onTaskClick={(t) => setSelectedTask(t)}
+                                    onPin={handlePin}
+                                    onUnpin={handleUnpin}
+                                    emptyMessage="No pinned tasks found"
                                 />
                             )}
                         </>
