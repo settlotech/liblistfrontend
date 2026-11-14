@@ -3,47 +3,53 @@ export const POLICY_TEMPLATES = [
   {
     id: 'template-01-pdf',
     name: 'Template 1',
-    title: 'Policy Document',
+    title: 'Policy Template',
     dept: 'company-policies',
     sla: '4 Hours',
     daily: '$25,000 AUD',
     cap: '$100,000 AUD',
-    summary: 'Standard banking policy framework covering applicability, detailed description, controls, dependencies, and reports.',
+    summary: 'Short description of the policy',
     sections: [
       {
-        id: 'sec-summary',
-        title: '1. Summary',
-        content: 'Summary section provides a gist of the policy. It covers what is this policy about, applicability. Prefer to limit this into maximum three paragraphs. It is ok to introduce key bullet points.',
-        type: 'section'
-      },
-      {
-        id: 'sec-details',
-        title: '2. Details',
-        content: 'Detailed section expand the summary comments. It can have multiple sub sections. It contains text, table, images. It would remain a long section. Contains underwriting rules, credit score benchmarks, and authorization limits.',
+        id: 'sec-purpose',
+        title: '1. Purpose',
+        content: 'Purpose statement of the policy',
         type: 'section'
       },
       {
         id: 'sec-scope',
-        title: '3. Scope',
-        content: 'Scope describes applicability of the policy. It will list the functional areas where this policy is applied across retail branches, corporate governance, and consumer credit operations.',
+        title: '2. Scope/Coverage',
+        content: 'Applicability of the policy. It can be based on lines of business, geographical restrictions, customer segmentation etc',
         type: 'section'
       },
       {
-        id: 'sec-controls',
-        title: '4. Controls',
-        content: 'Key control monitoring steps for proper implementation is to be defined. If no control activities are available, this section would show as "No control steps defined".',
+        id: 'sec-details',
+        title: '3. Details/Description',
+        content: 'Details of the policy is described in this section. It can cover multiple sections, tables, images',
         type: 'section'
       },
       {
         id: 'sec-dependencies',
-        title: '5. Dependencies',
-        content: 'This section covers any pre-requisite requirements, x-references to other policies, any regulatory references (APRA APS 220, CPS 234). Usually this is presented in a table or cross-reference list.',
+        title: '4. Pre-requisites /Dependencies',
+        content: 'Explain cross references to the policies',
         type: 'section'
       },
       {
-        id: 'sec-reports',
-        title: '6. Reports',
-        content: 'Any predefined reports are shown in this section. User needs to map explicitly the report contents for this section to be display. Otherwise, user can only list the report id associated with this product (e.g. CBA-RPT-2026-01).',
+        id: 'sec-controls',
+        title: '5. Controls',
+        content: 'This section describes key monitoring requirements. It can have a sub section for data quality',
+        type: 'section'
+      },
+      {
+        id: 'sec-reporting',
+        title: '6. Reporting',
+        content: 'Define key metrics for continuous monitoring activities. It also defines the report layout, refer to the report id.',
+        type: 'section'
+      },
+      {
+        id: 'sec-approval-chain',
+        title: '7. Approval Chain',
+        content: 'Provide the approval chain of this policy',
         type: 'section'
       }
     ]

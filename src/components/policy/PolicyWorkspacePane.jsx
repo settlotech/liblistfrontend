@@ -73,8 +73,13 @@ export default function PolicyWorkspacePane({
     const contentStr = activeDoc?.content || '';
     if (!contentStr.trim()) {
       return [
-        { id: 'sec-1', title: '1. Purpose & Scope', content: '' },
-        { id: 'sec-2', title: '2. Underwriting Limits & Approvals', content: '' }
+        { id: 'sec-1', title: '1. Purpose', content: 'Purpose statement of the policy' },
+        { id: 'sec-2', title: '2. Scope/Coverage', content: 'Applicability of the policy. It can be based on lines of business, geographical restrictions, customer segmentation etc' },
+        { id: 'sec-3', title: '3. Details/Description', content: 'Details of the policy is described in this section. It can cover multiple sections, tables, images' },
+        { id: 'sec-4', title: '4. Pre-requisites /Dependencies', content: 'Explain cross references to the policies' },
+        { id: 'sec-5', title: '5. Controls', content: 'This section describes key monitoring requirements. It can have a sub section for data quality' },
+        { id: 'sec-6', title: '6. Reporting', content: 'Define key metrics for continuous monitoring activities. It also defines the report layout, refer to the report id.' },
+        { id: 'sec-7', title: '7. Approval Chain', content: 'Provide the approval chain of this policy' }
       ];
     }
 

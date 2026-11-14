@@ -82,33 +82,45 @@ export default function AddPolicyModal({
   // 5 Core Client-Demanded Sections: Summary, Details, Reports, Dependencies, Operational Events
   const [sections, setSections] = useState([
     {
-      id: 'sec-summary',
-      title: 'Summary',
-      content: 'Master product policy governing tiered approval thresholds, mandatory KYC/credit score verification, and direct in-system operational specifications.',
+      id: 'sec-purpose',
+      title: '1. Purpose',
+      content: 'Purpose statement of the policy',
+      type: 'section'
+    },
+    {
+      id: 'sec-scope',
+      title: '2. Scope/Coverage',
+      content: 'Applicability of the policy. It can be based on lines of business, geographical restrictions, customer segmentation etc',
       type: 'section'
     },
     {
       id: 'sec-details',
-      title: 'Details',
-      content: '1. Applicant Eligibility: Australian resident, minimum ongoing gross income of $35,000 AUD per annum.\n2. Verification Steps: Real-time DVS national identity match, Biometric face liveness score >= 92%, and Equifax comprehensive credit report >= 620.\n3. Approval Thresholds: Automated Tier 1 approvals up to $5,000 AUD; Credit Officer sign-off for Tier 2 up to $15,000 AUD; Department Manager approval for Tier 3 up to $50,000 AUD.',
-      type: 'section'
-    },
-    {
-      id: 'sec-reports',
-      title: 'Reports',
-      content: '1. Threshold Transaction Reporting (TTR): Automated AUSTRAC submission within 10 business days for transfers >= $10,000 AUD.\n2. APRA CPS 234 Audit Logging: Real-time event telemetry, session keystroke indexing, and monthly compliance reconciliation.',
+      title: '3. Details/Description',
+      content: 'Details of the policy is described in this section. It can cover multiple sections, tables, images',
       type: 'section'
     },
     {
       id: 'sec-dependencies',
-      title: 'Dependencies',
-      content: '1. Core Banking Settlement Engine (CBA Core API v4)\n2. Australian Document Verification Service (DVS Gateway)\n3. Equifax Comprehensive Credit Bureau API\n4. Real-time NPP / PayID Clearing Service',
+      title: '4. Pre-requisites /Dependencies',
+      content: 'Explain cross references to the policies',
       type: 'section'
     },
     {
-      id: 'sec-events',
-      title: 'Operational Events & Lifecycle Triggers',
-      content: '1. Event: Customer Application Ingestion - Digital channel lodges customer application; real-time DVS verification invoked.\n2. Event: Escalation Threshold Trigger - Credit request > $15,000 AUD triggers Credit Officer assignment; > $25,000 AUD triggers Manager sign-off.\n3. Event: Limit Cap Verification - System checks daily limit ($25,000 AUD) and officer cap ($100,000 AUD) before decision execution.\n4. Event: Compliance Audit Logging - Immutable APRA CPS 234 event telemetry recorded with AUSTRAC filing if TTR threshold met.',
+      id: 'sec-controls',
+      title: '5. Controls',
+      content: 'This section describes key monitoring requirements. It can have a sub section for data quality',
+      type: 'section'
+    },
+    {
+      id: 'sec-reporting',
+      title: '6. Reporting',
+      content: 'Define key metrics for continuous monitoring activities. It also defines the report layout, refer to the report id.',
+      type: 'section'
+    },
+    {
+      id: 'sec-approval-chain',
+      title: '7. Approval Chain',
+      content: 'Provide the approval chain of this policy',
       type: 'section'
     }
   ]);
@@ -657,6 +669,60 @@ export default function AddPolicyModal({
 
   // Master library templates
   const masterTemplates = [
+    {
+      id: 'template-standard-policy',
+      title: 'Policy Template',
+      dept: 'company-policies',
+      deptName: 'Company Policies',
+      sla: '4 Hours',
+      cap: '$100,000 AUD',
+      daily: '$25,000 AUD',
+      summary: 'Short description of the policy',
+      sections: [
+        {
+          id: 'tpl-sec-purpose',
+          title: '1. Purpose',
+          content: 'Purpose statement of the policy',
+          type: 'section'
+        },
+        {
+          id: 'tpl-sec-scope',
+          title: '2. Scope/Coverage',
+          content: 'Applicability of the policy. It can be based on lines of business, geographical restrictions, customer segmentation etc',
+          type: 'section'
+        },
+        {
+          id: 'tpl-sec-details',
+          title: '3. Details/Description',
+          content: 'Details of the policy is described in this section. It can cover multiple sections, tables, images',
+          type: 'section'
+        },
+        {
+          id: 'tpl-sec-dependencies',
+          title: '4. Pre-requisites /Dependencies',
+          content: 'Explain cross references to the policies',
+          type: 'section'
+        },
+        {
+          id: 'tpl-sec-controls',
+          title: '5. Controls',
+          content: 'This section describes key monitoring requirements. It can have a sub section for data quality',
+          type: 'section'
+        },
+        {
+          id: 'tpl-sec-reporting',
+          title: '6. Reporting',
+          content: 'Define key metrics for continuous monitoring activities. It also defines the report layout, refer to the report id.',
+          type: 'section'
+        },
+        {
+          id: 'tpl-sec-approval-chain',
+          title: '7. Approval Chain',
+          content: 'Provide the approval chain of this policy',
+          type: 'section'
+        }
+      ]
+    },
     {
       id: 'template-credit-cards',
       title: 'Credit Cards & Revolving Credit Assessment Guidelines',
@@ -1499,43 +1565,56 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
             officer_cap: '$250,000 AUD',
             compliance_tags: ['APRA APS 220', 'Independent Valuers', 'LVR Limits'],
             total_chars: 5500,
-            summary: `Operational banking standard ingested independently from ${file.name}.`,
+            summary: `Short description of the policy ingested from ${file.name}.`,
             sections: [
               {
-                id: `sec-summary-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+                id: `sec-purpose-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
                 section_number: 1,
-                title: 'Summary',
-                content: `Executive summary, intent, and regulatory compliance scope for ${file.name}.`,
-                type: 'section',
-                word_count: 58,
-                char_count: 384
+                title: '1. Purpose',
+                content: 'Purpose statement of the policy. Operational framework and institutional objectives.',
+                type: 'section'
+              },
+              {
+                id: `sec-scope-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+                section_number: 2,
+                title: '2. Scope/Coverage',
+                content: 'Applicability of the policy across lines of business, geographical restrictions, and customer segmentation.',
+                type: 'section'
               },
               {
                 id: `sec-details-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-                section_number: 2,
-                title: 'Details',
-                content: `1. Mandatory Underwriting: Comprehensive borrower assessment under ASIC RG 209.\n2. Verification Gateways: Real-time DVS identity verification and 3.00% APRA buffer check.`,
-                type: 'section',
-                word_count: 203,
-                char_count: 1420
-              },
-              {
-                id: `sec-reports-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
                 section_number: 3,
-                title: 'Reports',
-                content: `1. AUSTRAC TTR submission for transfers >= $10,000 AUD within 10 business days.\n2. APRA CPS 234 event telemetry and monthly compliance audit reconciliation.`,
-                type: 'section',
-                word_count: 95,
-                char_count: 680
+                title: '3. Details/Description',
+                content: 'Details of the policy is described in this section. It covers operational requirements, tables, and underwriting parameters.',
+                type: 'section'
               },
               {
                 id: `sec-dependencies-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
                 section_number: 4,
-                title: 'Dependencies',
-                content: `1. Core Banking Settlement Engine (CBA Core API v4)\n2. Australian DVS Document Verification Service\n3. Equifax Comprehensive Credit Bureau API`,
-                type: 'section',
-                word_count: 48,
-                char_count: 320
+                title: '4. Pre-requisites /Dependencies',
+                content: 'Explain cross references to the policies, external regulations, and system dependencies.',
+                type: 'section'
+              },
+              {
+                id: `sec-controls-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+                section_number: 5,
+                title: '5. Controls',
+                content: 'This section describes key monitoring requirements. Includes telemetry and data quality controls.',
+                type: 'section'
+              },
+              {
+                id: `sec-reporting-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+                section_number: 6,
+                title: '6. Reporting',
+                content: 'Define key metrics for continuous monitoring activities. Maps to institutional report ID CBA-RPT-01.',
+                type: 'section'
+              },
+              {
+                id: `sec-approval-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+                section_number: 7,
+                title: '7. Approval Chain',
+                content: 'Provide the approval chain of this policy. Tier 1 Assessor -> Tier 2 Operations Manager -> Tier 3 Head of Risk.',
+                type: 'section'
               }
             ]
           });
@@ -2307,7 +2386,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                 <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11.5px] text-slate-500">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="font-semibold text-slate-600">Quick Add:</span>
-                    {['Summary', 'Details', 'Reports', 'Dependencies', 'Operational Events'].map(name => (
+                    {['Purpose', 'Scope/Coverage', 'Details/Description', 'Pre-requisites /Dependencies', 'Controls', 'Reporting', 'Approval Chain'].map(name => (
                       <button
                         key={name}
                         type="button"
