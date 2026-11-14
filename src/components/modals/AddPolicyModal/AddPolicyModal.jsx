@@ -17,7 +17,6 @@ import {
   ArrowDown,
   ArrowLeft,
   Plus,
-  AlignLeft,
   Layers,
   Tag,
   Maximize2,
@@ -47,7 +46,7 @@ export default function AddPolicyModal({
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
 
   // Direct In-System Template Selection State
-  const [selectedDirectTemplateId, setSelectedDirectTemplateId] = useState(null);
+  const [selectedDirectTemplateId, setSelectedDirectTemplateId] = useState('template-01-pdf');
   const [activeTemplateInfoId, setActiveTemplateInfoId] = useState(null);
   const [expandedSectionId, setExpandedSectionId] = useState(null);
   const [expandedModalSectionId, setExpandedModalSectionId] = useState(null);
@@ -58,7 +57,7 @@ export default function AddPolicyModal({
   const [departmentId, setDepartmentId] = useState(preselectedDepartmentId || departments[0]?.id || 'company-policies');
   const [editingDraftId, setEditingDraftId] = useState(null);
   const [title, setTitle] = useState('');
-  const [summary, setSummary] = useState('');
+  const [summary, setSummary] = useState('Short description of the policy');
   const [content, setContent] = useState('');
   const [turnaroundSla, setTurnaroundSla] = useState('4 Hours');
   const [dailyLimit, setDailyLimit] = useState('$25,000 AUD');
@@ -68,58 +67,58 @@ export default function AddPolicyModal({
   const [uploadedDocRawText, setUploadedDocRawText] = useState('');
   const [leftPaneViewMode, setLeftPaneViewMode] = useState('preview');
   const [isTemplateEditorActive, setIsTemplateEditorActive] = useState(false);
-  const [selectedUploadTemplateId, setSelectedUploadTemplateId] = useState('template-01-pdf');
+  const [selectedUploadTemplateId, setSelectedUploadTemplateId] = useState('template-standard-policy');
   const [complianceTags, setComplianceTags] = useState([]);
   const [newTagInput, setNewTagInput] = useState('');
   const [masterSearchQuery, setMasterSearchQuery] = useState('');
-  const [selectedTemplateId, setSelectedTemplateId] = useState('template-credit-cards');
+  const [selectedTemplateId, setSelectedTemplateId] = useState('template-standard-policy');
   const [ingestedDocuments, setIngestedDocuments] = useState([]);
   const [activeIngestedIndex, setActiveIngestedIndex] = useState(0);
   const [showEvidence, setShowEvidence] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  // 5 Core Client-Demanded Sections: Summary, Details, Reports, Dependencies, Operational Events
+  // 7 Core Institutional Template Sections from Template_policy.docx
   const [sections, setSections] = useState([
     {
       id: 'sec-purpose',
-      title: '1. Purpose',
+      title: 'Purpose',
       content: 'Purpose statement of the policy',
       type: 'section'
     },
     {
       id: 'sec-scope',
-      title: '2. Scope/Coverage',
+      title: 'Scope/Coverage',
       content: 'Applicability of the policy. It can be based on lines of business, geographical restrictions, customer segmentation etc',
       type: 'section'
     },
     {
       id: 'sec-details',
-      title: '3. Details/Description',
+      title: 'Details/Description',
       content: 'Details of the policy is described in this section. It can cover multiple sections, tables, images',
       type: 'section'
     },
     {
       id: 'sec-dependencies',
-      title: '4. Pre-requisites /Dependencies',
+      title: 'Pre-requisites /Dependencies',
       content: 'Explain cross references to the policies',
       type: 'section'
     },
     {
       id: 'sec-controls',
-      title: '5. Controls',
+      title: 'Controls',
       content: 'This section describes key monitoring requirements. It can have a sub section for data quality',
       type: 'section'
     },
     {
       id: 'sec-reporting',
-      title: '6. Reporting',
+      title: 'Reporting',
       content: 'Define key metrics for continuous monitoring activities. It also defines the report layout, refer to the report id.',
       type: 'section'
     },
     {
       id: 'sec-approval-chain',
-      title: '7. Approval Chain',
+      title: 'Approval Chain',
       content: 'Provide the approval chain of this policy',
       type: 'section'
     }
@@ -133,8 +132,8 @@ export default function AddPolicyModal({
           if (Array.isArray(dbTpls) && dbTpls.length > 0) {
             const formatted = dbTpls.map((t, idx) => ({
               id: t.id,
-              name: t.name || `Template ${idx + 1}`,
-              title: t.title || 'Operational Standard',
+              name: t.name || (t.id === 'template-standard-policy' || t.id === 'template-01-pdf' ? 'Policy Template' : `Template ${idx + 1}`),
+              title: t.title || (t.id === 'template-standard-policy' || t.id === 'template-01-pdf' ? 'Policy Title' : 'Operational Standard'),
               dept: t.department_id || 'company-policies',
               sla: t.sla || '4 Hours',
               daily: t.daily_limit || '$25,000 AUD',
@@ -143,7 +142,9 @@ export default function AddPolicyModal({
               sections: typeof t.sections === 'string' ? JSON.parse(t.sections) : (t.sections || []),
               phases: typeof t.phases === 'string' ? JSON.parse(t.phases) : (t.phases || [])
             }));
-            setDynamicTemplates(formatted);
+            const standardTpl = POLICY_TEMPLATES[0];
+            const nonStandard = formatted.filter(t => t.id !== 'template-standard-policy' && t.id !== 'template-01-pdf');
+            setDynamicTemplates([standardTpl, ...nonStandard]);
           }
         })
         .catch((err) => console.warn('Could not load dynamic templates from DB:', err));
@@ -161,89 +162,77 @@ export default function AddPolicyModal({
     }
   }, [isOpen, preselectedDepartmentId]);
 
-  // Synchronize fields when editing an existing policy / draft
+  // Synchronize fields when editing an existing policy / draft or creating fresh
   useEffect(() => {
-    if (isOpen && editingPolicy) {
-      setEditingDraftId(editingPolicy.id || null);
-      setTitle(editingPolicy.title || '');
-      setSummary(editingPolicy.summary || '');
-      setContent(editingPolicy.content || '');
-      if (editingPolicy.department_id || editingPolicy.deptId) {
-        setDepartmentId(editingPolicy.department_id || editingPolicy.deptId);
-      }
-      const params = typeof editingPolicy.parameters === 'string'
-        ? JSON.parse(editingPolicy.parameters || '{}')
-        : (editingPolicy.parameters || {});
+    if (isOpen) {
+      if (editingPolicy) {
+        setEditingDraftId(editingPolicy.id || null);
+        setTitle(editingPolicy.title || '');
+        setSummary(editingPolicy.summary || '');
+        setContent(editingPolicy.content || '');
+        if (editingPolicy.department_id || editingPolicy.deptId) {
+          setDepartmentId(editingPolicy.department_id || editingPolicy.deptId);
+        }
+        const params = typeof editingPolicy.parameters === 'string'
+          ? JSON.parse(editingPolicy.parameters || '{}')
+          : (editingPolicy.parameters || {});
 
-      setTurnaroundSla(params.turnaround_sla || editingPolicy.turnaroundSla || '4 Hours');
-      setDailyLimit(params.daily_limit || editingPolicy.dailyLimit || '$25,000 AUD');
-      setOfficerCap(params.approval_limits?.officer_cap || editingPolicy.officerCap || '$100,000 AUD');
+        setTurnaroundSla(params.turnaround_sla || editingPolicy.turnaroundSla || '4 Hours');
+        setDailyLimit(params.daily_limit || editingPolicy.dailyLimit || '$25,000 AUD');
+        setOfficerCap(params.approval_limits?.officer_cap || editingPolicy.officerCap || '$100,000 AUD');
 
-      let loadedSections = [];
-      if (params.sections && Array.isArray(params.sections) && params.sections.length > 0) {
-        loadedSections = params.sections.map((sec, idx) => ({
-          ...sec,
-          id: sec.id ? String(sec.id) : `sec-${idx}-${Date.now()}`
-        }));
-      } else if (editingPolicy.content && typeof editingPolicy.content === 'string' && editingPolicy.content.trim()) {
-        const raw = editingPolicy.content.trim();
-        const parts = raw.split(/(?=###\s+)/);
-        if (parts.length > 1) {
-          loadedSections = parts.map((part, i) => {
-            const match = part.match(/^###\s*(?:\d+\.?\s*)?(.*?)\n([\s\S]*)$/);
-            return {
-              id: `sec-${i}-${Date.now()}`,
-              title: match ? match[1].trim() : `Section ${i + 1}`,
-              content: match ? match[2].trim() : part.trim(),
-              type: 'section'
-            };
-          });
-        } else {
-          loadedSections = [
-            { id: `sec-summary-${Date.now()}`, title: '1. Summary & Scope', content: editingPolicy.summary || 'Summary of operational intent.', type: 'section' },
-            { id: `sec-details-${Date.now()}`, title: '2. Operational Details & Clauses', content: raw, type: 'section' }
-          ];
+        let loadedSections = [];
+        if (params.sections && Array.isArray(params.sections) && params.sections.length > 0) {
+          loadedSections = params.sections.map((sec, idx) => ({
+            ...sec,
+            id: sec.id ? String(sec.id) : `sec-${idx}-${Date.now()}`
+          }));
+        } else if (editingPolicy.content && typeof editingPolicy.content === 'string' && editingPolicy.content.trim()) {
+          const raw = editingPolicy.content.trim();
+          const parts = raw.split(/(?=###\s+)/);
+          if (parts.length > 1) {
+            loadedSections = parts.map((part, i) => {
+              const match = part.match(/^###\s*(?:\d+\.?\s*)?(.*?)\n([\s\S]*)$/);
+              return {
+                id: `sec-${i}-${Date.now()}`,
+                title: match ? match[1].trim() : `Section ${i + 1}`,
+                content: match ? match[2].trim() : part.trim(),
+                type: 'section'
+              };
+            });
+          } else {
+            loadedSections = [
+              { id: `sec-summary-${Date.now()}`, title: 'Summary', content: editingPolicy.summary || 'Summary of operational intent.', type: 'section' },
+              { id: `sec-details-${Date.now()}`, title: 'Details', content: raw, type: 'section' }
+            ];
+          }
+        }
+
+        // If sections is still empty, supply the standard 7 template sections
+        if (!loadedSections || loadedSections.length === 0) {
+          loadedSections = JSON.parse(JSON.stringify(POLICY_TEMPLATES[0].sections));
+        }
+
+        setSections(loadedSections);
+        setCreationMode('direct');
+      } else {
+        // Fresh policy creation flow - initialize to Template 1 (Policy Template with 7 standard sections)
+        const tpl = POLICY_TEMPLATES[0];
+        setSelectedDirectTemplateId(tpl.id);
+        setSelectedUploadTemplateId('template-standard-policy');
+        setTitle('');
+        setSummary(tpl.summary);
+        setTurnaroundSla(tpl.sla);
+        setDailyLimit(tpl.daily);
+        setOfficerCap(tpl.cap);
+        setSections(JSON.parse(JSON.stringify(tpl.sections)));
+        setSelectedTemplatePhases([]);
+        if (preselectedDepartmentId) {
+          setDepartmentId(preselectedDepartmentId);
+        } else if (departments.length > 0) {
+          setDepartmentId(departments[0].id);
         }
       }
-
-      // If sections is still empty, supply the standard 5 baseline sections so sections are NEVER 0
-      if (!loadedSections || loadedSections.length === 0) {
-        loadedSections = [
-          {
-            id: `sec-summary-${Date.now()}`,
-            title: '1. Purpose & Product Scope',
-            content: editingPolicy.summary || 'This policy framework governs credit assessment criteria, authorization limits, and regulatory compliance standards across retail banking operations under APRA CPS 234.',
-            type: 'section'
-          },
-          {
-            id: `sec-rules-${Date.now()}`,
-            title: '2. Operational Rules & Mandatory Verifications',
-            content: '1. Applicant Identity: Mandatory 100-point identity check via Australian DVS Gateway.\n2. Serviceability: Minimum debt-to-income (DTI) ratio check with 3.0% interest rate buffer.\n3. Bureau Inquiries: Real-time Comprehensive Credit Reporting (CCR) pull via Equifax API.',
-            type: 'section'
-          },
-          {
-            id: `sec-reports-${Date.now()}`,
-            title: '3. Reports & Audit Telemetry',
-            content: 'Daily transaction logging, monthly exception reports, and quarterly APRA CPS 230 operational risk attestations.',
-            type: 'section'
-          },
-          {
-            id: `sec-dependencies-${Date.now()}`,
-            title: '4. Dependencies & Core Integrations',
-            content: '1. Core Banking Settlement Engine (CBA Core API v4)\n2. Equifax Comprehensive Credit Bureau API\n3. Australian DVS Document Verification Service Gateway',
-            type: 'section'
-          },
-          {
-            id: `sec-events-${Date.now()}`,
-            title: '5. Operational Events & Lifecycle Triggers',
-            content: '1. Event: Credit request > $15,000 AUD triggers Credit Officer assignment.\n2. Event: Limit Cap Verification - System checks daily limit ($25,000 AUD) and officer cap ($100,000 AUD) before decision execution.\n3. Event: Cash advance >= $10,000 AUD triggers automated AUSTRAC TTR report generation.',
-            type: 'section'
-          }
-        ];
-      }
-
-      setSections(loadedSections);
-      setCreationMode('direct');
     }
   }, [isOpen, editingPolicy]);
 
@@ -420,24 +409,15 @@ export default function AddPolicyModal({
     setSections(prev => [...prev, newSec]);
   };
 
-  const handleAddParagraph = () => {
-    const newPara = {
-      id: `sec-para-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-      title: '',
-      content: '',
-      type: 'paragraph'
-    };
-    setSections(prev => [...prev, newPara]);
-  };
-
   const handleSelectDirectTemplate = (template) => {
     if (!template) return;
     setSelectedDirectTemplateId(template.id);
-    setTitle(template.title);
-    setSummary(template.summary);
-    setTurnaroundSla(template.sla);
-    setDailyLimit(template.daily);
-    setOfficerCap(template.cap);
+    const isStandard = template.id === 'template-standard-policy' || template.id === 'template-01-pdf';
+    setTitle(isStandard ? '' : (template.title || ''));
+    setSummary(template.summary || 'Short description of the policy');
+    setTurnaroundSla(template.sla || '4 Hours');
+    setDailyLimit(template.daily || '$25,000 AUD');
+    setOfficerCap(template.cap || '$100,000 AUD');
     setSections(JSON.parse(JSON.stringify(template.sections || [])));
     if (template.phases && template.phases.length > 0) {
       setSelectedTemplatePhases(JSON.parse(JSON.stringify(template.phases)));
@@ -671,9 +651,10 @@ export default function AddPolicyModal({
   const masterTemplates = [
     {
       id: 'template-standard-policy',
+      name: 'Policy Template',
       title: 'Policy Template',
       dept: 'company-policies',
-      deptName: 'Company Policies',
+      deptName: 'Institutional Framework',
       sla: '4 Hours',
       cap: '$100,000 AUD',
       daily: '$25,000 AUD',
@@ -681,43 +662,43 @@ export default function AddPolicyModal({
       sections: [
         {
           id: 'tpl-sec-purpose',
-          title: '1. Purpose',
+          title: 'Purpose',
           content: 'Purpose statement of the policy',
           type: 'section'
         },
         {
           id: 'tpl-sec-scope',
-          title: '2. Scope/Coverage',
+          title: 'Scope/Coverage',
           content: 'Applicability of the policy. It can be based on lines of business, geographical restrictions, customer segmentation etc',
           type: 'section'
         },
         {
           id: 'tpl-sec-details',
-          title: '3. Details/Description',
+          title: 'Details/Description',
           content: 'Details of the policy is described in this section. It can cover multiple sections, tables, images',
           type: 'section'
         },
         {
           id: 'tpl-sec-dependencies',
-          title: '4. Pre-requisites /Dependencies',
+          title: 'Pre-requisites /Dependencies',
           content: 'Explain cross references to the policies',
           type: 'section'
         },
         {
           id: 'tpl-sec-controls',
-          title: '5. Controls',
+          title: 'Controls',
           content: 'This section describes key monitoring requirements. It can have a sub section for data quality',
           type: 'section'
         },
         {
           id: 'tpl-sec-reporting',
-          title: '6. Reporting',
+          title: 'Reporting',
           content: 'Define key metrics for continuous monitoring activities. It also defines the report layout, refer to the report id.',
           type: 'section'
         },
         {
           id: 'tpl-sec-approval-chain',
-          title: '7. Approval Chain',
+          title: 'Approval Chain',
           content: 'Provide the approval chain of this policy',
           type: 'section'
         }
@@ -2253,7 +2234,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                           type="text"
                           value={title}
                           onChange={(e) => setTitle(e.target.value)}
-                          placeholder="e.g. Credit Assessment & Approval Guidelines"
+                          placeholder="Policy Title"
                           required
                           className="w-full p-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-[13px] bg-white font-semibold text-slate-900 shadow-2xs"
                         />
@@ -2267,10 +2248,10 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                   <div>
                     <h3 className="font-bold text-slate-900 text-[13.5px] flex items-center gap-2">
                       <Layers className="w-4 h-4 text-[#0057B8]" />
-                      <span>POLICY CLAUSES & SPECIFICATIONS ({sections.length}) (compare against left pane) Clause Formatter Enabled</span>
+                      <span>POLICY CLAUSES & SPECIFICATIONS ({sections.length})</span>
                     </h3>
                     <p className="text-[11.5px] text-slate-500">
-                      Edit clause specifications, reorder above or below, delete, or add standalone paragraphs.
+                      Edit clause specifications, reorder above or below, or add new sections.
                     </p>
                   </div>
 
@@ -2281,15 +2262,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                       className="inline-flex items-center gap-1 px-3 py-1.5 bg-[#0057B8]/10 hover:bg-[#0057B8]/20 text-[#0057B8] rounded-xl text-xs font-bold border border-[#0057B8]/30 transition cursor-pointer shadow-2xs"
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      <span>+ Add Section</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleAddParagraph}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold border border-slate-300 transition cursor-pointer shadow-2xs"
-                    >
-                      <AlignLeft className="w-3.5 h-3.5" />
-                      <span>+ Add Paragraph</span>
+                      <span>Add Section</span>
                     </button>
                   </div>
                 </div>
@@ -2308,9 +2281,13 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                               {idx + 1}
                             </span>
                             <div className="flex-1 min-w-0">
-                              <span className="font-bold text-[13.5px] text-slate-900 tracking-tight block truncate select-none">
-                                {section.title || (section.type === 'paragraph' ? 'Paragraph' : `Section ${idx + 1}`)}
-                              </span>
+                              <input
+                                type="text"
+                                value={section.title}
+                                onChange={(e) => handleUpdateSectionTitle(section.id, e.target.value)}
+                                placeholder={section.type === 'paragraph' ? 'Paragraph' : `Section ${idx + 1} Title`}
+                                className="w-full font-bold text-[13.5px] text-slate-900 bg-white border border-slate-200 focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8] px-2.5 py-1 rounded-md outline-none transition shadow-2xs"
+                              />
                             </div>
                             {section.type === 'paragraph' && (
                               <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded uppercase flex-shrink-0">
@@ -2380,32 +2357,6 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                     );
                   })}
                 </div>
-
-                {/* Quick Add Presets Bar (commented out as requested) */}
-                {/*
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11.5px] text-slate-500">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="font-semibold text-slate-600">Quick Add:</span>
-                    {['Purpose', 'Scope/Coverage', 'Details/Description', 'Pre-requisites /Dependencies', 'Controls', 'Reporting', 'Approval Chain'].map(name => (
-                      <button
-                        key={name}
-                        type="button"
-                        onClick={() => handleAddPresetSection(name)}
-                        className="px-2.5 py-1 bg-white hover:bg-blue-50 hover:text-[#0057B8] hover:border-[#0057B8] text-slate-600 border border-slate-300 rounded-lg text-[11px] font-semibold transition cursor-pointer shadow-2xs"
-                      >
-                        +{name}
-                      </button>
-                    ))}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleAddParagraph}
-                    className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg text-[11px] font-medium transition cursor-pointer"
-                  >
-                    + Add as single paragraph
-                  </button>
-                </div>
-                */}
               </div>
 
               {/* Executive Summary & Scope + SLA / Daily Limit / Officer Cap Grid (Image 1) - ONLY FOR EXECUTIVE SUMMARY TEMPLATE */}
@@ -2709,7 +2660,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                       AI & RAG Engine Processing Documents...
                     </p>
                     <p className="text-xs text-slate-500">
-                      Extracting Summary, Details, Reports, Dependencies, and Operational Events independently for each document.
+                      Extracting Purpose, Scope/Coverage, Details, Pre-requisites, Controls, Reporting, and Approval Chain.
                     </p>
                   </div>
                   <p className="text-[12px] text-[#0057B8] font-mono bg-[#0057B8]/10 px-4 py-1.5 rounded-lg inline-block font-semibold">
@@ -2726,7 +2677,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                       Upload Single or Multiple Documents
                     </h3>
                     <p className="text-xs text-slate-500 max-w-md mx-auto mt-1 leading-relaxed">
-                      Select one or multiple policy files. Document Parsing Engine segments each document into <strong>Summary</strong>, <strong>Scope</strong>, <strong>Principles</strong>, <strong>Methods</strong>, <strong>Dependencies</strong>, and <strong>Operational Events</strong>.
+                      Select one or multiple policy files. Document Parsing Engine segments each document into standard sections: <strong>Purpose</strong>, <strong>Scope/Coverage</strong>, <strong>Details/Description</strong>, <strong>Pre-requisites/Dependencies</strong>, <strong>Controls</strong>, <strong>Reporting</strong>, and <strong>Approval Chain</strong>.
                     </p>
                   </div>
 
@@ -3165,15 +3116,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                               className="px-3 py-1.5 bg-[#0057B8]/10 hover:bg-[#0057B8]/20 text-[#0057B8] font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1 shadow-2xs border border-[#0057B8]/30"
                             >
                               <Plus className="w-3.5 h-3.5" />
-                              <span>+ Add Section</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleAddParagraph}
-                              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1 border border-slate-300 shadow-2xs"
-                            >
-                              <AlignLeft className="w-3.5 h-3.5" />
-                              <span>+ Add Paragraph</span>
+                              <span>Add Section</span>
                             </button>
                           </div>
                         </div>

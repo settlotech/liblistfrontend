@@ -20,47 +20,47 @@ import { apiService } from '../../services/apiService';
 const DEFAULT_STARTER_TEMPLATES = [
   {
     id: 'template-standard-policy',
-    name: 'standard_policy_template',
-    title: 'Policy Template',
+    name: 'Policy Template',
+    title: 'Policy Title',
     department_id: 'company-policies',
-    summary: 'Short description of the policy. Institutional standard policy framework covering purpose, scope, details, pre-requisites, controls, reporting, and approval chain.',
+    summary: 'Short description of the policy',
     sla: '4 Hours',
     daily: '$25,000 AUD',
     cap: '$100,000 AUD',
     sections: [
       {
         id: 'sec-purpose',
-        title: '1. Purpose',
+        title: 'Purpose',
         content: 'Purpose statement of the policy'
       },
       {
         id: 'sec-scope',
-        title: '2. Scope/Coverage',
+        title: 'Scope/Coverage',
         content: 'Applicability of the policy. It can be based on lines of business, geographical restrictions, customer segmentation etc'
       },
       {
         id: 'sec-details',
-        title: '3. Details/Description',
+        title: 'Details/Description',
         content: 'Details of the policy is described in this section. It can cover multiple sections, tables, images'
       },
       {
         id: 'sec-dependencies',
-        title: '4. Pre-requisites /Dependencies',
+        title: 'Pre-requisites /Dependencies',
         content: 'Explain cross references to the policies'
       },
       {
         id: 'sec-controls',
-        title: '5. Controls',
+        title: 'Controls',
         content: 'This section describes key monitoring requirements. It can have a sub section for data quality'
       },
       {
         id: 'sec-reporting',
-        title: '6. Reporting',
+        title: 'Reporting',
         content: 'Define key metrics for continuous monitoring activities. It also defines the report layout, refer to the report id.'
       },
       {
         id: 'sec-approval-chain',
-        title: '7. Approval Chain',
+        title: 'Approval Chain',
         content: 'Provide the approval chain of this policy'
       }
     ]

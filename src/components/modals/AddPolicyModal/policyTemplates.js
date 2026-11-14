@@ -2,8 +2,8 @@
 export const POLICY_TEMPLATES = [
   {
     id: 'template-01-pdf',
-    name: 'Template 1',
-    title: 'Policy Template',
+    name: 'Policy Template',
+    title: 'Policy Title',
     dept: 'company-policies',
     sla: '4 Hours',
     daily: '$25,000 AUD',
@@ -12,43 +12,43 @@ export const POLICY_TEMPLATES = [
     sections: [
       {
         id: 'sec-purpose',
-        title: '1. Purpose',
+        title: 'Purpose',
         content: 'Purpose statement of the policy',
         type: 'section'
       },
       {
         id: 'sec-scope',
-        title: '2. Scope/Coverage',
+        title: 'Scope/Coverage',
         content: 'Applicability of the policy. It can be based on lines of business, geographical restrictions, customer segmentation etc',
         type: 'section'
       },
       {
         id: 'sec-details',
-        title: '3. Details/Description',
+        title: 'Details/Description',
         content: 'Details of the policy is described in this section. It can cover multiple sections, tables, images',
         type: 'section'
       },
       {
         id: 'sec-dependencies',
-        title: '4. Pre-requisites /Dependencies',
+        title: 'Pre-requisites /Dependencies',
         content: 'Explain cross references to the policies',
         type: 'section'
       },
       {
         id: 'sec-controls',
-        title: '5. Controls',
+        title: 'Controls',
         content: 'This section describes key monitoring requirements. It can have a sub section for data quality',
         type: 'section'
       },
       {
         id: 'sec-reporting',
-        title: '6. Reporting',
+        title: 'Reporting',
         content: 'Define key metrics for continuous monitoring activities. It also defines the report layout, refer to the report id.',
         type: 'section'
       },
       {
         id: 'sec-approval-chain',
-        title: '7. Approval Chain',
+        title: 'Approval Chain',
         content: 'Provide the approval chain of this policy',
         type: 'section'
       }
