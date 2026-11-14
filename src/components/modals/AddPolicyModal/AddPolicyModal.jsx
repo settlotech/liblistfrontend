@@ -84,43 +84,50 @@ export default function AddPolicyModal({
       id: 'sec-purpose',
       title: 'Purpose',
       content: 'Purpose statement of the policy',
-      type: 'section'
+      type: 'section',
+      isTemplateSection: true
     },
     {
       id: 'sec-scope',
       title: 'Scope/Coverage',
       content: 'Applicability of the policy. It can be based on lines of business, geographical restrictions, customer segmentation etc',
-      type: 'section'
+      type: 'section',
+      isTemplateSection: true
     },
     {
       id: 'sec-details',
       title: 'Details/Description',
       content: 'Details of the policy is described in this section. It can cover multiple sections, tables, images',
-      type: 'section'
+      type: 'section',
+      isTemplateSection: true
     },
     {
       id: 'sec-dependencies',
       title: 'Pre-requisites /Dependencies',
       content: 'Explain cross references to the policies',
-      type: 'section'
+      type: 'section',
+      isTemplateSection: true
     },
     {
       id: 'sec-controls',
       title: 'Controls',
       content: 'This section describes key monitoring requirements. It can have a sub section for data quality',
-      type: 'section'
+      type: 'section',
+      isTemplateSection: true
     },
     {
       id: 'sec-reporting',
       title: 'Reporting',
       content: 'Define key metrics for continuous monitoring activities. It also defines the report layout, refer to the report id.',
-      type: 'section'
+      type: 'section',
+      isTemplateSection: true
     },
     {
       id: 'sec-approval-chain',
       title: 'Approval Chain',
       content: 'Provide the approval chain of this policy',
-      type: 'section'
+      type: 'section',
+      isTemplateSection: true
     }
   ]);
 
@@ -225,7 +232,14 @@ export default function AddPolicyModal({
         setTurnaroundSla(tpl.sla);
         setDailyLimit(tpl.daily);
         setOfficerCap(tpl.cap);
-        setSections(JSON.parse(JSON.stringify(tpl.sections)));
+        const initialTplSections = (tpl.sections || []).map((sec, idx) => ({
+          ...sec,
+          id: sec.id || `sec-${idx}-${Date.now()}`,
+          type: 'section',
+          isTemplateSection: true,
+          isCustom: false
+        }));
+        setSections(initialTplSections);
         setSelectedTemplatePhases([]);
         if (preselectedDepartmentId) {
           setDepartmentId(preselectedDepartmentId);
@@ -404,7 +418,9 @@ export default function AddPolicyModal({
       id: `sec-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       title: customTitle,
       content: '',
-      type: 'section'
+      type: 'section',
+      isTemplateSection: false,
+      isCustom: true
     };
     setSections(prev => [...prev, newSec]);
   };
@@ -418,7 +434,14 @@ export default function AddPolicyModal({
     setTurnaroundSla(template.sla || '4 Hours');
     setDailyLimit(template.daily || '$25,000 AUD');
     setOfficerCap(template.cap || '$100,000 AUD');
-    setSections(JSON.parse(JSON.stringify(template.sections || [])));
+    const tplSections = (template.sections || []).map((sec, idx) => ({
+      ...sec,
+      id: sec.id || `sec-${idx}-${Date.now()}`,
+      type: 'section',
+      isTemplateSection: true,
+      isCustom: false
+    }));
+    setSections(tplSections);
     if (template.phases && template.phases.length > 0) {
       setSelectedTemplatePhases(JSON.parse(JSON.stringify(template.phases)));
     } else {
@@ -2048,6 +2071,18 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                     />
                   </div>
                 ))}
+
+                {/* + Add Section Button at the Bottom of the Last Section */}
+                <div className="pt-2 flex items-center justify-start">
+                  <button
+                    type="button"
+                    onClick={() => handleAddSection('New Section')}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#0057B8]/10 hover:bg-[#0057B8]/20 text-[#0057B8] rounded-xl text-xs font-bold border border-[#0057B8]/30 transition cursor-pointer shadow-2xs active:scale-98"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>+ Add Section</span>
+                  </button>
+                </div>
               </div>
             </div>
           ) : (
@@ -2262,7 +2297,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                       className="inline-flex items-center gap-1 px-3 py-1.5 bg-[#0057B8]/10 hover:bg-[#0057B8]/20 text-[#0057B8] rounded-xl text-xs font-bold border border-[#0057B8]/30 transition cursor-pointer shadow-2xs"
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      <span>Add Section</span>
+                      <span>+ Add Section</span>
                     </button>
                   </div>
                 </div>
@@ -2281,13 +2316,20 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                               {idx + 1}
                             </span>
                             <div className="flex-1 min-w-0">
-                              <input
-                                type="text"
-                                value={section.title}
-                                onChange={(e) => handleUpdateSectionTitle(section.id, e.target.value)}
-                                placeholder={section.type === 'paragraph' ? 'Paragraph' : `Section ${idx + 1} Title`}
-                                className="w-full font-bold text-[13.5px] text-slate-900 bg-white border border-slate-200 focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8] px-2.5 py-1 rounded-md outline-none transition shadow-2xs"
-                              />
+                              {section.isTemplateSection ? (
+                                <span className="font-bold text-[13.5px] text-slate-900 tracking-tight block truncate select-none">
+                                  {section.title}
+                                </span>
+                              ) : (
+                                <input
+                                  type="text"
+                                  value={section.title}
+                                  onChange={(e) => handleUpdateSectionTitle(section.id, e.target.value)}
+                                  placeholder={section.type === 'paragraph' ? 'Paragraph' : `Section ${idx + 1} Title`}
+                                  className="w-full font-bold text-[13.5px] text-slate-900 bg-white border border-slate-300 focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8] px-2.5 py-1 rounded-md outline-none transition shadow-2xs"
+                                  autoFocus
+                                />
+                              )}
                             </div>
                             {section.type === 'paragraph' && (
                               <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded uppercase flex-shrink-0">
@@ -2356,6 +2398,18 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                       </div>
                     );
                   })}
+
+                  {/* + Add Section Button at the Bottom of the Last Section */}
+                  <div className="pt-2 flex items-center justify-start">
+                    <button
+                      type="button"
+                      onClick={() => handleAddSection('New Section')}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#0057B8]/10 hover:bg-[#0057B8]/20 text-[#0057B8] rounded-xl text-xs font-bold border border-[#0057B8]/30 transition cursor-pointer shadow-2xs active:scale-98"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>+ Add Section</span>
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -3133,13 +3187,19 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                                   <span className="w-6 h-6 rounded-md bg-[#0057B8] text-white text-[11px] font-bold flex items-center justify-center flex-shrink-0 font-mono shadow-2xs">
                                     {idx + 1}
                                   </span>
-                                  <input
-                                    type="text"
-                                    value={section.title}
-                                    onChange={(e) => handleUpdateSectionTitle(section.id, e.target.value)}
-                                    placeholder="Section Title"
-                                    className="font-bold text-xs text-slate-900 bg-white border border-slate-200 focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8] px-2.5 py-1 rounded-md outline-none transition flex-1 shadow-2xs"
-                                  />
+                                  {section.isTemplateSection ? (
+                                    <span className="font-bold text-xs text-slate-900 tracking-tight block truncate select-none">
+                                      {section.title}
+                                    </span>
+                                  ) : (
+                                    <input
+                                      type="text"
+                                      value={section.title}
+                                      onChange={(e) => handleUpdateSectionTitle(section.id, e.target.value)}
+                                      placeholder={`Section ${idx + 1} Title`}
+                                      className="font-bold text-xs text-slate-900 bg-white border border-slate-200 focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8] px-2.5 py-1 rounded-md outline-none transition flex-1 shadow-2xs"
+                                    />
+                                  )}
                                   {section.type === 'paragraph' && (
                                     <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded uppercase flex-shrink-0">
                                       Paragraph
@@ -3210,6 +3270,18 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                               </div>
                             </div>
                           ))}
+
+                          {/* + Add Section Button at the Bottom of the Last Section */}
+                          <div className="pt-2 flex items-center justify-start">
+                            <button
+                              type="button"
+                              onClick={() => handleAddSection('New Section')}
+                              className="px-3.5 py-1.5 bg-[#0057B8]/10 hover:bg-[#0057B8]/20 text-[#0057B8] font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-2xs border border-[#0057B8]/30"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>+ Add Section</span>
+                            </button>
+                          </div>
                         </div>
 
                         {/* Quick Add Presets Bar */}
@@ -3376,13 +3448,19 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                       Clause Specification
                     </span>
                   </div>
-                  <input
-                    type="text"
-                    value={currentSection.title}
-                    onChange={(e) => handleUpdateSectionTitle(currentSection.id, e.target.value)}
-                    placeholder="Enter Clause Title (e.g. Purpose & Product Scope)..."
-                    className="w-full text-xl sm:text-2xl font-bold text-slate-900 border-b border-transparent hover:border-slate-300 focus:border-[#0057B8] pb-1 outline-none transition font-sans placeholder-slate-300"
-                  />
+                  {currentSection.isTemplateSection ? (
+                    <h2 className="w-full text-xl sm:text-2xl font-bold text-slate-900 pb-1 font-sans select-none">
+                      {currentSection.title}
+                    </h2>
+                  ) : (
+                    <input
+                      type="text"
+                      value={currentSection.title}
+                      onChange={(e) => handleUpdateSectionTitle(currentSection.id, e.target.value)}
+                      placeholder="Enter Clause Title (e.g. Purpose & Product Scope)..."
+                      className="w-full text-xl sm:text-2xl font-bold text-slate-900 border-b border-transparent hover:border-slate-300 focus:border-[#0057B8] pb-1 outline-none transition font-sans placeholder-slate-300"
+                    />
+                  )}
                 </div>
 
                 {/* Word Page Canvas Textarea */}
