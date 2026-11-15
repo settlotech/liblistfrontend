@@ -1,0 +1,391 @@
+ 
+.ac-wrapper {
+    padding:  32px;
+}
+
+.ac-loading {
+    text-align: center;
+    padding: 60px 0;
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+/* ── Banner ── */
+.ac-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-bottom: 16px;
+}
+.ac-banner--warn {
+    background: #fff8e1;
+    color: #856404;
+    border: 1px solid #ffc107;
+}
+
+/* ════════════════════════════════════════
+   MAIN GRID  — left identity | right cards
+   ════════════════════════════════════════ */
+.ac-grid {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    gap: 20px;
+    align-items: start;
+}
+
+/* ── LEFT: identity panel ── */
+.ac-identity-panel {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 28px 20px 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 10px;
+    position: sticky;
+    top: 16px;
+}
+
+/* Avatar circle */
+.ac-avatar {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: var(--btn-primary-bg, #2563eb);
+    color: #fff;
+    font-size: 30px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    letter-spacing: 1px;
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.28);
+    margin-bottom: 4px;
+}
+
+.ac-name {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0;
+    word-break: break-word;
+}
+
+.ac-email {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin: 0;
+    word-break: break-all;
+}
+
+/* Status pill */
+.ac-status-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 12px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+}
+.ac-status-pill.active {
+    background: var(--success-bg, #dcfce7);
+    color: var(--success-text, #166534);
+}
+.ac-status-pill.inactive {
+    background: var(--danger-bg, #fee2e2);
+    color: var(--danger-text, #991b1b);
+}
+
+/* Super admin pill */
+.ac-superadmin-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 11px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--bg-muted, #eff6ff);
+    color: var(--btn-primary-bg, #2563eb);
+    border: 1px solid var(--border-color);
+}
+
+/* Roles in left panel */
+.ac-roles-stack {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 4px;
+}
+.ac-roles-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 0;
+}
+.ac-role-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    background: var(--bg-muted, #f0f4ff);
+    color: var(--btn-primary-bg, #2563eb);
+    border: 1px solid var(--border-color);
+    text-transform: capitalize;
+}
+
+.ac-edit-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    width: 100%;
+    justify-content: center;
+}
+
+/* ── RIGHT: cards column ── */
+.ac-cards-col {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* Card base */
+.ac-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 20px 24px;
+}
+
+.ac-card-header {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    padding-bottom: 14px;
+    margin-bottom: 14px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+/* ── Detail 3-col sub-grid inside card ── */
+.ac-detail-grid {
+    display: grid;
+    grid-template-columns: 150px 1fr auto;
+    row-gap: 0;
+    column-gap: 12px;
+}
+
+.ac-detail-cell {
+    display: flex;
+    align-items: center;
+    padding: 11px 0;
+    font-size: 13px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+/* Remove bottom border from last row (last 3 cells) */
+.ac-detail-grid .ac-detail-cell:nth-last-child(-n+3) {
+    border-bottom: none;
+}
+
+.ac-detail-cell--label {
+    color: var(--text-secondary);
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.ac-detail-cell--value {
+    color: var(--text-primary);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ac-detail-cell--action {
+    justify-content: flex-end;
+}
+
+/* Read-only badge */
+.ac-readonly-badge {
+    font-size: 11px;
+    color: var(--text-secondary);
+    background: var(--bg-muted, #f4f4f4);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 2px 7px;
+    white-space: nowrap;
+}
+
+/* ── Security row ── */
+.ac-security-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.ac-security-left {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    flex: 1;
+}
+
+.ac-key-icon {
+    color: var(--btn-primary-bg, #2563eb);
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.ac-security-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 2px;
+}
+
+.ac-security-hint {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+/* ── Modal ── */
+.ac-modal {
+    width: 100%;
+    max-width: 460px;
+}
+
+/* Password field wrapper */
+.ac-pw-wrap {
+    position: relative;
+}
+.ac-pw-wrap .form-input {
+    padding-right: 42px;
+    width: 100%;
+    box-sizing: border-box;
+}
+.ac-pw-eye {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    padding: 2px;
+}
+.ac-pw-eye:hover { color: var(--text-primary); }
+
+/* Password match hint */
+.ac-pw-match {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    margin-top: 5px;
+}
+.ac-pw-match.ok { color: var(--success-text, #166534); }
+.ac-pw-match.err { color: var(--danger-text, #991b1b); }
+
+/* Required star */
+.ac-required { color: #dc2626; margin-left: 2px; }
+
+/* ══════════════════════════
+   RESPONSIVE
+══════════════════════════ */
+@media (max-width: 720px) {
+    .ac-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ac-identity-panel {
+        position: static;
+        flex-direction: row;
+        align-items: center;
+        text-align: left;
+        flex-wrap: wrap;
+        gap: 12px;
+        padding: 18px 20px;
+    }
+
+    .ac-avatar {
+        width: 60px;
+        height: 60px;
+        font-size: 22px;
+        margin-bottom: 0;
+        flex-shrink: 0;
+    }
+
+    .ac-identity-panel > *:not(.ac-avatar):not(.ac-edit-btn) {
+        align-self: flex-start;
+    }
+
+    .ac-roles-stack { align-items: flex-start; }
+
+    .ac-edit-btn {
+        width: auto;
+        margin-top: 0;
+    }
+
+    .ac-detail-grid {
+        grid-template-columns: 130px 1fr auto;
+    }
+
+    .ac-security-row {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    .ac-security-row .btn {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+@media (max-width: 480px) {
+    .ac-detail-grid {
+        grid-template-columns: 1fr;
+    }
+    .ac-detail-cell {
+        padding: 6px 0;
+        border-bottom: none;
+    }
+    .ac-detail-cell--label {
+        font-size: 11px;
+        padding-bottom: 0;
+    }
+    .ac-detail-cell:nth-last-child(-n+3) {
+        border-bottom: none;
+    }
+    /* Restore divider between row groups */
+    .ac-detail-cell--action {
+        padding-bottom: 12px;
+        border-bottom: 1px solid var(--border-color);
+        justify-content: flex-start;
+    }
+    .ac-detail-grid .ac-detail-cell:last-child {
+        border-bottom: none;
+    }
+}

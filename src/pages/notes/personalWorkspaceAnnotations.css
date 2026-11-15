@@ -1,0 +1,312 @@
+/* Personal Workspace Annotations & Notes View Styles */
+
+.pw-annot-container {
+    padding: 28px 32px;
+    max-width: 1400px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.pw-annot-toast {
+    position: fixed;
+    top: 20px;
+    right: 24px;
+    background: #ecfdf5;
+    color: #065f46;
+    border: 1px solid #6ee7b7;
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.08);
+    z-index: 9999;
+    animation: fadeIn 0.2s ease-out;
+}
+
+.pw-annot-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    /* background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px; */
+    /* padding: 20px 24px; */
+}
+
+.pw-annot-header-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.pw-annot-icon-box {
+    width: 46px;
+    height: 46px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.pw-annot-header h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.pw-annot-header p {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: #64748b;
+}
+
+.pw-annot-count-badge {
+    background: #f1f5f9;
+    color: #334155;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: 99px;
+}
+
+/* Toolbar */
+.pw-annot-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
+.pw-annot-search-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 8px 14px;
+    flex: 1;
+    max-width: 420px;
+}
+
+.pw-annot-search-box input {
+    border: none;
+    outline: none;
+    font-size: 13px;
+    width: 100%;
+    color: #0f172a;
+}
+
+.pw-annot-filter-select {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 6px 12px;
+}
+
+.pw-annot-filter-select select {
+    border: none;
+    outline: none;
+    background: transparent;
+    font-size: 13px;
+    color: #334155;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+/* Cards Grid */
+.pw-annot-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    gap: 16px;
+}
+
+.pw-annot-card {
+    background: #ffffff;
+    /* border: 1px solid #e2e8f0; */
+    border-left-width: 4px;
+    border-radius: 10px;
+    padding: 16px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+}
+
+.pw-annot-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.06);
+    border-color: #cbd5e1;
+}
+
+.pw-annot-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.pw-annot-card-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.pw-annot-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+.pw-annot-date {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: #94a3b8;
+}
+
+.pw-annot-delete-btn {
+    background: none;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
+}
+
+.pw-annot-delete-btn:hover {
+    color: #dc2626;
+    background: #fee2e2;
+}
+
+.pw-annot-card-body {
+    flex: 1;
+}
+
+.pw-annot-quote {
+    display: flex;
+    gap: 8px;
+    background: #f8fafc;
+    border-radius: 6px;
+    padding: 6px 10px;
+    margin-bottom: 8px;
+    border: 1px solid #e2e8f0;
+}
+
+.pw-annot-quote-bar {
+    width: 3px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+
+.pw-annot-quote-text {
+    font-size: 11.5px;
+    font-style: italic;
+    color: #475569;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.pw-annot-text {
+    margin: 0;
+    font-size: 13.5px;
+    color: #1e293b;
+    line-height: 1.5;
+    font-style: italic;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.pw-annot-card-bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-top: 10px;
+    border-top: 1px solid #f1f5f9;
+}
+
+.pw-annot-doc-info {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    flex: 1;
+}
+
+.pw-annot-doc-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: #0057B8;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pw-annot-lib-pill {
+    font-size: 10.5px;
+    background: #f1f5f9;
+    color: #475569;
+    padding: 1px 7px;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.pw-annot-open-link {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #64748b;
+    flex-shrink: 0;
+}
+
+.pw-annot-card:hover .pw-annot-open-link {
+    color: #0057B8;
+}
+
+.pw-annot-empty-state {
+    padding: 60px 20px;
+    text-align: center;
+    background: #ffffff;
+    border: 1px dashed #cbd5e1;
+    border-radius: 12px;
+}
+
+.pw-annot-empty-state h3 {
+    margin: 0 0 6px;
+    font-size: 15px;
+    color: #334155;
+}
+
+.pw-annot-empty-state p {
+    margin: 0;
+    font-size: 13px;
+    color: #94a3b8;
+}

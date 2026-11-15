@@ -1,0 +1,357 @@
+ 
+.page {
+  display: flex;
+  min-height: 100vh;
+  width: 100%;
+  background: #ffffff;
+  color: #0f172a;
+  overflow-x: hidden;
+}
+ 
+.leftPanel {
+  flex: 0 0 58%;
+  max-width: 58%;
+  background: #ffffff;
+  border-right: 1px solid #f1f5f9;
+  padding: 40px 56px 40px 64px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+/* Top bar: Logo + Version */
+.leftTopBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.logoWrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logoImg {
+  height: 38px;
+  width: auto;
+  object-fit: contain;
+}
+
+.versionTag {
+  font-size: 0.8125rem;
+  color: #94a3b8;
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+
+/* Header Text */
+.platformHeader {
+  margin-top: 36px;
+}
+
+.platformTitle {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.01em;
+  margin-bottom: 6px;
+}
+
+.platformSubtitle {
+  font-size: 0.8125rem;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+/* Illustration Center */
+.illustrationContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 28px 0;
+  width: 100%;
+}
+
+.illustrationImg {
+  max-width: 480px;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+
+/* Why Liblist Section */
+.whySection {
+  margin-top: auto;
+  padding-top: 20px;
+}
+
+.whyTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 14px;
+}
+
+.whyList {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.whyItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.8125rem;
+  color: #475569;
+}
+
+.checkIcon {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #e0f2fe;
+  color: #0284c7;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   RIGHT PANEL (40%)
+══════════════════════════════════════════════════════════════════════════ */
+.rightPanel {
+  flex: 1;
+  background: #fafcff;
+  padding: 36px 48px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow-y: auto;
+}
+
+/* Top Sign Up Row */
+.rightTopNav {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  width: 100%;
+}
+
+.signupPrompt {
+  font-size: 0.8125rem;
+  color: #64748b;
+}
+
+/* Form Container */
+.formContentWrap {
+  margin: auto 0;
+  padding: 24px 0;
+  display: flex;
+  flex-direction: column;
+  max-width: 440px;
+  width: 100%;
+  align-self: center;
+}
+
+/* Avatar Badge */
+.avatarBadge {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: #eff6ff;
+  color: #0284c7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 18px;
+  border: 1px solid #dbeafe;
+}
+
+.loginTitle {
+  font-size: 1.625rem;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.02em;
+  margin-bottom: 4px;
+}
+
+.loginSubtitle {
+  font-size: 0.875rem;
+  color: #64748b;
+  margin-bottom: 24px;
+}
+
+/* Demo Personas */
+.personaSection {
+  margin-bottom: 24px;
+  width: 100%;
+}
+
+.personaHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #0284c7;
+  letter-spacing: 0.04em;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+}
+
+.personaGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  width: 100%;
+}
+
+.personaCard {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-md);
+  padding: 10px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all var(--transition);
+  text-align: left;
+}
+
+.personaCard:hover {
+  border-color: #0284c7;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.12);
+  transform: translateY(-1px);
+}
+
+.personaCard.activePersona {
+  border-color: #0284c7;
+  background: #f0f9ff;
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.15);
+}
+
+.personaIcon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.personaInfo {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.personaRole {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.personaEmail {
+  font-size: 0.6875rem;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Form Styles */
+.loginForm {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 100%;
+}
+
+.formMetaRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: -2px;
+}
+
+.forgotLink {
+  font-size: 0.8125rem;
+  color: #18458b;
+  font-weight: 500;
+  transition: color var(--transition);
+}
+
+.forgotLink:hover {
+  color: #0284c7;
+  text-decoration: underline;
+}
+
+.submitBtn {
+  margin-top: 6px;
+  height: 46px;
+  background: #18458b;
+  color: #ffffff;
+  border-radius: var(--radius-md);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.submitBtn:hover:not(:disabled) {
+  background: #103370;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   RESPONSIVENESS
+══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 1100px) {
+  .leftPanel {
+    flex: 0 0 52%;
+    max-width: 52%;
+    padding: 32px 36px;
+  }
+  .rightPanel {
+    padding: 32px 28px;
+  }
+  .personaGrid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+
+@media (max-width: 868px) {
+  .page {
+    flex-direction: column;
+  }
+  .leftPanel {
+    flex: unset;
+    max-width: 100%;
+    width: 100%;
+    padding: 32px 24px;
+    border-right: none;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .illustrationContainer {
+    margin: 20px 0;
+  }
+  .illustrationImg {
+    max-width: 340px;
+  }
+  .rightPanel {
+    width: 100%;
+    padding: 32px 20px;
+  }
+  .formContentWrap {
+    margin: 20px auto;
+  }
+}
