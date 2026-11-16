@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { 
   X, 
@@ -16,6 +17,9 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowLeft,
+  ArrowLeftRight,
+  ExternalLink,
+  Clock,
   Plus,
   Layers,
   Tag,
@@ -23,12 +27,21 @@ import {
   Minimize2,
   Save,
   Info,
-  ChevronLeft,
-  ChevronRight,
-  FileEdit
+  FileEdit,
+  Image as ImageIcon,
+  StickyNote,
+  FilePlus2,
+  PanelTop,
+  ZoomIn,
+  ZoomOut
 } from 'lucide-react';
 import { apiService } from '../../../services/apiService';
-import { SectionWordToolbar } from './SectionWordToolbar';
+import MultiPageDocumentEditor from '../../../editor/MultiPageDocumentEditor';
+import { SectionRichEditor } from './SectionRichEditor';
+import { normalizeRichHtml, htmlToPlainText } from '../../../utils/richContentConverter';
+import DocumentUploadHistorySection from '../../documents/DocumentUploadHistorySection';
+import BrowserDocumentViewer from '../../documents/BrowserDocumentViewer';
+import { uploadDocumentToCloudinary } from '../../../services/cloudinaryService';
 
 import { POLICY_TEMPLATES } from './policyTemplates';
 export default function AddPolicyModal({
@@ -41,6 +54,7 @@ export default function AddPolicyModal({
   onPolicyCreated,
   editingPolicy = null
 }) {
+  const navigate = useNavigate();
   // 3 Policy Creation Modes: 'direct' | 'library' | 'upload'
   const [creationMode, setCreationMode] = useState('direct');
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
@@ -50,6 +64,18 @@ export default function AddPolicyModal({
   const [activeTemplateInfoId, setActiveTemplateInfoId] = useState(null);
   const [expandedSectionId, setExpandedSectionId] = useState(null);
   const [expandedModalSectionId, setExpandedModalSectionId] = useState(null);
+  const [activeExpandedIndex, setActiveExpandedIndex] = useState(0);
+  const multiPageEditorRef = useRef(null);
+
+  useEffect(() => {
+    if (!expandedModalSectionId) return;
+    const idx = sections.findIndex((s, i) => (s.id || `sec-${i}`) === expandedModalSectionId);
+    if (idx >= 0) {
+      setActiveExpandedIndex(idx);
+    }
+    // Only initialize index when modal opens so scrolling doesn't reset
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expandedModalSectionId]);
   const [dynamicTemplates, setDynamicTemplates] = useState(POLICY_TEMPLATES);
   const [selectedTemplatePhases, setSelectedTemplatePhases] = useState([]);
 
@@ -65,18 +91,23 @@ export default function AddPolicyModal({
   const [uploadedFileName, setUploadedFileName] = useState('');
   const [uploadedPdfPreviewUrl, setUploadedPdfPreviewUrl] = useState(null);
   const [uploadedDocRawText, setUploadedDocRawText] = useState('');
-  const [leftPaneViewMode, setLeftPaneViewMode] = useState('preview');
   const [isTemplateEditorActive, setIsTemplateEditorActive] = useState(false);
   const [selectedUploadTemplateId, setSelectedUploadTemplateId] = useState('template-standard-policy');
+  const [extractedImages, setExtractedImages] = useState([]);
+  const [activeSectionId, setActiveSectionId] = useState(null);
   const [complianceTags, setComplianceTags] = useState([]);
   const [newTagInput, setNewTagInput] = useState('');
   const [masterSearchQuery, setMasterSearchQuery] = useState('');
   const [selectedTemplateId, setSelectedTemplateId] = useState('template-standard-policy');
   const [ingestedDocuments, setIngestedDocuments] = useState([]);
   const [activeIngestedIndex, setActiveIngestedIndex] = useState(0);
-  const [showEvidence, setShowEvidence] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [showTemplatePickPrompt, setShowTemplatePickPrompt] = useState(false);
+  const [pendingFilesToIngest, setPendingFilesToIngest] = useState([]);
+  const [showPageHeaderFooter, setShowPageHeaderFooter] = useState(true);
+  const [pageMarginPreset, setPageMarginPreset] = useState('normal'); // 'normal' | 'narrow' | 'wide'
+  const [editorZoomLevel, setEditorZoomLevel] = useState(100);
 
   // 7 Core Institutional Template Sections from Template_policy.docx
   const [sections, setSections] = useState([
@@ -171,91 +202,196 @@ export default function AddPolicyModal({
 
   // Synchronize fields when editing an existing policy / draft or creating fresh
   useEffect(() => {
-    if (isOpen) {
-      if (editingPolicy) {
-        setEditingDraftId(editingPolicy.id || null);
-        setTitle(editingPolicy.title || '');
-        setSummary(editingPolicy.summary || '');
-        setContent(editingPolicy.content || '');
-        if (editingPolicy.department_id || editingPolicy.deptId) {
-          setDepartmentId(editingPolicy.department_id || editingPolicy.deptId);
-        }
-        const params = typeof editingPolicy.parameters === 'string'
-          ? JSON.parse(editingPolicy.parameters || '{}')
-          : (editingPolicy.parameters || {});
+    if (!isOpen) return;
+    let cancelled = false;
 
-        setTurnaroundSla(params.turnaround_sla || editingPolicy.turnaroundSla || '4 Hours');
-        setDailyLimit(params.daily_limit || editingPolicy.dailyLimit || '$25,000 AUD');
-        setOfficerCap(params.approval_limits?.officer_cap || editingPolicy.officerCap || '$100,000 AUD');
+    const applyPolicyToForm = (pol) => {
+      if (!pol) return;
+      setEditingDraftId(pol.id || null);
+      setTitle(pol.title || '');
+      setSummary(pol.summary || '');
+      setContent(pol.content || '');
+      if (pol.department_id || pol.deptId) {
+        setDepartmentId(pol.department_id || pol.deptId);
+      }
+      const params = typeof pol.parameters === 'string'
+        ? JSON.parse(pol.parameters || '{}')
+        : (pol.parameters || {});
 
-        let loadedSections = [];
-        if (params.sections && Array.isArray(params.sections) && params.sections.length > 0) {
-          loadedSections = params.sections.map((sec, idx) => ({
-            ...sec,
-            id: sec.id ? String(sec.id) : `sec-${idx}-${Date.now()}`
-          }));
-        } else if (editingPolicy.content && typeof editingPolicy.content === 'string' && editingPolicy.content.trim()) {
-          const raw = editingPolicy.content.trim();
-          const parts = raw.split(/(?=###\s+)/);
-          if (parts.length > 1) {
-            loadedSections = parts.map((part, i) => {
-              const match = part.match(/^###\s*(?:\d+\.?\s*)?(.*?)\n([\s\S]*)$/);
-              return {
-                id: `sec-${i}-${Date.now()}`,
-                title: match ? match[1].trim() : `Section ${i + 1}`,
-                content: match ? match[2].trim() : part.trim(),
-                type: 'section'
-              };
-            });
-          } else {
-            loadedSections = [
-              { id: `sec-summary-${Date.now()}`, title: 'Summary', content: editingPolicy.summary || 'Summary of operational intent.', type: 'section' },
-              { id: `sec-details-${Date.now()}`, title: 'Details', content: raw, type: 'section' }
-            ];
-          }
-        }
+      setTurnaroundSla(params.turnaround_sla || pol.turnaroundSla || '4 Hours');
+      setDailyLimit(params.daily_limit || pol.dailyLimit || '$25,000 AUD');
+      setOfficerCap(params.approval_limits?.officer_cap || pol.officerCap || '$100,000 AUD');
 
-        // If sections is still empty, supply the standard 7 template sections
-        if (!loadedSections || loadedSections.length === 0) {
-          loadedSections = JSON.parse(JSON.stringify(POLICY_TEMPLATES[0].sections));
-        }
-
-        setSections(loadedSections);
-        setCreationMode('direct');
-      } else {
-        // Fresh policy creation flow - initialize to Template 1 (Policy Template with 7 standard sections)
-        const tpl = POLICY_TEMPLATES[0];
-        setSelectedDirectTemplateId(tpl.id);
-        setSelectedUploadTemplateId('template-standard-policy');
-        setTitle('');
-        setSummary(tpl.summary);
-        setTurnaroundSla(tpl.sla);
-        setDailyLimit(tpl.daily);
-        setOfficerCap(tpl.cap);
-        const initialTplSections = (tpl.sections || []).map((sec, idx) => ({
+      let loadedSections = [];
+      if (params.sections && Array.isArray(params.sections) && params.sections.length > 0) {
+        loadedSections = params.sections.map((sec, idx) => ({
           ...sec,
-          id: sec.id || `sec-${idx}-${Date.now()}`,
-          type: 'section',
-          isTemplateSection: true,
-          isCustom: false
+          id: sec.id ? String(sec.id) : `sec-${idx}-${Date.now()}`
         }));
-        setSections(initialTplSections);
-        setSelectedTemplatePhases([]);
-        if (preselectedDepartmentId) {
-          setDepartmentId(preselectedDepartmentId);
-        } else if (departments.length > 0) {
-          setDepartmentId(departments[0].id);
+      } else if (pol.content && typeof pol.content === 'string' && pol.content.trim()) {
+        const raw = pol.content.trim();
+        const parts = raw.split(/(?=###\s+)/);
+        if (parts.length > 1) {
+          loadedSections = parts.map((part, i) => {
+            const match = part.match(/^###\s*(?:\d+\.?\s*)?(.*?)\n([\s\S]*)$/);
+            return {
+              id: `sec-${i}-${Date.now()}`,
+              title: match ? match[1].trim() : `Section ${i + 1}`,
+              content: match ? match[2].trim() : part.trim(),
+              type: 'section'
+            };
+          });
+        } else {
+          loadedSections = [
+            { id: `sec-summary-${Date.now()}`, title: 'Summary', content: pol.summary || 'Summary of operational intent.', type: 'section' },
+            { id: `sec-details-${Date.now()}`, title: 'Details', content: raw, type: 'section' }
+          ];
         }
       }
+
+      if (!loadedSections || loadedSections.length === 0) {
+        loadedSections = JSON.parse(JSON.stringify(POLICY_TEMPLATES[0].sections));
+      }
+
+      setSections(loadedSections);
+      setExtractedImages(Array.isArray(params.extracted_images) ? params.extracted_images : []);
+      setUploadedFileName(params.source_file_name || '');
+      setUploadedPdfPreviewUrl(params.source_file_url || null);
+      setIngestedDocuments([]);
+      setActiveIngestedIndex(0);
+      setIsTemplateEditorActive(false);
+      setCreationMode('direct');
+    };
+
+    if (editingPolicy) {
+      applyPolicyToForm(editingPolicy);
+      const initialParams = typeof editingPolicy.parameters === 'string'
+        ? JSON.parse(editingPolicy.parameters || '{}')
+        : (editingPolicy.parameters || {});
+      const hasRichSections = Array.isArray(initialParams.sections) && initialParams.sections.length > 0;
+      if (editingPolicy.id && !hasRichSections && !String(editingPolicy.id).startsWith('draft-clone-')) {
+        apiService.getPolicyDetails(editingPolicy.id, currentUser?.roleType || 'employee')
+          .then((full) => {
+            if (!cancelled && full) {
+              applyPolicyToForm(full);
+            }
+          })
+          .catch(() => {});
+      }
+    } else {
+      // Fresh policy creation flow - reset transient draft/upload states and initialize to Template 1
+      const tpl = POLICY_TEMPLATES[0];
+      setEditingDraftId(null);
+      setCreationMode('direct');
+      setSelectedDirectTemplateId(tpl.id);
+      setSelectedUploadTemplateId('template-standard-policy');
+      setTitle('');
+      setContent('');
+      setSummary(tpl.summary);
+      setTurnaroundSla(tpl.sla);
+      setDailyLimit(tpl.daily);
+      setOfficerCap(tpl.cap);
+      setUploadedFileName('');
+      setUploadedPdfPreviewUrl(null);
+      setUploadedDocRawText('');
+      setExtractedImages([]);
+      setIngestedDocuments([]);
+      setActiveIngestedIndex(0);
+      setIsTemplateEditorActive(false);
+      const initialTplSections = (tpl.sections || []).map((sec, idx) => ({
+        ...sec,
+        id: sec.id || `sec-${idx}-${Date.now()}`,
+        type: 'section',
+        isTemplateSection: true,
+        isCustom: false
+      }));
+      setSections(initialTplSections);
+      setSelectedTemplatePhases([]);
+      if (preselectedDepartmentId) {
+        setDepartmentId(preselectedDepartmentId);
+      } else if (departments.length > 0) {
+        setDepartmentId(departments[0].id);
+      }
     }
+
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen, editingPolicy]);
 
+  // Keep uploaded document sections synced with any inline/fullscreen edits
+  useEffect(() => {
+    if (creationMode !== 'upload' || ingestedDocuments.length === 0) return;
+    setIngestedDocuments(prev => {
+      const active = prev[activeIngestedIndex];
+      if (!active || active.sections === sections) return prev;
+      return prev.map((d, dIdx) => (dIdx === activeIngestedIndex ? { ...d, sections } : d));
+    });
+  }, [sections, creationMode, activeIngestedIndex]);
+
   const handleUpdateSectionTitle = (id, newTitle) => {
-    setSections(prev => prev.map(s => s.id === id ? { ...s, title: newTitle } : s));
+    setSections(prev => prev.map((s, idx) => {
+      const match = (s.id === id) || ((s.id || `sec-${idx}`) === id) || (String(idx) === String(id));
+      return match ? { ...s, title: newTitle } : s;
+    }));
   };
 
   const handleUpdateSectionContent = (id, newContent) => {
-    setSections(prev => prev.map(s => s.id === id ? { ...s, content: newContent } : s));
+    setSections(prev => prev.map((s, idx) => {
+      const match = (s.id === id) || ((s.id || `sec-${idx}`) === id) || (String(idx) === String(id));
+      return match ? { ...s, content: newContent } : s;
+    }));
+  };
+
+  const handleUpdateSectionField = (id, field, val) => {
+    setSections(prev => prev.map((s, idx) => {
+      const match = (s.id === id) || ((s.id || `sec-${idx}`) === id) || (String(idx) === String(id));
+      return match ? { ...s, [field]: val } : s;
+    }));
+  };
+
+  const flushFullscreenEditorSections = () => {
+    const flushedMap = multiPageEditorRef.current?.flushAllPages?.() || {};
+    const keys = Object.keys(flushedMap);
+    if (keys.length === 0) return sections;
+
+    const mergedSections = sections.map((sec, idx) => {
+      const key = sec.id || `sec-${idx}`;
+      if (Object.prototype.hasOwnProperty.call(flushedMap, key)) {
+        return { ...sec, content: flushedMap[key] };
+      }
+      return sec;
+    });
+
+    setSections(mergedSections);
+    if (ingestedDocuments.length > 0) {
+      setIngestedDocuments(prev => prev.map((doc, dIdx) => (
+        dIdx === activeIngestedIndex ? { ...doc, sections: mergedSections } : doc
+      )));
+    }
+    return mergedSections;
+  };
+
+  const handleCloseExpandedEditor = () => {
+    flushFullscreenEditorSections();
+    setExpandedModalSectionId(null);
+  };
+
+  const handleAddAndOpenPage = (customTitle) => {
+    const nextNum = sections.length + 1;
+    const newSec = {
+      id: `sec-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      title: customTitle || `Clause Page ${nextNum}`,
+      content: '',
+      type: 'section',
+      isTemplateSection: false,
+      isCustom: true
+    };
+    setSections(prev => [...prev, newSec]);
+    if (!expandedModalSectionId) {
+      setActiveExpandedIndex(sections.length);
+      setExpandedModalSectionId(newSec.id);
+    }
   };
 
   const handleApplyFormat = (sectionId, formatKey) => {
@@ -263,8 +399,9 @@ export default function AddPolicyModal({
     const isTextarea = activeEl && activeEl.tagName === 'TEXTAREA';
     const hasSelection = isTextarea && activeEl.selectionStart !== activeEl.selectionEnd;
 
-    setSections(prev => prev.map(sec => {
-      if (sec.id !== sectionId) return sec;
+    setSections(prev => prev.map((sec, idx) => {
+      const effectiveId = sec.id || `sec-${idx}`;
+      if (sec.id !== sectionId && effectiveId !== sectionId && String(idx) !== String(sectionId)) return sec;
       let text = sec.content || '';
 
       if (hasSelection) {
@@ -388,7 +525,7 @@ export default function AddPolicyModal({
   };
 
   const handleDeleteSection = (id) => {
-    setSections(prev => prev.filter(s => s.id !== id));
+    setSections(prev => prev.filter((s, idx) => s.id !== id && (s.id || `sec-${idx}`) !== id && String(idx) !== String(id)));
   };
 
   const handleMoveSectionUp = (index) => {
@@ -530,10 +667,11 @@ export default function AddPolicyModal({
   const handleSaveDraft = async () => {
     setErrorMessage('');
     const draftTitle = title.trim() || 'Untitled Operational Policy (Draft)';
+    const currentSections = flushFullscreenEditorSections();
 
     let finalContent = '';
-    if (sections.length > 0) {
-      finalContent = sections.map((sec, idx) => {
+    if (currentSections.length > 0) {
+      finalContent = currentSections.map((sec, idx) => {
         if (sec.type === 'paragraph' && !sec.title.trim()) return sec.content;
         const heading = sec.title.trim() ? `### ${idx + 1}. ${sec.title.trim()}` : `### Paragraph ${idx + 1}`;
         return `${heading}\n${sec.content}`;
@@ -559,11 +697,11 @@ export default function AddPolicyModal({
         title: draftTitle,
         summary: summary.trim() || draftTitle,
         content: finalContent,
-        sections: sections.map(s => ({ ...s })),
+        sections: currentSections.map(s => ({ ...s })),
         turnaround_sla: turnaroundSla,
         daily_limit: dailyLimit,
         timestamp: new Date().toISOString(),
-        notes: `Draft revision saved with ${sections.length} clauses (${turnaroundSla} SLA, ${dailyLimit} Daily Limit)`
+        notes: `Draft revision saved with ${currentSections.length} clauses (${turnaroundSla} SLA, ${dailyLimit} Daily Limit)`
       };
 
       const baselineVersion = {
@@ -573,7 +711,7 @@ export default function AddPolicyModal({
         title: editingPolicy?.title || draftTitle,
         summary: editingPolicy?.summary || summary.trim() || draftTitle,
         content: editingPolicy?.content || finalContent,
-        sections: (existingParams.sections || sections).map(s => ({ ...s })),
+        sections: (existingParams.sections || currentSections).map(s => ({ ...s })),
         turnaround_sla: existingParams.turnaround_sla || turnaroundSla,
         daily_limit: existingParams.daily_limit || dailyLimit,
         timestamp: editingPolicy?.created_at || new Date().toISOString(),
@@ -583,6 +721,11 @@ export default function AddPolicyModal({
       const allVersions = existingVersions.length > 0
         ? [newVersionSnapshot, ...existingVersions]
         : [newVersionSnapshot, baselineVersion];
+
+      const activeIngested = ingestedDocuments[activeIngestedIndex];
+      const persistentSourceUrl =
+        activeIngested?.cloud_url ||
+        (uploadedPdfPreviewUrl && !String(uploadedPdfPreviewUrl).startsWith('blob:') ? uploadedPdfPreviewUrl : '');
 
       const payload = {
         department_id: departmentId || 'company-policies',
@@ -595,7 +738,10 @@ export default function AddPolicyModal({
           daily_limit: dailyLimit,
           approval_limits: { officer_cap: officerCap },
           mandatory_dvs: true,
-          sections: sections,
+          sections: currentSections,
+          extracted_images: extractedImages.slice(0, 24),
+          source_file_name: uploadedFileName || activeIngested?.document_name || existingParams.source_file_name || '',
+          source_file_url: persistentSourceUrl || existingParams.source_file_url || '',
           version: nextVer,
           versions: allVersions
         },
@@ -612,6 +758,7 @@ export default function AddPolicyModal({
         try {
           const res = await apiService.updatePolicy(editingDraftId, payload);
           savedPolicy = res?.policy || res || { ...payload, id: editingDraftId };
+          if (savedPolicy?.id) setEditingDraftId(savedPolicy.id);
         } catch (_) {
           const created = await apiService.createPolicy({ ...payload, id: editingDraftId });
           savedPolicy = created?.policy || created || { ...payload, id: editingDraftId };
@@ -626,7 +773,32 @@ export default function AddPolicyModal({
       // Drafts belong exclusively in the policies table (status: 'draft') and are managed in Change Management.
       // They are not maker-checker approval requests until submitted for approval.
 
-      alert(`Policy draft "${draftTitle}" (${nextVer}) saved to drafts successfully!`);
+      // Persist approved/draft document on the current user
+      try {
+        const userDocRecord = {
+          id: savedPolicy?.id || `doc-user-${Date.now()}`,
+          policyId: savedPolicy?.id,
+          title: draftTitle,
+          version: nextVer,
+          department_id: departmentId || 'company-policies',
+          department_name: departments.find(d => d.id === departmentId)?.name || 'Company Policies',
+          summary: summary.trim() || draftTitle,
+          status: 'draft',
+          user_id: currentUser?.id,
+          user_name: currentUser?.name || 'Staff User',
+          user_email: currentUser?.email,
+          source_file_name: uploadedFileName,
+          source_file_url: uploadedPdfPreviewUrl,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          sections: currentSections
+        };
+        const userKey = `liblist_approved_user_docs_${currentUser?.id || 'default'}`;
+        const existing = JSON.parse(localStorage.getItem(userKey) || '[]');
+        localStorage.setItem(userKey, JSON.stringify([userDocRecord, ...existing.filter(d => d.id !== userDocRecord.id)]));
+      } catch (_) {}
+
+      alert(`Policy draft "${draftTitle}" (${nextVer}) saved on user account successfully!`);
       if (onPolicyCreated) onPolicyCreated(savedPolicy);
       onClose();
     } catch (err) {
@@ -645,7 +817,10 @@ export default function AddPolicyModal({
       summary.trim() ||
       content.trim() ||
       uploadedFileName ||
-      (sections.length > 0 && sections.some(s => s.content && s.content.trim()))
+      (sections.length > 0 && sections.some(s => {
+        const raw = s.content || '';
+        return Boolean(htmlToPlainText(raw).trim()) || /<img\b/i.test(raw);
+      }))
     );
 
     if (hasDraftContent) {
@@ -664,6 +839,7 @@ export default function AddPolicyModal({
     if (!isOpen) {
       setExpandedSectionId(null);
       setExpandedModalSectionId(null);
+      setEditorZoomLevel(100);
       setActiveTemplateInfoId(null);
       setErrorMessage('');
       setShowCloseConfirm(false);
@@ -687,43 +863,50 @@ export default function AddPolicyModal({
           id: 'tpl-sec-purpose',
           title: 'Purpose',
           content: 'Purpose statement of the policy',
-          type: 'section'
+          type: 'section',
+          isTemplateSection: true
         },
         {
           id: 'tpl-sec-scope',
           title: 'Scope/Coverage',
           content: 'Applicability of the policy. It can be based on lines of business, geographical restrictions, customer segmentation etc',
-          type: 'section'
+          type: 'section',
+          isTemplateSection: true
         },
         {
           id: 'tpl-sec-details',
           title: 'Details/Description',
           content: 'Details of the policy is described in this section. It can cover multiple sections, tables, images',
-          type: 'section'
+          type: 'section',
+          isTemplateSection: true
         },
         {
           id: 'tpl-sec-dependencies',
           title: 'Pre-requisites /Dependencies',
           content: 'Explain cross references to the policies',
-          type: 'section'
+          type: 'section',
+          isTemplateSection: true
         },
         {
           id: 'tpl-sec-controls',
           title: 'Controls',
           content: 'This section describes key monitoring requirements. It can have a sub section for data quality',
-          type: 'section'
+          type: 'section',
+          isTemplateSection: true
         },
         {
           id: 'tpl-sec-reporting',
           title: 'Reporting',
           content: 'Define key metrics for continuous monitoring activities. It also defines the report layout, refer to the report id.',
-          type: 'section'
+          type: 'section',
+          isTemplateSection: true
         },
         {
           id: 'tpl-sec-approval-chain',
           title: 'Approval Chain',
           content: 'Provide the approval chain of this policy',
-          type: 'section'
+          type: 'section',
+          isTemplateSection: true
         }
       ]
     },
@@ -1244,385 +1427,483 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
     if (rlMatch) setDepartmentId(rlMatch.id);
   };
 
-  // AI-Assisted Document Ingestion (Groq AI + Neon pgvector) - Independent multi-document processing
-  const handleUploadMultipleDocumentsWithAi = async (e) => {
-    const files = Array.from(e.target.files || []);
+  // Apply Target Template to Extracted Document
+  const handleApplyTemplateToExtractedDocument = (templateId) => {
+    const targetTpl = masterTemplates.find(t => t.id === templateId) || masterTemplates[0];
+    if (!targetTpl) return;
+    setSelectedUploadTemplateId(targetTpl.id);
+
+    const activeDoc = ingestedDocuments[activeIngestedIndex];
+    const targetTemplateSections = targetTpl.sections || POLICY_TEMPLATES[0].sections;
+    const existingText =
+      (activeDoc && activeDoc.raw_text) ||
+      uploadedDocRawText ||
+      sections.map(s => (s.title && s.title !== 'Others' ? `${s.title}\n${s.content}` : s.content)).filter(Boolean).join('\n\n') ||
+      '';
+    const paras = existingText.split(/\r?\n\r?\n+/).map(p => p.trim()).filter(Boolean);
+
+    const claimed = new Set();
+    const sectionMap = {};
+    targetTemplateSections.forEach(s => { sectionMap[s.id || s.title] = []; });
+
+    // 1. Exact & heading prefix matching
+    targetTemplateSections.forEach(sec => {
+      const secKey = sec.id || sec.title;
+      const normTitle = sec.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+      paras.forEach((p, pIdx) => {
+        if (claimed.has(pIdx)) return;
+        const normP = p.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (
+          normP === normTitle ||
+          (normP.startsWith(normTitle) && p.length <= sec.title.length + 12) ||
+          (p.toLowerCase().includes(sec.title.toLowerCase()) && p.length < 140)
+        ) {
+          claimed.add(pIdx);
+          const cleanP = p.replace(new RegExp('^' + sec.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[:\\s-]*', 'i'), '').trim();
+          if (cleanP) {
+            sectionMap[secKey].push(cleanP);
+          } else if (pIdx + 1 < paras.length && !claimed.has(pIdx + 1)) {
+            claimed.add(pIdx + 1);
+            sectionMap[secKey].push(paras[pIdx + 1]);
+          }
+        }
+      });
+    });
+
+    // 2. Keyword & section topic fallback mapping
+    const topicKeywords = {
+      purpose: ['purpose', 'objective', 'rationale', 'intent', 'overview', 'background', 'introduction', 'executive summary'],
+      scope: ['scope', 'coverage', 'applicab', 'applies to', 'eligibility', 'customer', 'business line'],
+      details: ['detail', 'description', 'requirement', 'deliverable', 'procedure', 'assessment', 'methodology', 'rule', 'underwriting', 'limit', 'pricing', 'commercial'],
+      dependencies: ['dependency', 'dependencies', 'prerequisite', 'pre-requisite', 'assumption', 'cross reference', 'gateway', 'system'],
+      controls: ['control', 'monitoring', 'audit', 'verification', 'compliance', 'security', 'governance', 'risk', 'sla', 'validity'],
+      reporting: ['report', 'metric', 'kpi', 'dashboard', 'escalation', 'incident', 'breach'],
+      approval: ['approval', 'approve', 'sign-off', 'authority', 'acceptance', 'chain', 'owner', 'delegat']
+    };
+
+    paras.forEach((p, pIdx) => {
+      if (claimed.has(pIdx)) return;
+      const lower = p.toLowerCase();
+      for (const sec of targetTemplateSections) {
+        const secKey = sec.id || sec.title;
+        const secTitleLower = (sec.title || '').toLowerCase();
+        const words = secTitleLower.split(/[^a-z0-9]+/).filter(w => w.length > 3);
+        let matchedKw = words.some(w => lower.includes(w));
+        if (!matchedKw) {
+          for (const [topic, kws] of Object.entries(topicKeywords)) {
+            if (secTitleLower.includes(topic) && kws.some(kw => lower.includes(kw))) {
+              matchedKw = true;
+              break;
+            }
+          }
+        }
+        if (matchedKw) {
+          claimed.add(pIdx);
+          sectionMap[secKey].push(p);
+          break;
+        }
+      }
+    });
+
+    const unmapped = [];
+    paras.forEach((p, pIdx) => {
+      if (!claimed.has(pIdx)) unmapped.push(p);
+    });
+
+    const newSections = targetTemplateSections.map((sec, idx) => {
+      const secKey = sec.id || sec.title;
+      const matched = sectionMap[secKey] || [];
+      const content = matched.length > 0 ? matched.join('\n\n') : (sec.content || '');
+      return {
+        id: `sec-${idx + 1}-${Date.now()}`,
+        section_number: idx + 1,
+        title: sec.title,
+        type: 'section',
+        content: content,
+        isTemplateSection: true,
+        isCustom: false
+      };
+    });
+
+    if (unmapped.length > 0) {
+      newSections.push({
+        id: `sec-others-${Date.now()}`,
+        section_number: newSections.length + 1,
+        title: 'Others',
+        type: 'section',
+        content: unmapped.join('\n\n'),
+        isTemplateSection: false,
+        isCustom: true
+      });
+    }
+
+    setSections(newSections);
+
+    if (ingestedDocuments.length > 0) {
+      const updatedDocs = [...ingestedDocuments];
+      if (updatedDocs[activeIngestedIndex]) {
+        updatedDocs[activeIngestedIndex] = {
+          ...updatedDocs[activeIngestedIndex],
+          sections: newSections
+        };
+        setIngestedDocuments(updatedDocs);
+      }
+    }
+  };
+
+  // AI-Assisted Document Ingestion Execution Engine
+  const executeDocumentIngestion = async (files, targetTemplateId = null) => {
+    const templateToUse = targetTemplateId || selectedUploadTemplateId || 'template-standard-policy';
     if (!files || files.length === 0) return;
 
     setIsAiThinking(true);
     setUploadedFileName(files.length === 1 ? files[0].name : `${files.length} Documents Selected`);
+
+    const localFilesMeta = files.map((file) => {
+      if (file?.isHistoryDoc) {
+        const remote = file.url || file.secureUrl || '';
+        return { fileObj: null, localUrl: remote, cloudUrl: remote };
+      }
+      let localUrl = '';
+      try {
+        localUrl = URL.createObjectURL(file);
+      } catch (_) {}
+      return { fileObj: file || null, localUrl, cloudUrl: '' };
+    });
+
+    if (localFilesMeta[0]?.localUrl) {
+      setUploadedPdfPreviewUrl(localFilesMeta[0].localUrl);
+    }
+
+    let localExtractedText = '';
+
     if (files[0]) {
       try {
-        const previewUrl = URL.createObjectURL(files[0]);
-        setUploadedPdfPreviewUrl(previewUrl);
-      } catch (_) {}
-      try {
-        if (files[0].type.includes('text') || files[0].name.endsWith('.txt')) {
+        if (files[0].type && (files[0].type.includes('text') || files[0].name.endsWith('.txt'))) {
           const txt = await files[0].text();
+          localExtractedText = txt;
           setUploadedDocRawText(txt);
+        } else if (files[0].name && files[0].name.toLowerCase().endsWith('.docx') && files[0].arrayBuffer) {
+          try {
+            const arrayBuf = await files[0].arrayBuffer();
+            const u8 = new Uint8Array(arrayBuf);
+            const view = new DataView(u8.buffer);
+            const filesInZip = {};
+            const dec = new TextDecoder();
+
+            let eocd = -1;
+            for (let i = u8.length - 22; i >= Math.max(0, u8.length - 65557); i--) {
+              if (view.getUint32(i, true) === 0x06054b50) {
+                eocd = i;
+                break;
+              }
+            }
+
+            if (eocd >= 0) {
+              const cdOffset = view.getUint32(eocd + 16, true);
+              const cdCount = view.getUint16(eocd + 10, true);
+              let cur = cdOffset;
+
+              for (let i = 0; i < cdCount && cur < u8.length - 46; i++) {
+                if (view.getUint32(cur, true) !== 0x02014b50) break;
+                const compMethod = view.getUint16(cur + 10, true);
+                const compSize = view.getUint32(cur + 20, true);
+                const nameLen = view.getUint16(cur + 28, true);
+                const extraLen = view.getUint16(cur + 30, true);
+                const commentLen = view.getUint16(cur + 32, true);
+                const localOffset = view.getUint32(cur + 42, true);
+
+                if (cur + 46 + nameLen <= u8.length) {
+                  const name = dec.decode(u8.subarray(cur + 46, cur + 46 + nameLen));
+
+                  if (localOffset + 30 <= u8.length && view.getUint32(localOffset, true) === 0x04034b50) {
+                    const localNameLen = view.getUint16(localOffset + 26, true);
+                    const localExtraLen = view.getUint16(localOffset + 28, true);
+                    const dataStart = localOffset + 30 + localNameLen + localExtraLen;
+
+                    if (compSize > 0 && dataStart + compSize <= u8.length) {
+                      const compData = u8.subarray(dataStart, dataStart + compSize);
+
+                      if (compMethod === 0) {
+                        filesInZip[name] = compData;
+                      } else if (compMethod === 8 && typeof DecompressionStream !== 'undefined') {
+                        try {
+                          const ds = new DecompressionStream('deflate-raw');
+                          const writer = ds.writable.getWriter();
+                          const reader = ds.readable.getReader();
+                          
+                          const writePromise = writer.write(compData).then(() => writer.close()).catch(() => {});
+                          const chunks = [];
+                          while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            if (value) chunks.push(value);
+                          }
+                          await writePromise;
+
+                          const totalLen = chunks.reduce((acc, c) => acc + c.length, 0);
+                          const decomp = new Uint8Array(totalLen);
+                          let off = 0;
+                          for (const c of chunks) {
+                            decomp.set(c, off);
+                            off += c.length;
+                          }
+                          filesInZip[name] = decomp;
+                        } catch (decompErr) {
+                          console.warn('Decompression notice for ' + name, decompErr);
+                        }
+                      }
+                    }
+                  }
+                }
+                cur += 46 + nameLen + extraLen + commentLen;
+              }
+            }
+
+            if (filesInZip['word/document.xml']) {
+              const xml = dec.decode(filesInZip['word/document.xml']);
+              const decodeXmlEntities = (str) => str
+                .replace(/&amp;/g, '&')
+                .replace(/&lt;/g, '<')
+                .replace(/&gt;/g, '>')
+                .replace(/&quot;/g, '"')
+                .replace(/&apos;/g, "'")
+                .replace(/&#39;/g, "'")
+                .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+                .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+              const paras = xml.match(/<w:p[\s>][\s\S]*?<\/w:p>/g) || [];
+              const extractedDocxText = paras.map(p => {
+                const texts = (p.match(/<w:t[\s>][\s\S]*?<\/w:t>/g) || []).map(t => decodeXmlEntities(t.replace(/<[^>]+>/g, '')));
+                return texts.join('');
+              }).filter(t => t.trim().length > 0).join('\n\n');
+              localExtractedText = extractedDocxText;
+              setUploadedDocRawText(extractedDocxText);
+            }
+
+            const docxImages = [];
+            for (const [name, data] of Object.entries(filesInZip)) {
+              if (name.startsWith('word/media/')) {
+                const ext = name.split('.').pop().toLowerCase();
+                const mime = ext === 'png' ? 'image/png' : (ext === 'jpg' || ext === 'jpeg') ? 'image/jpeg' : ext === 'gif' ? 'image/gif' : ext === 'svg' ? 'image/svg+xml' : 'application/octet-stream';
+                let binary = '';
+                for (let b = 0; b < data.length; b++) {
+                  binary += String.fromCharCode(data[b]);
+                }
+                const b64 = btoa(binary);
+                docxImages.push({
+                  name: name.replace('word/media/', ''),
+                  mimeType: mime,
+                  dataUrl: `data:${mime};base64,${b64}`,
+                  size: data.length
+                });
+              }
+            }
+            if (docxImages.length > 0) {
+              setExtractedImages(docxImages);
+            }
+          } catch (docxErr) {
+            console.warn('Non-fatal docx parse notice:', docxErr);
+          }
         }
       } catch (_) {}
     }
-    setAiStep(`1/3: Reading ${files.length} document(s) & preparing ingestion stream...`);
+
+    // Automatically upload each document to Cloudinary CDN and capture stored URL
+    files.forEach((file, fIdx) => {
+      if (!file.isHistoryDoc) {
+        uploadDocumentToCloudinary(file, {
+          userId: currentUser?.id || null,
+          userName: currentUser?.name || null,
+          templateId: templateToUse,
+          templateName: masterTemplates.find(t => t.id === templateToUse)?.name || 'Standard Policy Template'
+        })
+          .then((cloudRec) => {
+            const remoteUrl = cloudRec?.secureUrl || cloudRec?.url || '';
+            if (!remoteUrl) return;
+            if (localFilesMeta[fIdx]) {
+              localFilesMeta[fIdx].cloudUrl = remoteUrl;
+            }
+            setIngestedDocuments(prev =>
+              prev.map((d, dIdx) => (dIdx === fIdx ? { ...d, cloud_url: remoteUrl, file_url: remoteUrl } : d))
+            );
+          })
+          .catch(err => console.warn('Cloudinary background upload warning:', err));
+      }
+    });
+    setAiStep(`1/3: Reading ${files.length} document(s)...`);
 
     try {
+      const selectedTplObj = masterTemplates.find(t => t.id === templateToUse);
       const formData = new FormData();
-      formData.append('department_id', departmentId || preselectedDepartmentId || 'credit-cards');
-      // Pass role info so backend sets correct status (draft for employee, active for manager/admin)
+      formData.append('department_id', departmentId || preselectedDepartmentId || 'company-policies');
       formData.append('user_role', currentUser?.roleType || 'employee');
       formData.append('user_name', currentUser?.name || 'Staff User');
-      formData.append('template_id', selectedUploadTemplateId || '');
-
-      for (const file of files) {
-        formData.append('files', file);
+      formData.append('template_id', templateToUse);
+      if (selectedTplObj?.sections && Array.isArray(selectedTplObj.sections)) {
+        formData.append('template_sections', JSON.stringify(selectedTplObj.sections));
+      }
+      if (localExtractedText && localExtractedText.trim().length > 20) {
+        formData.append('raw_text', localExtractedText.trim());
+      } else if (uploadedDocRawText && uploadedDocRawText.trim().length > 20) {
+        formData.append('raw_text', uploadedDocRawText.trim());
       }
 
-      setAiStep(`2/3: Parsing ${files.length} document(s) into Summary, Details, Reports, Dependencies...`);
+      for (const file of files) {
+        if (!file.isHistoryDoc) {
+          formData.append('files', file);
+        }
+      }
+
+      setAiStep(`2/3: Structuring document(s) into template clauses...`);
 
       const res = await apiService.ingestDocuments(formData);
+      const docList = (res && res.documents && Array.isArray(res.documents))
+        ? res.documents
+        : (Array.isArray(res) ? res : []);
 
-      if (res && res.documents && res.documents.length > 0) {
-        setAiStep(`3/3: Indexing semantic sections into RAG vector repository...`);
+      if (docList.length > 0) {
+        setAiStep(`3/3: Finalizing document sections...`);
 
-        // Cleanse and sanitize documents to ensure no unreadable binary stream data leaks through
-        const sanitizedDocs = res.documents.map((doc, dIdx) => {
-          const isValuation = doc.document_name?.toLowerCase().includes('valuation') || 
-                              doc.document_name?.toLowerCase().includes('hl_') || 
-                              doc.title?.toLowerCase().includes('valuation');
-
-          const hasCorruptBinary = 
-            doc.title?.toLowerCase().includes('binary pdf') ||
-            doc.title?.toLowerCase().includes('unreadable') ||
-            (doc.summary && doc.summary.toLowerCase().includes('raw pdf')) ||
-            (doc.discovered_evidence && doc.discovered_evidence.some(e => e.source_excerpt && (e.source_excerpt.includes('%PDF-') || e.source_excerpt.includes('/FlateDecode'))));
-
-          if (isValuation && hasCorruptBinary) {
-            return {
-              document_name: doc.document_name || files[dIdx]?.name || 'hl_valuation.pdf',
-              title: 'Home Loan Valuations Policy',
-              suggested_department: 'retail-lending',
-              turnaround_sla: '90 Days Validity (Full & Desktop), 30 Days (AVM)',
-              daily_limit: 'Lower of Purchase Price or Assessed Market Value',
-              officer_cap: '$2,000,000 AUD (Delegated Lending Authority)',
-              compliance_tags: ['APRA APS 220', 'Independent Valuers', 'LVR Limits', 'AVM Standard'],
-              total_chars: 5571,
-              summary: 'Establishes a consistent and prudent framework for the valuation of residential properties used as security for home loans to assess lending risk, ensure APRA compliance, and protect the bank and borrowers.',
-              discovered_evidence: [
-                {
-                  topic: 'Policy Title',
-                  finding: 'Home Loan Valuations Policy',
-                  source_excerpt: 'Page 1, Document Title: "Home Loan Valuations"'
-                },
-                {
-                  topic: 'Target Department',
-                  finding: 'Retail Lending (Home Loans & Mortgages)',
-                  source_excerpt: 'Section 2.1 Scope: "All residential home loan applications, new property purchases, refinancing transactions, construction and renovation loans."'
-                },
-                {
-                  topic: 'Validity & Turnaround SLA',
-                  finding: '90 Days Validity (Full & Desktop), 30 Days (AVM)',
-                  source_excerpt: 'Section 4.3 Table 1 (Valuation Table): Full Valuation 90 days, Desktop Valuation 90 days, Automated Valuation Models 30 days.'
-                },
-                {
-                  topic: 'Underwriting & Prudence Rule',
-                  finding: 'Lower of Purchase Price or Assessed Market Value',
-                  source_excerpt: 'Section 3.4 Prudence: "Lending decisions should be based on the lower of: Purchase price; or Assessed market value."'
-                },
-                {
-                  topic: 'Approved Valuation Methods',
-                  finding: '4 Approved Methods: Full, Desktop, AVM, Drive-thru/Kerbside',
-                  source_excerpt: 'Section 4.1: "Full internal and external inspection mandatory when LVR exceeds approved thresholds."'
-                },
-                {
-                  topic: 'Policy Dependencies',
-                  finding: 'Panel Valuers Accreditation & Valuation Report SOP',
-                  source_excerpt: 'Section 4.6: "Policy Valuers - Accreditation, Performance monitoring & Termination; Operating procedure for Filling a Valuation Report."'
-                }
-              ],
-              sections: [
-                {
-                  id: `sec-abstract-${Date.now()}`,
-                  section_number: 1,
-                  title: 'Abstract & Regulatory Framework',
-                  content: 'Valuation is a critical step in mortgage lending. Accurate assessment of the collateral value determines the risk coverage. The purpose of this policy is to establish a consistent and prudent framework for the valuation of residential properties used as security for home loans. Accurate property valuations are essential to assess lending risk, determine appropriate loan amounts, comply with regulatory requirements, and protect the interests of both the lender and borrowers.',
-                  type: 'section',
-                  word_count: 67,
-                  char_count: 450
-                },
-                {
-                  id: `sec-scope-${Date.now()}`,
-                  section_number: 2,
-                  title: '1. Policy & Operational Scope',
-                  content: 'All real estate offered as security to the bank is subject to an independent valuation. All residential properties offered as security for a home loan must be independently valued to ensure that the property\'s market value adequately supports the proposed lending exposure. Scope applies to: All residential home loan applications, New property purchases, Refinancing transactions, Construction and renovation loans, Loan variations and top-up applications, Portfolio reviews and monitoring activities.',
-                  type: 'section',
-                  word_count: 73,
-                  char_count: 510
-                },
-                {
-                  id: `sec-principles-${Date.now()}`,
-                  section_number: 3,
-                  title: '2. Valuation Principles (Independence, Objectivity, Accuracy, Prudence)',
-                  content: '3.1 Independence: Valuers must be independent of the borrower, broker, loan assessor, and approving authority. Borrowers must not influence the valuation outcome.\n3.2 Objectivity: Valuation assessments must be based on market evidence, comparable sales, and professional judgment. Personal opinions or unsupported assumptions are prohibited.\n3.3 Accuracy: Valuation reports must reflect current market conditions at the date of valuation.\n3.4 Prudence: Lending decisions should be based on the LOWER of: Purchase price, or Assessed market value.',
-                  type: 'section',
-                  word_count: 79,
-                  char_count: 550
-                },
-                {
-                  id: `sec-methods-${Date.now()}`,
-                  section_number: 4,
-                  title: '3. Approved Valuation Methods (Full, Desktop, AVM, Drive-thru)',
-                  content: '4.1.1 Full Valuation: Carried out by an approved valuer with mandatory internal and external inspection. Heightened inspection carried out when LVR exceeds approved thresholds, construction/development loans are involved, or unique/specialized properties are offered.\n4.1.2 Desktop Valuation: Subject to credit team approval for low to medium risk lending, established residential properties, or refinancing applications with acceptable LVR.\n4.1.3 Automated Valuation Models (AVM): Used where property value is below institution threshold, standard residential, and LVR is within approved limits.\n4.1.4 Drive-thru Valuation: Kerbside valuation where limited internal inspection is acceptable and additional assurance is required beyond a desktop valuation.',
-                  type: 'section',
-                  word_count: 104,
-                  char_count: 760
-                },
-                {
-                  id: `sec-report-${Date.now()}`,
-                  section_number: 5,
-                  title: '4. Standardized Valuation Report Criteria',
-                  content: 'Valuation reports follow a standard format after a thorough inspection of the property\'s interior and exterior. The format includes: usage clause with responsibility extension involving authorized mortgage insurers, main improvement dimensions, recommended replacement cost for insurance, site dimensions under Land Description, and valuation method using at least 3 comparable sales within 6 months of valuation date (with at least 2 sales within 10% of subject property\'s value). Capitalization methodology is required for blocks of units/flats.',
-                  type: 'section',
-                  word_count: 82,
-                  char_count: 580
-                },
-                {
-                  id: `sec-validity-${Date.now()}`,
-                  section_number: 6,
-                  title: '5. Validity & SLA Periods (Table 1: Valuation Table)',
-                  content: 'Valuation Type Validity Periods:\n- Full Valuation: 90 Days\n- Desktop Valuation: 90 Days\n- Automated Valuation Models (AVM): 30 Days\nRe-valuation is required if: (1) The validity period expires, (2) Market conditions deteriorate significantly, (3) Material changes occur to the security property, or (4) Additional lending is requested.',
-                  type: 'section',
-                  word_count: 53,
-                  char_count: 360
-                },
-                {
-                  id: `sec-dependencies-${Date.now()}`,
-                  section_number: 7,
-                  title: '6. Policy Dependencies & Governance',
-                  content: 'Valuation must be conducted by approved valuers as governed by:\n1. Policy Valuers - Accreditation, Performance Monitoring & Termination\n2. Operating Procedure for Filling a Valuation Report (SOP)\n3. Authorized Mortgage Insurers Agreement and underwriting panel guidelines.',
-                  type: 'section',
-                  word_count: 42,
-                  char_count: 290
-                }
-              ]
-            };
+        const sanitizedDocs = docList.map((doc, dIdx) => {
+          if (doc.images && Array.isArray(doc.images) && doc.images.length > 0) {
+            setExtractedImages(prev => {
+              const existingNames = new Set(prev.map(p => p.name));
+              const newImgs = doc.images.filter(im => !existingNames.has(im.name));
+              return [...prev, ...newImgs];
+            });
           }
-
-          // Cleanse evidence for other docs
-          const cleanEvidence = (doc.discovered_evidence || []).filter(e => 
-            !e.topic?.toLowerCase().includes('integrity') &&
-            !(e.source_excerpt && (e.source_excerpt.includes('%PDF-') || e.source_excerpt.includes('/FlateDecode'))) &&
-            !(e.finding && e.finding.toLowerCase().includes('raw pdf'))
-          );
-
+          const meta = localFilesMeta[dIdx] || {};
           return {
             ...doc,
-            discovered_evidence: cleanEvidence
+            document_name: doc.document_name || files[dIdx]?.name || `Document ${dIdx + 1}`,
+            title: doc.title || files[dIdx]?.name || 'Operational Policy',
+            raw_text: doc.raw_text || (dIdx === 0 ? localExtractedText : '') || '',
+            file_obj: meta.fileObj || null,
+            local_preview_url: meta.localUrl || '',
+            cloud_url: meta.cloudUrl || doc.cloud_url || doc.file_url || '',
+            sections: (doc.sections || []).map((s, idx) => ({
+              ...s,
+              id: s.id || `sec-${idx + 1}-${Date.now()}`
+            }))
           };
         });
 
         setIngestedDocuments(sanitizedDocs);
         setActiveIngestedIndex(0);
 
-        // Load the first document into the active policy fields
         const firstDoc = sanitizedDocs[0];
+        if (firstDoc.raw_text && !localExtractedText) {
+          setUploadedDocRawText(firstDoc.raw_text);
+        }
         setTitle(firstDoc.title);
         setSummary(firstDoc.summary);
-        const cleanSla = (firstDoc.turnaround_sla && firstDoc.turnaround_sla !== 'Not specified') ? firstDoc.turnaround_sla : '90 Days (Full/Desktop), 30 Days (AVM)';
-        const cleanDaily = (firstDoc.daily_limit && firstDoc.daily_limit !== 'Not specified') ? firstDoc.daily_limit : 'Lower of Purchase Price or Assessed Market Value';
-        const cleanCap = (firstDoc.officer_cap && firstDoc.officer_cap !== 'Not specified') ? firstDoc.officer_cap : '$2,000,000 AUD (Delegated Authority)';
-        setTurnaroundSla(cleanSla);
-        setDailyLimit(cleanDaily);
-        setOfficerCap(cleanCap);
-        setComplianceTags(firstDoc.compliance_tags || ['APRA APS 220', 'Independent Valuers', 'LVR Limits']);
+        setTurnaroundSla(firstDoc.turnaround_sla || '4 Hours');
+        setDailyLimit(firstDoc.daily_limit || '$25,000 AUD');
+        setOfficerCap(firstDoc.officer_cap || '$100,000 AUD');
+        setComplianceTags(firstDoc.compliance_tags || ['APRA Aligned', 'Institutional Standard']);
         if (firstDoc.sections && firstDoc.sections.length > 0) {
           setSections(firstDoc.sections);
         }
         if (firstDoc.suggested_department && departments.some(d => d.id === firstDoc.suggested_department)) {
           setDepartmentId(firstDoc.suggested_department);
         }
+      } else {
+        throw new Error('No parsed documents returned by server.');
       }
     } catch (err) {
-      console.warn('Backend Groq AI ingestion error, applying local banking AI parser fallback:', err);
-      // Fallback extraction
+      console.warn('Backend ingestion notice, applying client template-driven segmentation fallback:', err);
+      const targetTpl = masterTemplates.find(t => t.id === templateToUse) || masterTemplates[0];
+      const targetSections = targetTpl.sections || POLICY_TEMPLATES[0].sections;
+
       const parsedDocs = [];
-      for (const file of files) {
-        const isValuation = file.name.toLowerCase().includes('valuation') || file.name.toLowerCase().includes('hl_');
+      for (let fIdx = 0; fIdx < files.length; fIdx++) {
+        const file = files[fIdx];
+        const meta = localFilesMeta[fIdx] || {};
+        const textToSplit = localExtractedText || uploadedDocRawText || '';
+        const rawParas = textToSplit.split(/\r?\n\r?\n+/).map(p => p.trim()).filter(Boolean);
+        const cleanBase = (file.name || 'document').replace(/\.[^/.]+$/, "").replace(/[-_]/g, ' ');
+        const docTitle = cleanBase.charAt(0).toUpperCase() + cleanBase.slice(1) + ' Operational Policy';
         
-        if (isValuation) {
-          parsedDocs.push({
-            document_name: file.name,
-            title: 'Home Loan Valuations Policy',
-            suggested_department: 'retail-lending',
-            turnaround_sla: '90 Days Validity (Full & Desktop), 30 Days (AVM)',
-            daily_limit: 'Lower of Purchase Price or Assessed Market Value',
-            officer_cap: '$2,000,000 AUD (Delegated Lending Authority)',
-            compliance_tags: ['APRA APS 220', 'Independent Valuers', 'LVR Limits', 'AVM Standard'],
-            total_chars: 5571,
-            summary: 'Establishes a consistent and prudent framework for the valuation of residential properties used as security for home loans to assess lending risk, ensure APRA compliance, and protect the bank and borrowers.',
-            discovered_evidence: [
-              {
-                topic: 'Policy Title',
-                finding: 'Home Loan Valuations Policy',
-                source_excerpt: 'Page 1, Document Title: "Home Loan Valuations"'
-              },
-              {
-                topic: 'Target Department',
-                finding: 'Retail Lending (Home Loans & Mortgages)',
-                source_excerpt: 'Section 2.1 Scope: "All residential home loan applications, new property purchases, refinancing transactions, construction and renovation loans."'
-              },
-              {
-                topic: 'Validity & Turnaround SLA',
-                finding: '90 Days Validity (Full & Desktop), 30 Days (AVM)',
-                source_excerpt: 'Section 4.3 Table 1 (Valuation Table): Full Valuation 90 days, Desktop Valuation 90 days, Automated Valuation Models 30 days.'
-              },
-              {
-                topic: 'Underwriting & Prudence Rule',
-                finding: 'Lower of Purchase Price or Assessed Market Value',
-                source_excerpt: 'Section 3.4 Prudence: "Lending decisions should be based on the lower of: Purchase price; or Assessed market value."'
-              },
-              {
-                topic: 'Approved Valuation Methods',
-                finding: '4 Approved Methods: Full, Desktop, AVM, Drive-thru/Kerbside',
-                source_excerpt: 'Section 4.1: "Full internal and external inspection mandatory when LVR exceeds approved thresholds."'
-              },
-              {
-                topic: 'Policy Dependencies',
-                finding: 'Panel Valuers Accreditation & Valuation Report SOP',
-                source_excerpt: 'Section 4.6: "Policy Valuers - Accreditation, Performance monitoring & Termination; Operating procedure for Filling a Valuation Report."'
-              }
-            ],
-            sections: [
-              {
-                id: `sec-abstract-${Date.now()}`,
-                section_number: 1,
-                title: 'Abstract & Regulatory Framework',
-                content: 'Valuation is a critical step in mortgage lending. Accurate assessment of the collateral value determines the risk coverage. The purpose of this policy is to establish a consistent and prudent framework for the valuation of residential properties used as security for home loans. Accurate property valuations are essential to assess lending risk, determine appropriate loan amounts, comply with regulatory requirements, and protect the interests of both the lender and borrowers.',
-                type: 'section',
-                word_count: 67,
-                char_count: 450
-              },
-              {
-                id: `sec-scope-${Date.now()}`,
-                section_number: 2,
-                title: '1. Policy & Operational Scope',
-                content: 'All real estate offered as security to the bank is subject to an independent valuation. All residential properties offered as security for a home loan must be independently valued to ensure that the property\'s market value adequately supports the proposed lending exposure. Scope applies to: All residential home loan applications, New property purchases, Refinancing transactions, Construction and renovation loans, Loan variations and top-up applications, Portfolio reviews and monitoring activities.',
-                type: 'section',
-                word_count: 73,
-                char_count: 510
-              },
-              {
-                id: `sec-principles-${Date.now()}`,
-                section_number: 3,
-                title: '2. Valuation Principles (Independence, Objectivity, Accuracy, Prudence)',
-                content: '3.1 Independence: Valuers must be independent of the borrower, broker, loan assessor, and approving authority. Borrowers must not influence the valuation outcome.\n3.2 Objectivity: Valuation assessments must be based on market evidence, comparable sales, and professional judgment. Personal opinions or unsupported assumptions are prohibited.\n3.3 Accuracy: Valuation reports must reflect current market conditions at the date of valuation.\n3.4 Prudence: Lending decisions should be based on the LOWER of: Purchase price, or Assessed market value.',
-                type: 'section',
-                word_count: 79,
-                char_count: 550
-              },
-              {
-                id: `sec-methods-${Date.now()}`,
-                section_number: 4,
-                title: '3. Approved Valuation Methods (Full, Desktop, AVM, Drive-thru)',
-                content: '4.1.1 Full Valuation: Carried out by an approved valuer with mandatory internal and external inspection. Heightened inspection carried out when LVR exceeds approved thresholds, construction/development loans are involved, or unique/specialized properties are offered.\n4.1.2 Desktop Valuation: Subject to credit team approval for low to medium risk lending, established residential properties, or refinancing applications with acceptable LVR.\n4.1.3 Automated Valuation Models (AVM): Used where property value is below institution threshold, standard residential, and LVR is within approved limits.\n4.1.4 Drive-thru Valuation: Kerbside valuation where limited internal inspection is acceptable and additional assurance is required beyond a desktop valuation.',
-                type: 'section',
-                word_count: 104,
-                char_count: 760
-              },
-              {
-                id: `sec-report-${Date.now()}`,
-                section_number: 5,
-                title: '4. Standardized Valuation Report Criteria',
-                content: 'Valuation reports follow a standard format after a thorough inspection of the property\'s interior and exterior. The format includes: usage clause with responsibility extension involving authorized mortgage insurers, main improvement dimensions, recommended replacement cost for insurance, site dimensions under Land Description, and valuation method using at least 3 comparable sales within 6 months of valuation date (with at least 2 sales within 10% of subject property\'s value). Capitalization methodology is required for blocks of units/flats.',
-                type: 'section',
-                word_count: 82,
-                char_count: 580
-              },
-              {
-                id: `sec-validity-${Date.now()}`,
-                section_number: 6,
-                title: '5. Validity & SLA Periods (Table 1: Valuation Table)',
-                content: 'Valuation Type Validity Periods:\n- Full Valuation: 90 Days\n- Desktop Valuation: 90 Days\n- Automated Valuation Models (AVM): 30 Days\nRe-valuation is required if: (1) The validity period expires, (2) Market conditions deteriorate significantly, (3) Material changes occur to the security property, or (4) Additional lending is requested.',
-                type: 'section',
-                word_count: 53,
-                char_count: 360
-              },
-              {
-                id: `sec-dependencies-${Date.now()}`,
-                section_number: 7,
-                title: '6. Policy Dependencies & Governance',
-                content: 'Valuation must be conducted by approved valuers as governed by:\n1. Policy Valuers - Accreditation, Performance Monitoring & Termination\n2. Operating Procedure for Filling a Valuation Report (SOP)\n3. Authorized Mortgage Insurers Agreement and underwriting panel guidelines.',
-                type: 'section',
-                word_count: 42,
-                char_count: 290
-              }
-            ]
+        const claimedIndices = new Set();
+        const sectionMap = {};
+        targetSections.forEach(s => { sectionMap[s.id || s.title] = []; });
+
+        targetSections.forEach(sec => {
+          const secKey = sec.id || sec.title;
+          const normTitle = sec.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+          rawParas.forEach((p, pIdx) => {
+            if (claimedIndices.has(pIdx)) return;
+            const normP = p.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (normP === normTitle || (normP.startsWith(normTitle) && p.length <= sec.title.length + 8) || (p.toLowerCase().includes(sec.title.toLowerCase()) && p.length < 140)) {
+              claimedIndices.add(pIdx);
+              const cleanInline = p.replace(new RegExp('^' + sec.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[:\\s-]*', 'i'), '').trim();
+              if (cleanInline) sectionMap[secKey].push(cleanInline);
+            }
           });
-        } else {
-          const cleanBase = file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, ' ');
-          const parsedTitle = cleanBase.charAt(0).toUpperCase() + cleanBase.slice(1) + ' Operational Policy';
-          parsedDocs.push({
-            document_name: file.name,
-            title: parsedTitle,
-            suggested_department: departmentId || 'retail-lending',
-            turnaround_sla: '2 Business Days',
-            daily_limit: '$100,000 AUD',
-            officer_cap: '$250,000 AUD',
-            compliance_tags: ['APRA APS 220', 'Independent Valuers', 'LVR Limits'],
-            total_chars: 5500,
-            summary: `Short description of the policy ingested from ${file.name}.`,
-            sections: [
-              {
-                id: `sec-purpose-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-                section_number: 1,
-                title: '1. Purpose',
-                content: 'Purpose statement of the policy. Operational framework and institutional objectives.',
-                type: 'section'
-              },
-              {
-                id: `sec-scope-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-                section_number: 2,
-                title: '2. Scope/Coverage',
-                content: 'Applicability of the policy across lines of business, geographical restrictions, and customer segmentation.',
-                type: 'section'
-              },
-              {
-                id: `sec-details-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-                section_number: 3,
-                title: '3. Details/Description',
-                content: 'Details of the policy is described in this section. It covers operational requirements, tables, and underwriting parameters.',
-                type: 'section'
-              },
-              {
-                id: `sec-dependencies-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-                section_number: 4,
-                title: '4. Pre-requisites /Dependencies',
-                content: 'Explain cross references to the policies, external regulations, and system dependencies.',
-                type: 'section'
-              },
-              {
-                id: `sec-controls-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-                section_number: 5,
-                title: '5. Controls',
-                content: 'This section describes key monitoring requirements. Includes telemetry and data quality controls.',
-                type: 'section'
-              },
-              {
-                id: `sec-reporting-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-                section_number: 6,
-                title: '6. Reporting',
-                content: 'Define key metrics for continuous monitoring activities. Maps to institutional report ID CBA-RPT-01.',
-                type: 'section'
-              },
-              {
-                id: `sec-approval-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-                section_number: 7,
-                title: '7. Approval Chain',
-                content: 'Provide the approval chain of this policy. Tier 1 Assessor -> Tier 2 Operations Manager -> Tier 3 Head of Risk.',
-                type: 'section'
-              }
-            ]
+        });
+
+        // Collect leftover paragraphs for "Others"
+        const unmapped = [];
+        rawParas.forEach((p, pIdx) => {
+          if (!claimedIndices.has(pIdx)) unmapped.push(p);
+        });
+
+        const finalSecs = targetSections.map((sec, idx) => {
+          const secKey = sec.id || sec.title;
+          const list = sectionMap[secKey] || [];
+          const content = list.length > 0 ? list.join('\n\n') : (sec.content || `Operational clauses for ${sec.title}.`);
+          return {
+            id: sec.id || `sec-${idx + 1}-${Date.now()}`,
+            section_number: idx + 1,
+            title: sec.title,
+            type: 'section',
+            content: content,
+            isTemplateSection: true,
+            isCustom: false
+          };
+        });
+
+        if (unmapped.length > 0) {
+          finalSecs.push({
+            id: `sec-others-${Date.now()}`,
+            section_number: finalSecs.length + 1,
+            title: 'Others',
+            type: 'section',
+            content: unmapped.join('\n\n'),
+            isTemplateSection: false,
+            isCustom: true
           });
         }
+
+        parsedDocs.push({
+          document_name: file.name,
+          title: docTitle,
+          raw_text: textToSplit || '',
+          file_obj: meta.fileObj || null,
+          local_preview_url: meta.localUrl || '',
+          cloud_url: meta.cloudUrl || '',
+          suggested_department: departmentId || targetTpl.dept || 'company-policies',
+          turnaround_sla: targetTpl.sla || '4 Hours',
+          daily_limit: targetTpl.daily || '$25,000 AUD',
+          officer_cap: targetTpl.cap || '$100,000 AUD',
+          compliance_tags: ['APRA Aligned', 'Institutional Framework'],
+          total_chars: textToSplit.length || 1500,
+          summary: targetTpl.summary || `Operational banking policy ingested from ${file.name}.`,
+          discovered_evidence: [
+            {
+              topic: 'Policy Title',
+              finding: docTitle,
+              source_excerpt: `Extracted from filename and header: "${file.name}"`
+            },
+            {
+              topic: 'Template Mapping',
+              finding: `${targetTpl.name || targetTpl.title} (${finalSecs.length} Sections)`,
+              source_excerpt: `All ${rawParas.length} content paragraphs structured across standard template clauses.`
+            }
+          ],
+          sections: finalSecs,
+          images: extractedImages || []
+        });
       }
 
       setIngestedDocuments(parsedDocs);
@@ -1630,16 +1911,52 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
       const firstDoc = parsedDocs[0];
       setTitle(firstDoc.title);
       setSummary(firstDoc.summary);
-      setTurnaroundSla(firstDoc.turnaround_sla || '2 Business Days');
-      setDailyLimit(firstDoc.daily_limit || '$100,000 AUD');
-      setOfficerCap(firstDoc.officer_cap || '$250,000 AUD');
-      setComplianceTags(firstDoc.compliance_tags || []);
-      setSections(firstDoc.sections || []);
+      setTurnaroundSla(firstDoc.turnaround_sla);
+      setDailyLimit(firstDoc.daily_limit);
+      setOfficerCap(firstDoc.officer_cap);
+      setComplianceTags(firstDoc.compliance_tags);
+      setSections(firstDoc.sections);
       if (firstDoc.suggested_department && departments.some(d => d.id === firstDoc.suggested_department)) {
         setDepartmentId(firstDoc.suggested_department);
       }
     } finally {
       setIsAiThinking(false);
+    }
+  };
+
+  // Upload handler asking for template confirmation
+  const handleUploadMultipleDocumentsWithAi = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files || files.length === 0) return;
+    setPendingFilesToIngest(files);
+    setShowTemplatePickPrompt(true);
+    e.target.value = '';
+  };
+
+  // Load history document for editing & correction
+  const handleLoadHistoryDocForCorrection = (historyDoc) => {
+    if (!historyDoc) return;
+    setCreationMode('upload');
+    setUploadedFileName(historyDoc.name || historyDoc.originalName);
+    setUploadedPdfPreviewUrl(historyDoc.url || historyDoc.secureUrl);
+    if (historyDoc.templateId) {
+      setSelectedUploadTemplateId(historyDoc.templateId);
+    }
+    if (historyDoc.sections && Array.isArray(historyDoc.sections) && historyDoc.sections.length > 0) {
+      setSections(historyDoc.sections);
+      setIngestedDocuments([{
+        document_name: historyDoc.name,
+        title: (historyDoc.name || 'Policy').replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ') + ' Policy',
+        sections: historyDoc.sections,
+        cloud_url: historyDoc.url || historyDoc.secureUrl || '',
+        local_preview_url: historyDoc.url || historyDoc.secureUrl || '',
+        total_chars: 2500,
+        summary: historyDoc.notes || 'Document loaded from your upload history.'
+      }]);
+      setActiveIngestedIndex(0);
+    } else {
+      setPendingFilesToIngest([{ name: historyDoc.name, url: historyDoc.url || historyDoc.secureUrl, isHistoryDoc: true }]);
+      setShowTemplatePickPrompt(true);
     }
   };
 
@@ -1667,6 +1984,11 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
 
     setActiveIngestedIndex(index);
     const doc = ingestedDocuments[index];
+    if (doc.raw_text !== undefined) {
+      setUploadedDocRawText(doc.raw_text);
+    }
+    setUploadedFileName(doc.document_name || '');
+    setUploadedPdfPreviewUrl(doc.cloud_url || doc.local_preview_url || '');
     setTitle(doc.title);
     setSummary(doc.summary);
     setTurnaroundSla((doc.turnaround_sla && doc.turnaround_sla !== 'Not specified') ? doc.turnaround_sla : '2 Business Days');
@@ -1729,7 +2051,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
             title: `New Policy Proposal: ${doc.title}`,
             department: targetDeptName,
             requested_by: `${currentUser?.name || 'Bank Employee'} (${currentUser?.role || 'Staff'})`,
-            change_details: `AI Ingestion from ${doc.document_name} in ${targetDeptName}. Mode: upload. SLA: ${doc.turnaround_sla}, Daily Limit: ${doc.daily_limit}. Sections: ${docSections.length}. Summary: ${doc.summary}`,
+            change_details: `Document ingested from ${doc.document_name} in ${targetDeptName}. Mode: upload. SLA: ${doc.turnaround_sla}, Daily Limit: ${doc.daily_limit}. Sections: ${docSections.length}. Summary: ${doc.summary}`,
             status: 'pending'
           });
         }
@@ -1751,6 +2073,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMessage('');
+    const currentSections = flushFullscreenEditorSections();
 
     let finalDeptId = departmentId;
     let finalTitle = title;
@@ -1759,11 +2082,11 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
     let finalSla = turnaroundSla;
     let finalDaily = dailyLimit;
     let finalCap = officerCap;
-    let finalSections = sections;
+    let finalSections = currentSections;
 
     if (creationMode === 'direct') {
-      if (sections.length > 0) {
-        finalContent = sections.map((sec, idx) => {
+      if (currentSections.length > 0) {
+        finalContent = currentSections.map((sec, idx) => {
           if (sec.type === 'paragraph' && !sec.title.trim()) {
             return sec.content;
           }
@@ -1771,9 +2094,9 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
           return `${heading}\n${sec.content}`;
         }).join('\n\n');
 
-        const summarySec = sections.find(s => s.title.toLowerCase().includes('summary'));
+        const summarySec = currentSections.find(s => s.title.toLowerCase().includes('summary'));
         if (!finalSummary.trim() && summarySec?.content) {
-          finalSummary = summarySec.content.slice(0, 250);
+          finalSummary = htmlToPlainText(summarySec.content).slice(0, 250) || summarySec.content.slice(0, 250);
         }
       } else {
         finalContent = content || 'Operational policy clauses authored directly.';
@@ -1786,9 +2109,9 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
       finalSla = turnaroundSla || selectedTpl.sla;
       finalCap = officerCap || selectedTpl.cap;
       finalDaily = dailyLimit || selectedTpl.daily;
-      if (sections && sections.length > 0) {
-        finalSections = sections;
-        finalContent = sections.map((sec, idx) => `### ${idx + 1}. ${sec.title}\n${sec.content}`).join('\n\n');
+      if (currentSections && currentSections.length > 0) {
+        finalSections = currentSections;
+        finalContent = currentSections.map((sec, idx) => `### ${idx + 1}. ${sec.title}\n${sec.content}`).join('\n\n');
       } else {
         finalContent = selectedTpl.content;
       }
@@ -1799,11 +2122,11 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
       }
       const activeDoc = ingestedDocuments[activeIngestedIndex];
       finalTitle = title || activeDoc?.title || `${uploadedFileName.replace(/\.[^/.]+$/, "")} Operating Policy`;
-      finalSummary = summary || activeDoc?.summary || `AI ingested policy from ${uploadedFileName}`;
+      finalSummary = summary || activeDoc?.summary || `Policy ingested from ${uploadedFileName}`;
       finalDeptId = departmentId || activeDoc?.suggested_department || 'credit-cards';
-      if (sections && sections.length > 0) {
-        finalSections = sections;
-        finalContent = sections.map((sec, idx) => `### ${idx + 1}. ${sec.title}\n${sec.content}`).join('\n\n');
+      if (currentSections && currentSections.length > 0) {
+        finalSections = currentSections;
+        finalContent = currentSections.map((sec, idx) => `### ${idx + 1}. ${sec.title}\n${sec.content}`).join('\n\n');
       } else {
         finalContent = content || `### Operational Policy Specification\nExtracted from document: ${uploadedFileName}`;
       }
@@ -1813,6 +2136,11 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
       setErrorMessage('Please enter policy title and at least one section or content.');
       return;
     }
+
+    const activeIngested = ingestedDocuments[activeIngestedIndex];
+    const persistentSourceUrl =
+      activeIngested?.cloud_url ||
+      (uploadedPdfPreviewUrl && !String(uploadedPdfPreviewUrl).startsWith('blob:') ? uploadedPdfPreviewUrl : '');
 
     setIsSubmitting(true);
     try {
@@ -1829,7 +2157,10 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
             approval_limits: { officer_cap: finalCap },
             mandatory_dvs: true,
             sections: finalSections,
-            phases: selectedTemplatePhases
+            phases: selectedTemplatePhases,
+            extracted_images: extractedImages.slice(0, 24),
+            source_file_name: uploadedFileName || activeIngested?.document_name || '',
+            source_file_url: persistentSourceUrl || ''
           },
           created_by: currentUser?.name || 'Bank Administrator',
           creation_mode: creationMode,
@@ -1838,6 +2169,31 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
         });
 
         if (res.id) {
+          try {
+            const userApprovedRecord = {
+              id: res.id,
+              policyId: res.id,
+              title: finalTitle.trim(),
+              version: 'v1.0',
+              department_id: finalDeptId,
+              department_name: departments.find(d => d.id === finalDeptId)?.name || 'Company Policies',
+              summary: finalSummary.trim() || finalTitle.trim(),
+              status: 'approved',
+              user_id: currentUser?.id,
+              user_name: currentUser?.name || 'Bank Administrator',
+              approved_by: currentUser?.name || 'Bank Administrator',
+              approved_at: new Date().toISOString(),
+              source_file_name: uploadedFileName || `${finalTitle.trim()}.pdf`,
+              source_file_url: uploadedPdfPreviewUrl || '',
+              created_at: new Date().toISOString(),
+              sections: finalSections
+            };
+            const userKey = `liblist_approved_user_docs_${currentUser?.id || 'default'}`;
+            const existing = JSON.parse(localStorage.getItem(userKey) || '[]');
+            localStorage.setItem(userKey, JSON.stringify([userApprovedRecord, ...existing.filter(d => d.id !== res.id)]));
+            window.dispatchEvent(new CustomEvent('liblist-doc-history-updated'));
+          } catch (_) {}
+
           if (onPolicyCreated) onPolicyCreated(res.id);
           onClose();
         }
@@ -1852,6 +2208,28 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
           change_details: `Proposed new operational policy: "${finalTitle.trim()}" in ${targetDeptName}. Mode: ${creationMode}. SLA: ${finalSla}, Daily Limit: ${finalDaily}. Sections: ${finalSections.length}. Summary: ${finalSummary.trim() || finalTitle.trim()}`,
           status: 'pending'
         });
+        try {
+          const userProposalRecord = {
+            id: `proposal-${Date.now()}`,
+            title: finalTitle.trim(),
+            version: 'v1.0',
+            department_id: finalDeptId,
+            department_name: targetDeptName,
+            summary: finalSummary.trim() || finalTitle.trim(),
+            status: 'pending_approval',
+            user_id: currentUser?.id,
+            user_name: currentUser?.name || 'Bank Employee',
+            source_file_name: uploadedFileName || `${finalTitle.trim()}.pdf`,
+            source_file_url: uploadedPdfPreviewUrl || '',
+            created_at: new Date().toISOString(),
+            sections: finalSections
+          };
+          const userKey = `liblist_approved_user_docs_${currentUser?.id || 'default'}`;
+          const existing = JSON.parse(localStorage.getItem(userKey) || '[]');
+          localStorage.setItem(userKey, JSON.stringify([userProposalRecord, ...existing]));
+          window.dispatchEvent(new CustomEvent('liblist-doc-history-updated'));
+        } catch (_) {}
+
         alert(`Policy proposal "${finalTitle.trim()}" submitted for Bank Administrator (Marcus Vance) approval.`);
         onClose();
       }
@@ -1970,7 +2348,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
         )}
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4 text-[13px] custom-scrollbar bg-[#f0f6fc]">
+        <form onSubmit={(e) => e.preventDefault()} className={`flex-1 ${creationMode === 'upload' && ingestedDocuments.length > 0 ? 'overflow-y-auto lg:overflow-hidden p-4 flex flex-col gap-3' : 'overflow-y-auto p-6 space-y-4'} text-[13px] custom-scrollbar bg-[#f0f6fc]`}>
           
           {/* DIRECT DRAFT / CONFIGURED EDITING MODE (Immediate access to modular sections, no mode/template clutter) */}
           {editingPolicy ? (
@@ -2005,7 +2383,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                         <input
                           type="text"
                           value={section.title}
-                          onChange={(e) => handleUpdateSectionTitle(section.id, e.target.value)}
+                          onChange={(e) => handleUpdateSectionTitle(section.id || `sec-${idx}`, e.target.value)}
                           placeholder="Section Title"
                           className="font-bold text-[13.5px] text-slate-900 bg-white border border-slate-200 focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8] px-2.5 py-1 rounded-md outline-none transition flex-1 shadow-2xs"
                         />
@@ -2044,7 +2422,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleDeleteSection(section.id)}
+                          onClick={() => handleDeleteSection(section.id || `sec-${idx}`)}
                           className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
                           title="Delete section"
                         >
@@ -2053,26 +2431,21 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                       </div>
                     </div>
 
-                    {/* Word-like Top Action Toolbar for Section */}
-                    <SectionWordToolbar
-                      sectionId={section.id}
-                      content={section.content}
-                      sectionIndex={idx}
-                      onApplyFormat={handleApplyFormat}
-                    />
-
-                    {/* Textarea attached seamlessly to the toolbar */}
-                    <textarea
-                      rows={Math.max(4, Math.min(10, Math.ceil((section.content || '').length / 80)))}
+                    {/* Interactive Rich Document Clause Editor */}
+                    <SectionRichEditor
+                      key={`${editingDraftId || 'edit'}-${section.id || idx}`}
+                      sectionId={section.id || `sec-${idx}`}
                       value={section.content}
-                      onChange={(e) => handleUpdateSectionContent(section.id, e.target.value)}
-                      placeholder={`Enter ${section.title || 'section'} details, operational requirements, or rules...`}
-                      className="w-full p-3 rounded-b-lg border border-slate-200 border-t-0 focus:outline-none focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8] text-xs leading-relaxed text-slate-800 bg-white placeholder-slate-400 shadow-2xs font-sans transition-all"
+                      sectionIndex={idx}
+                      minHeight="130px"
+                      onFocus={() => setActiveSectionId(section.id || `sec-${idx}`)}
+                      onChange={(val) => handleUpdateSectionContent(section.id || `sec-${idx}`, val)}
+                      placeholder={`Enter ${section.title || 'section'} details, operational requirements, tables, or images...`}
                     />
                   </div>
                 ))}
 
-                {/* + Add Section Button at the Bottom of the Last Section */}
+                {/* Add Section Button at the Bottom of the Last Section */}
                 <div className="pt-2 flex items-center justify-start">
                   <button
                     type="button"
@@ -2080,7 +2453,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                     className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#0057B8]/10 hover:bg-[#0057B8]/20 text-[#0057B8] rounded-xl text-xs font-bold border border-[#0057B8]/30 transition cursor-pointer shadow-2xs active:scale-98"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>+ Add Section</span>
+                    <span>Add Section</span>
                   </button>
                 </div>
               </div>
@@ -2290,16 +2663,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => handleAddSection('New Section')}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 bg-[#0057B8]/10 hover:bg-[#0057B8]/20 text-[#0057B8] rounded-xl text-xs font-bold border border-[#0057B8]/30 transition cursor-pointer shadow-2xs"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>+ Add Section</span>
-                    </button>
-                  </div>
+                  
                 </div>
 
                 {/* Section Cards List - Pure White Cards with Separate Full-Screen Popup Expand Option */}
@@ -2316,20 +2680,13 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                               {idx + 1}
                             </span>
                             <div className="flex-1 min-w-0">
-                              {section.isTemplateSection ? (
-                                <span className="font-bold text-[13.5px] text-slate-900 tracking-tight block truncate select-none">
-                                  {section.title}
-                                </span>
-                              ) : (
-                                <input
-                                  type="text"
-                                  value={section.title}
-                                  onChange={(e) => handleUpdateSectionTitle(section.id, e.target.value)}
-                                  placeholder={section.type === 'paragraph' ? 'Paragraph' : `Section ${idx + 1} Title`}
-                                  className="w-full font-bold text-[13.5px] text-slate-900 bg-white border border-slate-300 focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8] px-2.5 py-1 rounded-md outline-none transition shadow-2xs"
-                                  autoFocus
-                                />
-                              )}
+                              <input
+                                type="text"
+                                value={section.title}
+                                onChange={(e) => handleUpdateSectionTitle(section.id || `sec-${idx}`, e.target.value)}
+                                placeholder={section.type === 'paragraph' ? 'Paragraph' : `Section ${idx + 1} Title`}
+                                className="w-full font-bold text-[13.5px] text-slate-900 bg-white border border-slate-300 focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8] px-2.5 py-1 rounded-md outline-none transition shadow-2xs"
+                              />
                             </div>
                             {section.type === 'paragraph' && (
                               <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded uppercase flex-shrink-0">
@@ -2373,7 +2730,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleDeleteSection(section.id)}
+                              onClick={() => handleDeleteSection(section.id || `sec-${idx}`)}
                               className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
                               title="Delete section"
                             >
@@ -2382,24 +2739,21 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                           </div>
                         </div>
 
-                        <SectionWordToolbar
-                          sectionId={section.id}
-                          content={section.content}
-                          sectionIndex={idx}
-                          onApplyFormat={handleApplyFormat}
-                        />
-                        <textarea
-                          rows={Math.max(3, Math.min(6, Math.ceil((section.content || '').length / 90)))}
+                        <SectionRichEditor
+                          key={`${editingDraftId || selectedDirectTemplateId || 'direct'}-${section.id || idx}`}
+                          sectionId={section.id || `sec-${idx}`}
                           value={section.content}
-                          onChange={(e) => handleUpdateSectionContent(section.id, e.target.value)}
-                          placeholder={`Enter ${section.title || 'section'} details, operational requirements, or rules...`}
-                          className="w-full p-2.5 rounded-b-lg border border-slate-200 border-t-0 focus:outline-none focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8] text-xs leading-relaxed text-slate-800 bg-white placeholder-slate-400 shadow-2xs font-sans transition-all"
+                          sectionIndex={idx}
+                          minHeight="115px"
+                          onFocus={() => setActiveSectionId(section.id || `sec-${idx}`)}
+                          onChange={(val) => handleUpdateSectionContent(section.id || `sec-${idx}`, val)}
+                          placeholder={`Enter ${section.title || 'section'} details, operational requirements, tables, or images...`}
                         />
                       </div>
                     );
                   })}
 
-                  {/* + Add Section Button at the Bottom of the Last Section */}
+                  {/* Add Section Button at the Bottom of the Last Section */}
                   <div className="pt-2 flex items-center justify-start">
                     <button
                       type="button"
@@ -2407,7 +2761,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                       className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#0057B8]/10 hover:bg-[#0057B8]/20 text-[#0057B8] rounded-xl text-xs font-bold border border-[#0057B8]/30 transition cursor-pointer shadow-2xs active:scale-98"
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      <span>+ Add Section</span>
+                      <span>Add Section</span>
                     </button>
                   </div>
                 </div>
@@ -2639,7 +2993,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                             <input
                               type="text"
                               value={section.title}
-                              onChange={(e) => handleUpdateSectionTitle(section.id, e.target.value)}
+                              onChange={(e) => handleUpdateSectionTitle(section.id || `sec-${idx}`, e.target.value)}
                               placeholder="Section Title"
                               className="font-bold text-xs text-slate-900 bg-white border border-slate-300 focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8] px-2 py-1 rounded-md outline-none transition flex-1 shadow-2xs"
                             />
@@ -2650,6 +3004,14 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                             )}
                           </div>
                           <div className="flex items-center gap-1 flex-shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setExpandedModalSectionId(section.id || `sec-${idx}`)}
+                              className="p-1 text-slate-400 hover:text-[#0057B8] hover:bg-blue-50 rounded cursor-pointer transition"
+                              title="Expand clause into full page editor"
+                            >
+                              <Maximize2 className="w-3.5 h-3.5" />
+                            </button>
                             <button
                               type="button"
                               onClick={() => handleMoveSectionUp(idx)}
@@ -2670,7 +3032,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleDeleteSection(section.id)}
+                              onClick={() => handleDeleteSection(section.id || `sec-${idx}`)}
                               className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
                               title="Delete Section"
                             >
@@ -2678,18 +3040,15 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                             </button>
                           </div>
                         </div>
-                        <SectionWordToolbar
-                          sectionId={section.id}
-                          content={section.content}
-                          sectionIndex={idx}
-                          onApplyFormat={handleApplyFormat}
-                        />
-                        <textarea
-                          rows={Math.max(3, Math.min(8, Math.ceil((section.content || '').length / 90)))}
+                        <SectionRichEditor
+                          key={`${editingDraftId || selectedDirectTemplateId || 'direct'}-${section.id || idx}`}
+                          sectionId={section.id || `sec-${idx}`}
                           value={section.content}
-                          onChange={(e) => handleUpdateSectionContent(section.id, e.target.value)}
+                          sectionIndex={idx}
+                          minHeight="115px"
+                          onFocus={() => setActiveSectionId(section.id || `sec-${idx}`)}
+                          onChange={(val) => handleUpdateSectionContent(section.id || `sec-${idx}`, val)}
                           placeholder="Section clauses and operational specifications..."
-                          className="w-full p-2.5 bg-white rounded-b-lg border border-slate-200 border-t-0 text-xs leading-relaxed text-slate-800 focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8] outline-none shadow-2xs font-sans"
                         />
                       </div>
                     ))}
@@ -2705,16 +3064,16 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
 
           {/* MODE 3: DOCUMENT UPLOAD (AI) - GROQ AI + NEON PGVECTOR RAG */}
           {creationMode === 'upload' && (
-            <div className="space-y-4 animate-in fade-in duration-150">
+            <div className={`${ingestedDocuments.length > 0 ? 'flex-1 min-h-0 flex flex-col gap-3' : 'space-y-4'} animate-in fade-in duration-150`}>
               {isAiThinking ? (
                 <div className="p-10 border-2 border-dashed border-[#0057B8]/40 bg-[#0057B8]/5 rounded-2xl text-center space-y-4">
                   <Loader2 className="w-10 h-10 text-[#0057B8] animate-spin mx-auto" />
                   <div className="space-y-1">
                     <p className="text-base font-bold text-slate-900">
-                      AI & RAG Engine Processing Documents...
+                      Processing Documents...
                     </p>
                     <p className="text-xs text-slate-500">
-                      Extracting Purpose, Scope/Coverage, Details, Pre-requisites, Controls, Reporting, and Approval Chain.
+                      Segmenting document into template sections...
                     </p>
                   </div>
                   <p className="text-[12px] text-[#0057B8] font-mono bg-[#0057B8]/10 px-4 py-1.5 rounded-lg inline-block font-semibold">
@@ -2722,7 +3081,8 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                   </p>
                 </div>
               ) : ingestedDocuments.length === 0 ? (
-                <div className="p-8 border-2 border-dashed border-[#0057B8]/30 bg-[#0057B8]/5 rounded-2xl text-center space-y-3">
+                <>
+                <div className="p-8 border-2 border-dashed border-[#0057B8]/30 bg-[#0057B8]/5 rounded-2xl text-center space-y-4">
                   <div className="w-12 h-12 rounded-2xl bg-[#0057B8]/10 text-[#0057B8] flex items-center justify-center mx-auto">
                     <Upload className="w-6 h-6" />
                   </div>
@@ -2730,59 +3090,13 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                     <h3 className="text-base font-bold text-slate-900">
                       Upload Single or Multiple Documents
                     </h3>
-                    <p className="text-xs text-slate-500 max-w-md mx-auto mt-1 leading-relaxed">
-                      Select one or multiple policy files. Document Parsing Engine segments each document into standard sections: <strong>Purpose</strong>, <strong>Scope/Coverage</strong>, <strong>Details/Description</strong>, <strong>Pre-requisites/Dependencies</strong>, <strong>Controls</strong>, <strong>Reporting</strong>, and <strong>Approval Chain</strong>.
-                    </p>
                   </div>
 
-                  {/* Step 1: Select Target Policy Template from DB */}
-                  <div className="bg-white p-4 rounded-xl border border-blue-200/90 text-left max-w-lg mx-auto shadow-2xs space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="block text-[11px] font-bold text-[#0057B8] uppercase tracking-wider flex items-center gap-1.5">
-                        <BookOpen className="w-3.5 h-3.5" />
-                        <span>Step 1: Select Target Policy Template (from DB):</span>
-                      </label>
-                      <span className="text-[10px] font-bold bg-blue-100 text-[#0057B8] px-2 py-0.5 rounded-full">
-                        Required
-                      </span>
-                    </div>
-                    <select
-                      value={selectedUploadTemplateId}
-                      onChange={(e) => {
-                        setSelectedUploadTemplateId(e.target.value);
-                        const tpl = masterTemplates.find(t => t.id === e.target.value);
-                        if (tpl) handleSelectTemplate(tpl);
-                      }}
-                      className="w-full p-2.5 rounded-lg border border-slate-300 text-xs font-semibold bg-slate-50 text-slate-800 outline-none focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8]"
-                    >
-                      {masterTemplates.map(t => (
-                        <option key={t.id} value={t.id}>
-                          {t.name || t.title} • {t.deptName || t.dept}
-                        </option>
-                      ))}
-                    </select>
-                    {(() => {
-                      const curTpl = masterTemplates.find(t => t.id === selectedUploadTemplateId);
-                      if (curTpl) {
-                        return (
-                          <p className="text-[11px] text-slate-500 italic">
-                            Template partition: <strong className="text-slate-700">{curTpl.deptName || curTpl.dept}</strong> — includes institutional standard clauses.
-                          </p>
-                        );
-                      }
-                      return null;
-                    })()}
-                  </div>
-
-                  {/* Step 2: Upload Documents */}
-                  <div className="pt-2 flex flex-col items-center justify-center gap-2.5">
-                    <div className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                      Step 2: Choose Documents to Ingest
-                    </div>
+                  <div className="pt-1 flex flex-col items-center justify-center gap-2.5">
                     <input
                       type="file"
                       multiple
-                      accept=".pdf,.docx,.doc,.txt,.rtf"
+                      accept=".pdf,.docx,.doc,.xlsx,.xls,.csv,.txt,.rtf"
                       onChange={handleUploadMultipleDocumentsWithAi}
                       className="hidden"
                       id="doc-upload-input"
@@ -2795,47 +3109,26 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                       <span>Choose Files to Ingest (Supports Multiple)</span>
                     </label>
                   </div>
-
-                  <div className="pt-2 flex items-center justify-center gap-2 text-[11px] text-slate-400">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Each uploaded file is kept separate and will NOT be merged.</span>
-                  </div>
                 </div>
+
+                {/* Uploaded Documents History & Viewer (Cloudinary Sync) */}
+                <DocumentUploadHistorySection
+                  currentUser={currentUser}
+                  selectedTemplateId={selectedUploadTemplateId}
+                  selectedTemplateName={masterTemplates.find(t => t.id === selectedUploadTemplateId)?.name}
+                  onSelectDocumentForCorrection={(historyDoc) => {
+                    handleLoadHistoryDocForCorrection(historyDoc);
+                  }}
+                  onDocIngested={(uploadedRecord, rawFile) => {
+                    handleUploadMultipleDocumentsWithAi({ target: { files: [rawFile] } });
+                  }}
+                />
+                </>
               ) : (
-                <div className="space-y-4">
-                  {/* Multi-Document Status & Switcher */}
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-3">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/80 pb-2.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-xs text-slate-800">
-                          {ingestedDocuments.length} Document(s) Ingested & Formatted into Governance Modules
-                        </span>
-                        <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-200">
-                          Isolated Partitions • Automated Extraction
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="file"
-                          multiple
-                          accept=".pdf,.docx,.doc,.txt,.rtf"
-                          onChange={handleUploadMultipleDocumentsWithAi}
-                          className="hidden"
-                          id="doc-upload-more"
-                        />
-                        <label
-                          htmlFor="doc-upload-more"
-                          className="text-[11px] font-bold text-[#0057B8] hover:text-[#004EA6] hover:bg-blue-50 px-2.5 py-1 rounded-lg border border-[#0057B8]/30 cursor-pointer transition flex items-center gap-1.5"
-                        >
-                          <Upload className="w-3 h-3" />
-                          <span>+ Upload More Files</span>
-                        </label>
-                      </div>
-                    </div>
-
-                    {/* Document Selector Buttons (Tabs) */}
-                    <div className="flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar">
+                <div className="flex-1 min-h-0 flex flex-col gap-3">
+                  {/* Minimal Document Tabs (only when multiple files uploaded) */}
+                  {ingestedDocuments.length > 1 && (
+                    <div className="flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar flex-shrink-0">
                       {ingestedDocuments.map((doc, idx) => {
                         const isActive = activeIngestedIndex === idx;
                         return (
@@ -2850,332 +3143,79 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                             }`}
                           >
                             <FileText className="w-3.5 h-3.5" />
-                            <span className="truncate max-w-[150px]">{doc.document_name}</span>
-                            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                              Doc {idx + 1}
-                            </span>
+                            <span className="truncate max-w-[180px]">{doc.document_name}</span>
                           </button>
                         );
                       })}
                     </div>
-                  </div>
+                  )}
 
                   {/* Active Document Analysis: Side-by-Side Split Screen */}
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-                    {/* LEFT PANE: Uploaded Document Viewer */}
-                    <div className="flex flex-col bg-slate-900 rounded-2xl overflow-hidden border border-slate-300 h-[76vh] sticky top-0 shadow-md">
-                      <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between text-xs font-semibold flex-shrink-0 border-b border-slate-700">
-                        <div className="flex items-center gap-2 truncate">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0 items-stretch">
+                    {/* LEFT PANE: Exact Browser / Docs-Style Uploaded Document Viewer */}
+                    <div className="flex flex-col bg-slate-900 rounded-2xl overflow-hidden border border-slate-300 min-h-[520px] lg:h-full shadow-md">
+                      <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between gap-2 text-xs font-semibold flex-shrink-0 border-b border-slate-700">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
                           <FileText className="w-4 h-4 text-blue-400 flex-shrink-0" />
-                          <span className="truncate max-w-[200px]" title={ingestedDocuments[activeIngestedIndex]?.document_name || uploadedFileName}>
-                            {ingestedDocuments[activeIngestedIndex]?.document_name || uploadedFileName || 'Original Document'}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="flex items-center bg-slate-900/80 rounded-lg p-0.5 border border-slate-700 text-[10.5px]">
-                            <button
-                              type="button"
-                              onClick={() => setLeftPaneViewMode('preview')}
-                              className={`px-2.5 py-0.5 rounded cursor-pointer transition ${leftPaneViewMode === 'preview' ? 'bg-[#0057B8] text-white font-bold' : 'text-slate-400 hover:text-white'}`}
-                            >
-                              Document View
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setLeftPaneViewMode('source_text')}
-                              className={`px-2.5 py-0.5 rounded cursor-pointer transition ${leftPaneViewMode === 'source_text' ? 'bg-[#0057B8] text-white font-bold' : 'text-slate-400 hover:text-white'}`}
-                            >
-                              Source Text
-                            </button>
-                          </div>
-                          <span className="text-[10px] text-blue-200 font-mono bg-blue-900/60 border border-blue-700 px-2.5 py-0.5 rounded-full font-bold hidden sm:inline">
-                            Uploaded Document
+                          <span className="truncate" title={ingestedDocuments[activeIngestedIndex]?.document_name || uploadedFileName}>
+                            {ingestedDocuments[activeIngestedIndex]?.document_name || uploadedFileName || 'Document Viewer'}
                           </span>
                         </div>
                       </div>
 
-                      {leftPaneViewMode === 'preview' && uploadedPdfPreviewUrl ? (
-                        <iframe
-                          src={uploadedPdfPreviewUrl}
-                          className="w-full flex-1 border-0 bg-white"
-                          title="Uploaded Document Preview"
-                        />
-                      ) : (
-                        <div className="w-full flex-1 overflow-y-auto p-5 bg-[#f8fafc] font-sans text-slate-800 text-xs leading-relaxed custom-scrollbar">
-                          <div className="border border-slate-200 p-5 shadow-xs rounded-xl bg-white space-y-4">
-                            <div className="border-b border-slate-200 pb-3 flex items-start justify-between gap-2">
-                              <div>
-                                <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                                  {departments.find(d => d.id === departmentId)?.name || 'Credit Cards'} • Uploaded Source
-                                </span>
-                                <h2 className="text-base font-bold text-slate-900 mt-2">
-                                  {ingestedDocuments[activeIngestedIndex]?.document_name || uploadedFileName || title || 'Uploaded Document'}
-                                </h2>
-                                <p className="text-xs text-slate-500 mt-1 italic">
-                                  {summary || 'Source text and institutional clauses extracted from the uploaded document.'}
-                                </p>
-                              </div>
-                            </div>
+                      {(() => {
+                        const activeDocObj = ingestedDocuments[activeIngestedIndex] || {};
+                        const activeDocName = activeDocObj.document_name || uploadedFileName || '';
+                        const activeLocalUrl = activeDocObj.local_preview_url || (uploadedPdfPreviewUrl && String(uploadedPdfPreviewUrl).startsWith('blob:') ? uploadedPdfPreviewUrl : '');
+                        const activeCloudUrl =
+                          activeDocObj.cloud_url ||
+                          activeDocObj.file_url ||
+                          (uploadedPdfPreviewUrl && /^https?:\/\//i.test(String(uploadedPdfPreviewUrl)) ? uploadedPdfPreviewUrl : '');
+                        const activeRawText = activeDocObj.raw_text || uploadedDocRawText || '';
 
-                            {uploadedDocRawText ? (
-                              <div className="p-3.5 bg-slate-50 rounded-lg border border-slate-200 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap text-slate-700">
-                                {uploadedDocRawText}
-                              </div>
-                            ) : (
-                              <div className="space-y-3 pt-1">
-                                {sections.map((sec, sIdx) => (
-                                  <div key={sec.id || sIdx} className="space-y-1.5 border-b border-slate-100 pb-3 last:border-0">
-                                    <div className="flex items-center gap-2">
-                                      <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-800 font-bold text-[10px] flex items-center justify-center">
-                                        {sIdx + 1}
-                                      </span>
-                                      <h3 className="font-bold text-xs text-slate-900">{sec.title}</h3>
-                                    </div>
-                                    <div className="text-[11.5px] text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-100 whitespace-pre-wrap font-sans leading-relaxed">
-                                      {sec.content}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
+                        return (
+                          <BrowserDocumentViewer
+                            fileName={activeDocName}
+                            fileObj={activeDocObj.file_obj || null}
+                            previewUrl={activeLocalUrl || activeCloudUrl}
+                            cloudUrl={activeCloudUrl}
+                            fallbackRawText={activeRawText}
+                            onOpenCompare={() => {
+                              const compareUrl = activeCloudUrl || activeLocalUrl || uploadedPdfPreviewUrl;
+                              if (!compareUrl) return;
+                              navigate('/compare-policy', {
+                                state: {
+                                  docName: activeDocName,
+                                  pdfUrl: compareUrl,
+                                  title: title,
+                                  sections: sections,
+                                },
+                              });
+                              onClose();
+                            }}
+                          />
+                        );
+                      })()}
                     </div>
 
-                    {/* RIGHT PANE: Structured Policy Editor & Modular Clauses */}
-                    <div className="space-y-4 border border-slate-200 rounded-2xl p-4 bg-white shadow-2xs h-[76vh] overflow-y-auto custom-scrollbar">
-                      {/* Header Summary */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold text-slate-900">
-                              {ingestedDocuments[activeIngestedIndex]?.document_name}
-                            </span>
-                            <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-200">
-                              Analysis & Evidence Verified
-                            </span>
-                          </div>
-                          <p className="text-[11.5px] text-slate-500">
-                            Document parsed into governance modules ({ingestedDocuments[activeIngestedIndex]?.total_chars || 5571} chars). Edit specifications and clauses directly below.
-                          </p>
-                        </div>
-
-                        {/* Toggle Evidence Button */}
-                        <button
-                          type="button"
-                          onClick={() => setShowEvidence(!showEvidence)}
-                          className="px-3 py-1.5 rounded-xl border border-blue-200 bg-blue-50/70 hover:bg-blue-100/60 text-[#0057B8] text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                        >
-                          <Search className="w-3.5 h-3.5" />
-                          <span>{showEvidence ? 'Hide Source Evidence' : 'Show Source Evidence'}</span>
-                        </button>
+                    {/* RIGHT PANE: Policy Title First & Editable Sections */}
+                    <div className="space-y-4 border border-slate-200 rounded-2xl p-4 bg-white shadow-2xs min-h-[520px] lg:h-full overflow-y-auto custom-scrollbar">
+                      {/* 1. POLICY TITLE (FIRST ON TOP) */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                          Policy Title
+                        </label>
+                        <input
+                          type="text"
+                          value={title}
+                          onChange={(e) => setTitle(e.target.value)}
+                          placeholder="Authoritative Policy Title"
+                          className="w-full p-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-[13px] font-semibold text-slate-900 bg-white shadow-2xs"
+                        />
                       </div>
 
-                      {/* AI DISCOVERY & SOURCE EVIDENCE */}
-                      {showEvidence && (
-                        <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                              How This Information Was Found (Document Evidence & Citations)
-                            </span>
-                            <span className="text-[11px] text-slate-500 font-medium">
-                              Extracted directly by LibList Policy Engine
-                            </span>
-                          </div>
-
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                            {(() => {
-                              const defaultValuationEvidence = [
-                                {
-                                  topic: 'Policy Title',
-                                  finding: title || 'Home Loan Valuations Policy',
-                                  source_excerpt: 'Page 1, Document Title: "Home Loan Valuations"'
-                                },
-                                {
-                                  topic: 'Target Department Partition',
-                                  finding: departments.find(d => d.id === departmentId)?.name || 'Retail Lending (Home Loans & Mortgages)',
-                                  source_excerpt: 'Section 2.1 Scope: "All residential home loan applications, new property purchases, refinancing transactions, construction and renovation loans."'
-                                },
-                                {
-                                  topic: 'Approved Valuation Methods',
-                                  finding: '4 Approved Methods: Full, Desktop, AVM, Drive-thru/Kerbside',
-                                  source_excerpt: 'Section 4.1: "Full internal and external inspection mandatory when LVR exceeds approved thresholds."'
-                                },
-                                {
-                                  topic: 'Policy Dependencies',
-                                  finding: 'Panel Valuers Accreditation & Valuation Report SOP',
-                                  source_excerpt: 'Section 4.6: "Panel Valuers - Accreditation, Performance monitoring & Termination; Operating Procedure for Filling a Valuation Report."'
-                                },
-                                {
-                                  topic: 'Operational Events & Lifecycle Triggers',
-                                  finding: '7 Core Lifecycle Events Identified (Origination, Valuer Assignment, Inspection, Decisioning, Dispute Escalation, Expiry, Audit)',
-                                  source_excerpt: 'Workflow events mapped from origination triggers, Section 4.3 validity SLA thresholds, and APRA CPS 234 audit requirements.'
-                                }
-                              ];
-
-                              const rawEv = ingestedDocuments[activeIngestedIndex]?.discovered_evidence || [];
-                              const cleanEv = rawEv.filter(e => 
-                                !isBinaryJunk(e.topic) &&
-                                !isBinaryJunk(e.finding) &&
-                                !isBinaryJunk(e.source_excerpt)
-                              );
-
-                              const displayList = cleanEv.length > 0 ? cleanEv : defaultValuationEvidence;
-
-                              return displayList.map((item, eIdx) => (
-                                <div key={eIdx} className="p-3 bg-white border border-blue-100 rounded-xl space-y-1.5 shadow-2xs hover:border-[#0057B8]/40 transition">
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-[10px] font-bold text-[#0057B8] uppercase tracking-wider bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
-                                      {item.topic}
-                                    </span>
-                                    <span className="text-[11.5px] font-bold text-slate-900">
-                                      {item.finding}
-                                    </span>
-                                  </div>
-                                  <p className="text-[11px] text-slate-600 bg-slate-50/90 p-2 rounded-lg border border-slate-100 leading-relaxed font-sans">
-                                    <strong className="text-slate-500 font-semibold">Source Excerpt: </strong>
-                                    <span className="italic">"{item.source_excerpt}"</span>
-                                  </p>
-                                </div>
-                              ));
-                            })()}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Policy Specifications & Governance Framework */}
-                      <div className="p-3.5 bg-blue-50/40 border border-blue-100/80 rounded-xl space-y-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
-                            <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                            Policy Specifications & Governance Framework
-                          </span>
-                        </div>
-
-                        {/* Target Department Partition */}
-                        <div>
-                          <div className="flex items-center justify-between mb-1">
-                            <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
-                              Department Partition
-                            </label>
-                            <span className="text-[10px] font-semibold text-blue-700 bg-blue-100 px-1.5 py-0.2 rounded">
-                              Auto-assigned: {departments.find(d => d.id === departmentId)?.name || 'Retail Lending'}
-                            </span>
-                          </div>
-                          <select
-                            value={departmentId}
-                            onChange={(e) => setDepartmentId(e.target.value)}
-                            className="w-full p-2 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-[12.5px] bg-white font-medium text-slate-900 shadow-2xs"
-                          >
-                            {departments.map(d => (
-                              <option key={d.id} value={d.id}>{d.name}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        {/* Policy Title */}
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                            Policy Title
-                          </label>
-                          <input
-                            type="text"
-                            value={title}
-                            onChange={(e) => setTitle(e.target.value)}
-                            placeholder="Authoritative Policy Title"
-                            className="w-full p-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-[13px] font-semibold text-slate-900 bg-white shadow-2xs"
-                          />
-                        </div>
-
-                        {/* Executive Summary & Purpose */}
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                            Executive Summary & Statutory Scope
-                          </label>
-                          <textarea
-                            rows={3}
-                            value={summary}
-                            onChange={(e) => setSummary(e.target.value)}
-                            placeholder="Comprehensive executive summary, statutory purpose, and regulatory scope of this policy..."
-                            className="w-full p-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-xs text-slate-800 bg-white shadow-2xs font-sans leading-relaxed"
-                          />
-                        </div>
-
-                        {/* Identified Compliance Tags & Citations */}
-                        <div className="pt-1">
-                          <label className="block text-[10.5px] font-bold text-slate-600 uppercase mb-1.5 flex items-center gap-1">
-                            <Tag className="w-3 h-3 text-slate-500" />
-                            <span>Identified Compliance Rules & Regulatory Tags ({complianceTags.length})</span>
-                          </label>
-                          
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            {complianceTags.map((tag, tIdx) => (
-                              <span 
-                                key={tIdx}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-blue-200 text-blue-800 text-[11px] font-medium rounded-lg shadow-2xs"
-                              >
-                                <span>{tag}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveComplianceTag(tag)}
-                                  className="text-blue-400 hover:text-rose-600 cursor-pointer ml-0.5"
-                                  title="Remove tag"
-                                >
-                                  &times;
-                                </button>
-                              </span>
-                            ))}
-
-                            <div className="inline-flex items-center gap-1">
-                              <input
-                                type="text"
-                                value={newTagInput}
-                                onChange={(e) => setNewTagInput(e.target.value)}
-                                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddComplianceTag(); } }}
-                                placeholder="+ Add rule/tag"
-                                className="px-2 py-0.5 text-[11px] border border-slate-300 rounded-lg bg-white outline-none focus:border-blue-500 w-28"
-                              />
-                              {newTagInput && (
-                                <button
-                                  type="button"
-                                  onClick={handleAddComplianceTag}
-                                  className="text-[11px] font-bold text-blue-700 hover:underline cursor-pointer px-1"
-                                >
-                                  Add
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Policy Sections & Clauses List (THE COMPLETE EDITOR WITH TOOLBAR & EXPAND) */}
-                      <div className="space-y-3 pt-2">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div>
-                            <span className="text-xs font-bold text-slate-900 uppercase tracking-wider block">
-                              Policy Sections & Modular Clauses ({sections.length})
-                            </span>
-                            <span className="text-[11px] text-slate-500">
-                              Authoritative operational clauses and specifications extracted directly from document text.
-                            </span>
-                          </div>
-                          
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => handleAddSection('New Section')}
-                              className="px-3 py-1.5 bg-[#0057B8]/10 hover:bg-[#0057B8]/20 text-[#0057B8] font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1 shadow-2xs border border-[#0057B8]/30"
-                            >
-                              <Plus className="w-3.5 h-3.5" />
-                              <span>Add Section</span>
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Sections List */}
+                      {/* 2. POLICY SECTIONS & EDITING TOOLS */}
+                      <div className="space-y-3">
                         <div className="space-y-3">
                           {sections.map((section, idx) => (
                             <div
@@ -3187,19 +3227,18 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                                   <span className="w-6 h-6 rounded-md bg-[#0057B8] text-white text-[11px] font-bold flex items-center justify-center flex-shrink-0 font-mono shadow-2xs">
                                     {idx + 1}
                                   </span>
-                                  {section.isTemplateSection ? (
-                                    <span className="font-bold text-xs text-slate-900 tracking-tight block truncate select-none">
-                                      {section.title}
-                                    </span>
-                                  ) : (
+                                  <div className="flex items-center gap-2 flex-1 min-w-0">
                                     <input
                                       type="text"
                                       value={section.title}
-                                      onChange={(e) => handleUpdateSectionTitle(section.id, e.target.value)}
+                                      onChange={(e) => handleUpdateSectionTitle(section.id || `sec-${idx}`, e.target.value)}
                                       placeholder={`Section ${idx + 1} Title`}
                                       className="font-bold text-xs text-slate-900 bg-white border border-slate-200 focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8] px-2.5 py-1 rounded-md outline-none transition flex-1 shadow-2xs"
                                     />
-                                  )}
+                                    <span className="text-[9.5px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded flex-shrink-0">
+                                      {section.title === 'Others' ? 'Unmapped' : 'Clause'}
+                                    </span>
+                                  </div>
                                   {section.type === 'paragraph' && (
                                     <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded uppercase flex-shrink-0">
                                       Paragraph
@@ -3208,7 +3247,6 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                                 </div>
 
                                 <div className="flex items-center gap-1 flex-shrink-0">
-                                  {/* Expand Button for full editor canvas */}
                                   <button
                                     type="button"
                                     onClick={() => setExpandedModalSectionId(section.id || `sec-${idx}`)}
@@ -3237,7 +3275,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => handleDeleteSection(section.id)}
+                                    onClick={() => handleDeleteSection(section.id || `sec-${idx}`)}
                                     className="p-1 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
                                     title="Delete Section"
                                   >
@@ -3246,59 +3284,70 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                                 </div>
                               </div>
 
-                              {/* Action Toolbar */}
-                              <SectionWordToolbar
-                                sectionId={section.id}
-                                content={section.content}
-                                sectionIndex={idx}
-                                onApplyFormat={handleApplyFormat}
-                              />
-
-                              {/* Textarea */}
-                              <textarea
-                                rows={Math.max(3, Math.min(8, Math.ceil((section.content || '').length / 90)))}
+                              {/* Rich Interactive Clause Editor */}
+                              <SectionRichEditor
+                                key={`${editingDraftId || `upload-${activeIngestedIndex}`}-${section.id || idx}`}
+                                sectionId={section.id || `sec-${idx}`}
                                 value={section.content}
-                                onChange={(e) => handleUpdateSectionContent(section.id, e.target.value)}
-                                placeholder="Section clauses and operational specifications..."
-                                className="w-full p-2.5 bg-white rounded-b-lg border border-slate-200 border-t-0 text-xs leading-relaxed text-slate-800 focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8] outline-none shadow-2xs font-sans"
+                                sectionIndex={idx}
+                                minHeight="120px"
+                                onFocus={() => setActiveSectionId(section.id || `sec-${idx}`)}
+                                onChange={(val) => handleUpdateSectionContent(section.id || `sec-${idx}`, val)}
+                                placeholder="Section clauses, formatted tables, images, and operational specifications..."
                               />
 
-                              {/* Word & character counts */}
-                              <div className="flex items-center justify-between text-[10px] text-slate-400 px-1 pt-0.5">
-                                <span>Clause {idx + 1}</span>
-                                <span>{(section.content || '').trim().split(/\s+/).filter(Boolean).length} words • {(section.content || '').length} chars</span>
-                              </div>
+                              {/* Word, character & note counts */}
+                              {(() => {
+                                const plain = htmlToPlainText(section.content || '');
+                                const wCount = plain ? plain.trim().split(/\s+/).filter(Boolean).length : 0;
+                                const noteCount = Array.isArray(section.notes) ? section.notes.length : 0;
+                                return (
+                                  <div className="flex items-center justify-between text-[10px] text-slate-400 px-1 pt-0.5">
+                                    <div className="flex items-center gap-2">
+                                      <span>Clause {idx + 1}</span>
+                                      {noteCount > 0 && (
+                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded font-semibold">
+                                          <StickyNote className="w-2.5 h-2.5" />
+                                          {noteCount} {noteCount === 1 ? 'note' : 'notes'}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span>{wCount} words • {plain.length} chars</span>
+                                  </div>
+                                );
+                              })()}
                             </div>
                           ))}
 
-                          {/* + Add Section Button at the Bottom of the Last Section */}
+                          {/* Add Section Button Only */}
                           <div className="pt-2 flex items-center justify-start">
                             <button
                               type="button"
                               onClick={() => handleAddSection('New Section')}
-                              className="px-3.5 py-1.5 bg-[#0057B8]/10 hover:bg-[#0057B8]/20 text-[#0057B8] font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-2xs border border-[#0057B8]/30"
+                              className="px-4 py-2 bg-[#0057B8]/10 hover:bg-[#0057B8]/20 text-[#0057B8] font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-2xs border border-[#0057B8]/30"
                             >
                               <Plus className="w-3.5 h-3.5" />
-                              <span>+ Add Section</span>
+                              <span>Add Section</span>
                             </button>
                           </div>
                         </div>
+                      </div>
 
-                        {/* Quick Add Presets Bar */}
-                        <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11.5px] text-slate-500">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="font-semibold text-slate-600">Quick Add:</span>
-                            {['Summary', 'Details', 'Reports', 'Dependencies', 'Operational Events'].map(name => (
-                              <button
-                                key={name}
-                                type="button"
-                                onClick={() => handleAddSection(name)}
-                                className="px-2.5 py-1 bg-white hover:bg-blue-50 hover:text-[#0057B8] hover:border-[#0057B8] text-slate-600 border border-slate-300 rounded-lg text-[11px] font-semibold transition cursor-pointer shadow-2xs"
-                              >
-                                +{name}
-                              </button>
+                      {/* 3. DEPARTMENT PARTITION */}
+                      <div className="p-3.5 bg-blue-50/40 border border-blue-100/80 rounded-xl">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                            Department Partition
+                          </label>
+                          <select
+                            value={departmentId}
+                            onChange={(e) => setDepartmentId(e.target.value)}
+                            className="w-full p-2 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-[12.5px] bg-white font-medium text-slate-900 shadow-2xs"
+                          >
+                            {departments.map(d => (
+                              <option key={d.id} value={d.id}>{d.name}</option>
                             ))}
-                          </div>
+                          </select>
                         </div>
                       </div>
                     </div>
@@ -3348,43 +3397,139 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
             onClick={handleSaveDraft}
             disabled={isSubmitting || isAiThinking}
             className="px-5 py-2 text-[13px] font-bold text-white bg-[#0057B8] hover:bg-[#004EA6] rounded-xl shadow-xs transition cursor-pointer flex items-center gap-2 active:scale-95 disabled:opacity-50"
+            title="Save document as draft on your user account"
           >
             <Save className="w-4 h-4 text-white" />
-            <span>{isSubmitting ? 'Saving Draft...' : 'Save as Draft'}</span>
+            <span>{isSubmitting ? 'Saving...' : 'Save as Draft'}</span>
           </button>
         </div>
         </div>
       </div>
 
-      {/* FULL WORD DOCUMENT CLAUSE EXPANDED EDITOR (A4 WORD PAGE EXPERIENCE) */}
+      {/* PROMPT: CHOOSE POLICY TEMPLATE MODAL ON UPLOAD */}
+      {showTemplatePickPrompt && (
+        <div className="fixed inset-0 z-[10000] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-blue-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-[#0057B8]/10 text-[#0057B8] flex items-center justify-center font-bold">
+                  <BookOpen className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900">Choose Starting Policy Template</h3>
+                  <p className="text-xs text-slate-500">
+                    Select target structure for <strong>{pendingFilesToIngest[0]?.name || 'uploaded document'}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTemplatePickPrompt(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-bold text-[#0057B8] uppercase tracking-wider block">
+                Available Policy Templates (from Database):
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[300px] overflow-y-auto p-1">
+                {masterTemplates.map(t => {
+                  const isSelected = selectedUploadTemplateId === t.id;
+                  return (
+                    <div
+                      key={t.id}
+                      onClick={() => {
+                        setSelectedUploadTemplateId(t.id);
+                        handleSelectTemplate(t);
+                      }}
+                      className={`p-3.5 rounded-xl border transition cursor-pointer flex flex-col justify-between ${
+                        isSelected
+                          ? 'bg-blue-50/90 border-[#0057B8] ring-2 ring-[#0057B8]/20 shadow-xs'
+                          : 'bg-slate-50 hover:bg-slate-100 border-slate-200'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-1.5">
+                        <div>
+                          <span className="font-bold text-xs text-slate-900 block">
+                            {t.name || t.title}
+                          </span>
+                          <span className="text-[10.5px] text-slate-500">
+                            {t.deptName || t.dept} &bull; {t.sections?.length || 7} sections
+                          </span>
+                        </div>
+                        <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${
+                          isSelected ? 'bg-[#0057B8] text-white font-bold' : 'border border-slate-300'
+                        }`}>
+                          {isSelected ? '✓' : ''}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowTemplatePickPrompt(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowTemplatePickPrompt(false);
+                  executeDocumentIngestion(pendingFilesToIngest, selectedUploadTemplateId);
+                }}
+                className="px-5 py-2 text-xs font-bold text-white bg-[#0057B8] hover:bg-[#004EA6] rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5 active:scale-95"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                <span>Confirm & Ingest Document</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FULL WORD DOCUMENT CLAUSE EXPANDED EDITOR (CONTINUOUS MULTI-PAGE MS WORD WORKSPACE) */}
       {expandedModalSectionId && typeof document !== 'undefined' && createPortal(
         (() => {
-          const currentSectionIndex = Math.max(0, sections.findIndex((s, idx) => (s.id || `sec-${idx}`) === expandedModalSectionId));
-          const currentSection = sections[currentSectionIndex] || sections[0];
           const totalSections = Math.max(1, sections.length);
-          const hasPrev = currentSectionIndex > 0;
-          const hasNext = currentSectionIndex < totalSections - 1;
+          const safeActiveIndex = Math.min(Math.max(0, activeExpandedIndex), Math.max(0, sections.length - 1));
+          const activeSection = sections[safeActiveIndex] || sections[0];
 
-          if (!currentSection) return null;
+          if (!activeSection) return null;
 
-          const cleanWords = (currentSection.content || '').trim().split(/\s+/).filter(Boolean).length;
-          const charCount = (currentSection.content || '').length;
+          const activePlainBody = htmlToPlainText(activeSection.content || '');
+          const cleanWords = activePlainBody ? activePlainBody.trim().split(/\s+/).filter(Boolean).length : 0;
+          const charCount = activePlainBody.length;
+          const resolvedPagePadding =
+            pageMarginPreset === 'narrow'
+              ? '36px 44px'
+              : pageMarginPreset === 'wide'
+                ? '72px 96px'
+                : '56px 72px';
 
           return (
             <div className="fixed inset-0 z-[9999] flex flex-col bg-[#e8edf4] animate-in fade-in duration-150 select-text">
-            {/* Top Word Ribbon Title Bar */}
-            <div className="bg-[#0057B8] text-white px-5 py-2.5 flex items-center justify-between shadow-md flex-shrink-0">
+            {/* Top Ribbon Title Bar */}
+            <div className="bg-[#0057B8] text-white px-4 sm:px-5 py-2.5 flex flex-wrap items-center justify-between gap-2 shadow-md flex-shrink-0 relative z-20">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-8 h-8 rounded-lg bg-white/15 border border-white/30 flex items-center justify-center font-bold text-white shadow-xs">
+                <div className="w-8 h-8 rounded-lg bg-white/15 border border-white/30 flex items-center justify-center font-bold text-white shadow-xs flex-shrink-0">
                   <FileText className="w-4 h-4" />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <h2 className="font-bold text-sm text-white truncate">
-                      Document Clause Editor • Clause {currentSectionIndex + 1}
+                      Document Editor • {activeSection.title || `Page ${safeActiveIndex + 1}`}
                     </h2>
-                    <span className="text-[11px] font-mono bg-white/20 border border-white/30 px-2 py-0.5 rounded text-white font-semibold">
-                      Page {currentSectionIndex + 1} of {totalSections}
+                    <span className="text-[11px] font-mono bg-white/20 border border-white/30 px-2 py-0.5 rounded text-white font-semibold flex-shrink-0">
+                      Page {safeActiveIndex + 1} of {totalSections}
                     </span>
                   </div>
                   <p className="text-[11px] text-blue-100 truncate">
@@ -3393,11 +3538,79 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 flex-shrink-0">
+                {/* Plus (+) Add Page Button */}
                 <button
                   type="button"
-                  onClick={() => setExpandedModalSectionId(null)}
-                  className="px-4 py-1.5 bg-white hover:bg-blue-50 text-[#0057B8] font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+                  onClick={() => handleAddAndOpenPage()}
+                  className="px-2.5 py-1.5 text-[11px] font-bold rounded-lg border border-white/40 bg-white/20 hover:bg-white/30 text-white transition flex items-center gap-1 cursor-pointer"
+                  title="Add New Page"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Page</span>
+                </button>
+
+                {/* Zoom Out / Reset / Zoom In Controls */}
+                <div className="inline-flex items-center bg-white/15 border border-white/30 rounded-lg px-1 py-0.5 gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setEditorZoomLevel(z => Math.max(25, z - 10))}
+                    disabled={editorZoomLevel <= 25}
+                    className="p-1 text-white hover:bg-white/20 disabled:opacity-40 rounded cursor-pointer transition"
+                    title="Zoom Out (Ctrl + Mouse Wheel)"
+                  >
+                    <ZoomOut className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditorZoomLevel(100)}
+                    className="px-1.5 text-[11px] font-mono font-bold text-white hover:bg-white/20 rounded cursor-pointer"
+                    title="Reset Zoom to 100%"
+                  >
+                    {editorZoomLevel}%
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditorZoomLevel(z => Math.min(200, z + 10))}
+                    disabled={editorZoomLevel >= 200}
+                    className="p-1 text-white hover:bg-white/20 disabled:opacity-40 rounded cursor-pointer transition"
+                    title="Zoom In"
+                  >
+                    <ZoomIn className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {/* Running Page Header / Footer Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setShowPageHeaderFooter(prev => !prev)}
+                  className={`px-2.5 py-1.5 text-[11px] font-semibold rounded-lg border transition flex items-center gap-1 cursor-pointer ${
+                    showPageHeaderFooter
+                      ? 'bg-white/20 border-white/40 text-white'
+                      : 'bg-white/5 border-white/20 text-blue-100 hover:bg-white/15'
+                  }`}
+                  title="Show or hide editable Header and Footer"
+                >
+                  <PanelTop className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Header / Footer</span>
+                </button>
+
+                {/* Page Margin Presets */}
+                <select
+                  value={pageMarginPreset}
+                  onChange={(e) => setPageMarginPreset(e.target.value)}
+                  className="px-2 py-1.5 text-[11px] font-semibold rounded-lg border border-white/30 bg-white/15 text-white outline-none cursor-pointer"
+                  title="Page Margins"
+                >
+                  <option value="normal" className="text-slate-900">Margins: Normal</option>
+                  <option value="narrow" className="text-slate-900">Margins: Narrow</option>
+                  <option value="wide" className="text-slate-900">Margins: Wide</option>
+                </select>
+
+                <button
+                  type="button"
+                  onClick={handleCloseExpandedEditor}
+                  className="px-3.5 py-1.5 bg-white hover:bg-blue-50 text-[#0057B8] font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95"
                   title="Save and return to policy draft view"
                 >
                   <Check className="w-3.5 h-3.5" />
@@ -3405,7 +3618,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                 </button>
                 <button
                   type="button"
-                  onClick={() => setExpandedModalSectionId(null)}
+                  onClick={handleCloseExpandedEditor}
                   className="p-1.5 text-white/80 hover:text-white hover:bg-white/15 rounded-lg cursor-pointer transition"
                   title="Close expanded editor"
                 >
@@ -3414,78 +3627,34 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
               </div>
             </div>
 
-            {/* Word Action Formatting Toolbar (Spanning full width across the top) */}
-            <div className="bg-white border-b border-slate-300 px-4 sm:px-8 py-1.5 shadow-2xs flex-shrink-0 flex items-center justify-between">
-              <div className="w-full">
-                <SectionWordToolbar
-                  sectionId={currentSection.id}
-                  content={currentSection.content}
-                  sectionIndex={currentSectionIndex}
-                  onApplyFormat={handleApplyFormat}
+            {/* Interactive Continuous Multi-Page Word Document Editor */}
+            <div className="flex-1 min-h-0 flex overflow-hidden">
+              <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+                <MultiPageDocumentEditor
+                  ref={multiPageEditorRef}
+                  sections={sections}
+                  initialActiveSectionId={expandedModalSectionId}
+                  documentTitle={title || 'Operational Policy Document'}
+                  extractedImages={extractedImages}
+                  showPageHeaderFooter={showPageHeaderFooter}
+                  pagePadding={resolvedPagePadding}
+                  zoomLevel={editorZoomLevel}
+                  onZoomChange={setEditorZoomLevel}
+                  onAddPage={() => handleAddAndOpenPage()}
+                  onChangeSectionContent={handleUpdateSectionContent}
+                  onChangeSectionTitle={handleUpdateSectionTitle}
+                  onChangeSectionField={handleUpdateSectionField}
+                  onActivePageChange={(_key, idx) => setActiveExpandedIndex(idx)}
+                  placeholder="Type content, format headings, align text, insert formatted tables, drag/resize/rotate images, or insert page breaks..."
                 />
               </div>
             </div>
 
-            {/* Word Document Canvas - Centered A4 Sheet of Paper */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-8 flex justify-center custom-scrollbar bg-[#e8edf4]">
-              <div className="w-full max-w-4xl bg-white rounded-sm shadow-2xl border border-slate-300 min-h-[850px] p-8 sm:p-14 flex flex-col space-y-4">
-                
-                {/* Word Page Running Header */}
-                <div className="flex items-center justify-between pb-3 border-b border-slate-200 text-[11px] text-slate-400 font-mono select-none">
-                  <span className="uppercase tracking-wider font-semibold text-slate-500">
-                    COMMONWEALTH BANK OF AUSTRALIA • INSTITUTIONAL GOVERNANCE STANDARD
-                  </span>
-                  <span>CLAUSE PAGE {currentSectionIndex + 1} / {totalSections}</span>
-                </div>
-
-                {/* Section Clause Heading (Editable Large Word Title) */}
-                <div className="pt-2">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="w-6 h-6 rounded-md bg-[#0057B8] text-white font-mono font-bold text-xs flex items-center justify-center flex-shrink-0 shadow-2xs">
-                      {currentSectionIndex + 1}
-                    </span>
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#0057B8] bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
-                      Clause Specification
-                    </span>
-                  </div>
-                  {currentSection.isTemplateSection ? (
-                    <h2 className="w-full text-xl sm:text-2xl font-bold text-slate-900 pb-1 font-sans select-none">
-                      {currentSection.title}
-                    </h2>
-                  ) : (
-                    <input
-                      type="text"
-                      value={currentSection.title}
-                      onChange={(e) => handleUpdateSectionTitle(currentSection.id, e.target.value)}
-                      placeholder="Enter Clause Title (e.g. Purpose & Product Scope)..."
-                      className="w-full text-xl sm:text-2xl font-bold text-slate-900 border-b border-transparent hover:border-slate-300 focus:border-[#0057B8] pb-1 outline-none transition font-sans placeholder-slate-300"
-                    />
-                  )}
-                </div>
-
-                {/* Word Page Canvas Textarea */}
-                <textarea
-                  key={currentSection.id}
-                  value={currentSection.content || ''}
-                  onChange={(e) => handleUpdateSectionContent(currentSection.id, e.target.value)}
-                  placeholder="Type full operational clause specifications, underwriting parameters, statutory authorities, and APRA compliance rules here..."
-                  className="w-full flex-1 min-h-[600px] border-none outline-none focus:ring-0 text-[14.5px] leading-relaxed text-slate-800 font-sans resize-none placeholder-slate-300 bg-transparent custom-scrollbar"
-                  autoFocus
-                />
-
-                {/* Word Page Running Footer */}
-                <div className="pt-4 border-t border-slate-200 flex items-center justify-between text-[11px] text-slate-400 font-mono select-none">
-                  <span>Confidential - Commonwealth Bank Internal Use Only • APRA CPS 234</span>
-                  <span>Page {currentSectionIndex + 1} of {totalSections}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Bottom Word Status Ribbon */}
-            <div className="bg-white border-t border-slate-300 px-6 py-2.5 flex items-center justify-between text-xs text-slate-600 flex-shrink-0 select-none shadow-xs">
+            {/* Bottom Word Status & Actions Ribbon */}
+            <div className="bg-white border-t border-slate-300 px-4 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600 flex-shrink-0 select-none shadow-xs">
               <div className="flex items-center gap-3 font-mono text-[11.5px] text-slate-500">
                 <span className="font-semibold text-slate-700">
-                  Page {currentSectionIndex + 1} of {totalSections}
+                  Page {safeActiveIndex + 1} of {totalSections}
                 </span>
                 <span>•</span>
                 <span>{cleanWords} words</span>
@@ -3498,51 +3667,52 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                 </span>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Zoom Out / Reset / Zoom In Controls */}
+                <div className="inline-flex items-center bg-slate-100 border border-slate-300 rounded-xl px-1.5 py-1 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setEditorZoomLevel(z => Math.max(25, z - 10))}
+                    disabled={editorZoomLevel <= 25}
+                    className="p-1 text-slate-700 hover:bg-white disabled:opacity-35 rounded-lg cursor-pointer transition"
+                    title="Zoom Out (Ctrl + Mouse Wheel)"
+                  >
+                    <ZoomOut className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditorZoomLevel(100)}
+                    className="px-1.5 text-[11px] font-mono font-bold text-slate-700 hover:bg-white rounded cursor-pointer min-w-[42px] text-center"
+                    title="Click to reset zoom to 100%"
+                  >
+                    {editorZoomLevel}%
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditorZoomLevel(z => Math.min(200, z + 10))}
+                    disabled={editorZoomLevel >= 200}
+                    className="p-1 text-slate-700 hover:bg-white disabled:opacity-35 rounded-lg cursor-pointer transition"
+                    title="Zoom In"
+                  >
+                    <ZoomIn className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {/* Plus (+) Add Page Button */}
                 <button
                   type="button"
-                  disabled={!hasPrev}
-                  onClick={() => {
-                    if (hasPrev) {
-                      const prevSec = sections[currentSectionIndex - 1];
-                      setExpandedModalSectionId(prevSec.id || `sec-${currentSectionIndex - 1}`);
-                    }
-                  }}
-                  className={`px-3.5 py-1.5 text-xs font-semibold rounded-xl border flex items-center gap-1.5 transition ${
-                    hasPrev 
-                      ? 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300 cursor-pointer shadow-2xs' 
-                      : 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-50'
-                  }`}
-                  title="Previous Clause Page"
+                  onClick={() => handleAddAndOpenPage()}
+                  className="px-3.5 py-1.5 bg-[#0057B8] hover:bg-[#004EA6] text-white font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-xs"
+                  title="Add a new page to this policy document"
                 >
-                  <ChevronLeft className="w-4 h-4" />
-                  <span>Previous Clause</span>
+                  <Plus className="w-4 h-4" />
+                  <span>Add Page</span>
                 </button>
 
                 <button
                   type="button"
-                  disabled={!hasNext}
-                  onClick={() => {
-                    if (hasNext) {
-                      const nextSec = sections[currentSectionIndex + 1];
-                      setExpandedModalSectionId(nextSec.id || `sec-${currentSectionIndex + 1}`);
-                    }
-                  }}
-                  className={`px-3.5 py-1.5 text-xs font-semibold rounded-xl border flex items-center gap-1.5 transition ${
-                    hasNext 
-                      ? 'bg-[#0057B8] hover:bg-[#004EA6] text-white border-[#0057B8] cursor-pointer shadow-xs' 
-                      : 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-50'
-                  }`}
-                  title="Next Clause Page"
-                >
-                  <span>Next Clause</span>
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setExpandedModalSectionId(null)}
-                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-xs transition cursor-pointer flex items-center gap-1.5 ml-2"
+                  onClick={handleCloseExpandedEditor}
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-xs transition cursor-pointer flex items-center gap-1.5"
                 >
                   <Check className="w-3.5 h-3.5" />
                   <span>Done & Return</span>

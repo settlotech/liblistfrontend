@@ -211,3 +211,28 @@
     font-size: 14px;
     background: var(--bg-primary);
 }
+
+@keyframes noteNavSpotlightPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(0, 87, 184, 0.55), 0 10px 28px rgba(0, 87, 184, 0.22);
+    background-color: rgba(219, 234, 254, 0.65);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(0, 87, 184, 0.18), 0 10px 28px rgba(0, 87, 184, 0.18);
+    background-color: rgba(239, 246, 255, 0.85);
+  }
+  100% {
+    box-shadow: 0 0 0 2px rgba(0, 87, 184, 0.45), 0 6px 20px rgba(0, 87, 184, 0.14);
+    background-color: rgba(239, 246, 255, 0.45);
+  }
+}
+
+.policy-note-nav-spotlight {
+  position: relative;
+  outline: 2.5px solid #0057B8 !important;
+  outline-offset: 4px;
+  border-radius: 10px !important;
+  animation: noteNavSpotlightPulse 1.3s ease-in-out 3;
+  transition: outline-color 0.25s ease, background-color 0.25s ease;
+  scroll-margin-top: 90px;
+}

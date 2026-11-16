@@ -25,13 +25,27 @@ import {
   CheckCircle2,
   X,
   Check,
-  Send
+  Send,
+  BookmarkPlus
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { apiService } from '../../services/apiService';
+import { useAuth } from '../../context/AuthContext';
+import {
+  detectRightClickTarget,
+  navigateToNoteAnchorInContainer,
+} from '../../utils/assetSnapshotHelper';
+import {
+  createUserNoteOrAnnotation,
+  loadLocalUserNotes,
+  fetchUserNotes,
+  USER_NOTES_EVENT,
+} from '../../utils/userNotesStorage';
 
 import FormattedPolicyContent from './FormattedPolicyContent';
 import RichSectionAccordion from './RichSectionAccordion';
 import CreateTaskDialog from '../task/CreateTaskDialog';
+import PolicyRightClickNotesOverlay from './PolicyRightClickNotesOverlay';
 export default function PolicyWorkspacePane({
   policy,
   currentUser,
@@ -45,8 +59,15 @@ export default function PolicyWorkspacePane({
   onBackToChangeManagement = null,
   isDraftView = false,
   initialEditMode = false,
-  onDraftSaved = null
+  onDraftSaved = null,
+  noteNavTarget = null,
 }) {
+  const navigate = useNavigate();
+  const { user: authUser } = useAuth();
+  const effectiveNotesUser = authUser || currentUser;
+  const workspaceMainRef = useRef(null);
+  const handledNavKeyRef = useRef(null);
+
   const [detailedPolicy, setDetailedPolicy] = useState(policy || null);
   const activeDoc = detailedPolicy || policy;
   const [isLoading, setIsLoading] = useState(false);
@@ -55,6 +76,116 @@ export default function PolicyWorkspacePane({
   const [taskSuccessToast, setTaskSuccessToast] = useState(null);
   const [isDocumentEditMode, setIsDocumentEditMode] = useState(Boolean(typeof initialEditMode !== "undefined" ? initialEditMode : false));
   const [isSavingDraft, setIsSavingDraft] = useState(false);
+  const [noteContextMenu, setNoteContextMenu] = useState(null);
+  const [captureNoteDraft, setCaptureNoteDraft] = useState(null);
+  const [isSavingUserNote, setIsSavingUserNote] = useState(false);
+  const [savedUserNoteToast, setSavedUserNoteToast] = useState(null);
+  const [spotlightBanner, setSpotlightBanner] = useState(null);
+  const [userPolicyNotes, setUserPolicyNotes] = useState([]);
+
+  useEffect(() => {
+    const syncNotes = (list) => {
+      const pid = String(activeDoc?.id || '');
+      const items = (Array.isArray(list) ? list : loadLocalUserNotes(effectiveNotesUser))
+        .filter((n) => pid && String(n.policyId || '') === pid);
+      setUserPolicyNotes(items);
+    };
+    syncNotes();
+    fetchUserNotes(effectiveNotesUser).then(syncNotes).catch(() => {});
+
+    const onNotesUpdated = (e) => {
+      syncNotes(e?.detail?.items);
+    };
+    window.addEventListener(USER_NOTES_EVENT, onNotesUpdated);
+    return () => window.removeEventListener(USER_NOTES_EVENT, onNotesUpdated);
+  }, [activeDoc?.id, effectiveNotesUser]);
+
+  const handleWorkspaceContextMenu = (e) => {
+    if (isDocumentEditMode) return;
+    // Allow normal browser menu only inside form inputs/textareas
+    if (e.target instanceof Element && e.target.closest('input, textarea, select')) return;
+
+    e.preventDefault();
+    const detected = detectRightClickTarget(e, workspaceMainRef.current);
+    setNoteContextMenu({
+      clientX: e.clientX,
+      clientY: e.clientY,
+      ...detected,
+    });
+  };
+
+  const handleChooseContextAction = (itemType) => {
+    if (!noteContextMenu || !activeDoc) return;
+    const isVisual = itemType === 'annotation' && noteContextMenu.isAsset;
+    const defaultTitle =
+      noteContextMenu.sectionTitle ||
+      (isVisual ? 'Graph / Visual Annotation' : activeDoc.title || 'Policy Note');
+
+    setCaptureNoteDraft({
+      itemType,
+      defaultTitle,
+      policyId: String(activeDoc.id),
+      policyTitle: activeDoc.title || 'Policy Document',
+      departmentName: activeDoc.department_name || '',
+      targetType: isVisual
+        ? noteContextMenu.assetType || 'graph'
+        : noteContextMenu.selectedText
+          ? 'selection'
+          : noteContextMenu.lineText
+            ? 'line'
+            : 'section',
+      anchorId: noteContextMenu.anchorId || noteContextMenu.sectionAnchorId || '',
+      sectionAnchorId: noteContextMenu.sectionAnchorId || '',
+      sectionTitle: noteContextMenu.sectionTitle || '',
+      supplementaryTab: noteContextMenu.supplementaryTab || '',
+      lineText: noteContextMenu.lineText || '',
+      selectedText: noteContextMenu.selectedText || '',
+      richBlockIndex: noteContextMenu.richBlockIndex ?? null,
+      assetType: noteContextMenu.assetType || null,
+      imageSrc: noteContextMenu.imageSrc || '',
+      snapshotDataUrl: itemType === 'annotation' ? (noteContextMenu.snapshotDataUrl || '') : '',
+      relX: noteContextMenu.relX ?? null,
+      relY: noteContextMenu.relY ?? null,
+    });
+    setNoteContextMenu(null);
+  };
+
+  const handleSaveCapturedNote = async ({ title: noteTitle, content: notePoint, category }) => {
+    if (!captureNoteDraft) return;
+    setIsSavingUserNote(true);
+    try {
+      const saved = await createUserNoteOrAnnotation(effectiveNotesUser, {
+        itemType: captureNoteDraft.itemType,
+        title: noteTitle,
+        content: notePoint,
+        category,
+        policyId: captureNoteDraft.policyId,
+        policyTitle: captureNoteDraft.policyTitle,
+        departmentName: captureNoteDraft.departmentName,
+        targetType: captureNoteDraft.targetType,
+        targetAnchor: {
+          anchorId: captureNoteDraft.anchorId,
+          sectionAnchorId: captureNoteDraft.sectionAnchorId,
+          sectionTitle: captureNoteDraft.sectionTitle,
+          supplementaryTab: captureNoteDraft.supplementaryTab,
+          lineText: captureNoteDraft.lineText,
+          selectedText: captureNoteDraft.selectedText,
+          excerpt: captureNoteDraft.selectedText || captureNoteDraft.lineText || '',
+          richBlockIndex: captureNoteDraft.richBlockIndex,
+          assetType: captureNoteDraft.assetType,
+          imageSrc: captureNoteDraft.imageSrc,
+          snapshotDataUrl: captureNoteDraft.snapshotDataUrl,
+          relX: captureNoteDraft.relX,
+          relY: captureNoteDraft.relY,
+        },
+      });
+      setCaptureNoteDraft(null);
+      setSavedUserNoteToast(saved);
+      setTimeout(() => setSavedUserNoteToast(null), 5000);
+    } finally {
+      setIsSavingUserNote(false);
+    }
+  };
 
   useEffect(() => {
     setIsDocumentEditMode(initialEditMode);
@@ -196,6 +327,41 @@ export default function PolicyWorkspacePane({
     fetchDetails();
     return () => { cancelled = true; };
   }, [policy?.id, currentUser?.roleType, refreshTrigger]);
+
+  // Handle incoming "Navigate" jump from Notes & Annotations to exact line / section / graph / image
+  useEffect(() => {
+    if (isLoading || !noteNavTarget || !noteNavTarget.policyId || !activeDoc?.id) return;
+    if (String(activeDoc.id) !== String(noteNavTarget.policyId)) return;
+
+    const anchor = noteNavTarget.targetAnchor || noteNavTarget.target_anchor || {};
+    const navKey = `${noteNavTarget.clientId || noteNavTarget.id || 'nav'}::${activeDoc.id}::${noteNavTarget.updatedAt || ''}`;
+    if (handledNavKeyRef.current === navKey) return;
+
+    const cleanup = navigateToNoteAnchorInContainer({
+      containerEl: workspaceMainRef.current,
+      noteNavTarget,
+      setActiveSupplementaryTab,
+      onMatched: () => {
+        handledNavKeyRef.current = navKey;
+        setSpotlightBanner({
+          noteNumber: noteNavTarget.noteNumber,
+          itemType: noteNavTarget.itemType || 'note',
+          sectionTitle: anchor.sectionTitle || '',
+          notePoint: noteNavTarget.content || noteNavTarget.notePoint || '',
+        });
+      },
+    });
+
+    return () => {
+      cleanup();
+    };
+  }, [noteNavTarget, activeDoc?.id, isLoading]);
+
+  useEffect(() => {
+    if (!spotlightBanner) return;
+    const timer = setTimeout(() => setSpotlightBanner(null), 5500);
+    return () => clearTimeout(timer);
+  }, [spotlightBanner]);
 
   // Training users, modules tracking, and notes per user
   const [trainingUsers, setTrainingUsers] = useState([
@@ -447,7 +613,11 @@ export default function PolicyWorkspacePane({
   }
 
   return (
-    <main className="flex-1 flex flex-col h-full overflow-y-auto bg-[#f0f4f9] p-5 sm:p-7 space-y-5 custom-scrollbar select-none text-slate-800">
+    <main
+      ref={workspaceMainRef}
+      onContextMenu={handleWorkspaceContextMenu}
+      className="flex-1 flex flex-col h-full overflow-y-auto bg-[#f0f4f9] p-5 sm:p-7 space-y-5 custom-scrollbar select-text text-slate-800"
+    >
       
       {/* Lazy-loading progress indicator */}
       {isLoading && (
@@ -476,7 +646,11 @@ export default function PolicyWorkspacePane({
       )}
 
       {/* ----------------- TOP SEPARATE CARD: DOCUMENT HEADER & ACTIONS ----------------- */}
-      <div className="p-5 sm:p-6 rounded-2xl border border-slate-200/90 bg-white shadow-2xs space-y-3.5">
+      <div
+        data-note-anchor="policy-header"
+        data-section-title={activeDoc.title || 'Policy Overview'}
+        className="p-5 sm:p-6 rounded-2xl border border-slate-200/90 bg-white shadow-2xs space-y-3.5"
+      >
         
         {/* Breadcrumb & Action Toolbar */}
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -624,17 +798,35 @@ export default function PolicyWorkspacePane({
       </div>
 
       {/* ----------------- SECTION 1: DETAILED LIBRARY INFO (MAIN CARD) ----------------- */}
-      <div className="p-5 sm:p-6 rounded-2xl border border-slate-200/90 bg-white space-y-4 shadow-2xs">
+      <div
+        data-note-anchor="detailed-library-info"
+        data-section-title="Detailed Library Info"
+        className="p-5 sm:p-6 rounded-2xl border border-slate-200/90 bg-white space-y-4 shadow-2xs"
+      >
         <div className="flex items-center justify-between border-b border-[#f1f5f9] pb-2.5">
           <h3 className="text-xs font-bold text-[#111827] uppercase tracking-wider flex items-center gap-2">
             <FileText className="w-4 h-4 text-[#0057B8]" />
             Detailed Library Info
           </h3>
-          <span className="text-[10.5px] text-slate-400 font-mono">CORE SPECIFICATION</span>
+          <div className="flex items-center gap-2">
+            {userPolicyNotes.length > 0 && (
+              <button
+                type="button"
+                onClick={() => navigate(`/notes/${encodeURIComponent(userPolicyNotes[0].id)}`)}
+                className="text-[10.5px] font-semibold text-[#0057B8] bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2 py-0.5 rounded-full flex items-center gap-1 transition cursor-pointer"
+                title="View your saved Notes & Annotations for this policy"
+              >
+                <BookmarkPlus className="w-3 h-3" />
+                <span>{userPolicyNotes.length} Saved Note(s)</span>
+              </button>
+            )}
+            <span className="text-[10.5px] text-slate-400 font-mono">CORE SPECIFICATION</span>
+          </div>
         </div>
 
           <FormattedPolicyContent
             content={resolvedContent}
+            sections={Array.isArray(parameters.sections) ? parameters.sections : null}
             policyId={activeDoc?.id || detailedPolicy?.id || policy?.id}
             policyTitle={activeDoc?.title || detailedPolicy?.title || policy?.title}
             onAssignTask={null}
@@ -657,6 +849,8 @@ export default function PolicyWorkspacePane({
                   {phases.map((phase) => (
                     <div
                       key={phase.id || phase.phase_number}
+                      data-note-anchor={`phase-${phase.phase_number}`}
+                      data-section-title={`Phase ${phase.phase_number}: ${phase.title}`}
                       className="rounded-xl border border-slate-200 bg-slate-50/60 hover:bg-white hover:border-blue-200 transition p-4 space-y-2 group"
                     >
                       {/* Phase header */}
@@ -716,6 +910,8 @@ export default function PolicyWorkspacePane({
                   {activeDoc.direct_documents.map((doc) => (
                     <div 
                       key={doc.id}
+                      data-note-anchor={`direct-doc-${doc.id}`}
+                      data-section-title={doc.title || 'Direct Document'}
                       className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 hover:bg-white hover:border-blue-300 transition shadow-2xs space-y-2 cursor-pointer group"
                     >
                       <div className="flex items-center justify-between">
@@ -745,7 +941,11 @@ export default function PolicyWorkspacePane({
             )}
 
             {/* MANDATORY TRAINING, STAFF ACCREDITATION & ONBOARDING COST TRACKING */}
-            <div className="mt-8 pt-6 border-t border-slate-200/80 space-y-5">
+            <div
+              data-note-anchor="mandatory-training"
+              data-section-title="Mandatory Training & Staff Accreditation"
+              className="mt-8 pt-6 border-t border-slate-200/80 space-y-5"
+            >
               
               {/* Header */}
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1242,10 +1442,14 @@ export default function PolicyWorkspacePane({
 
         {/* Tab 1: Operational Parameters Grid & SLA Trendline Chart */}
         {activeSupplementaryTab === 'parameters' && (
-          <div className="space-y-4">
+          <div className="space-y-4" data-supplementary-tab="parameters">
             {/* SUBTLE, COMPACT PARAMETER CARDS (Correct sizes, subtle colors, no huge fonts) */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-              <div className="p-3 rounded-lg border border-slate-200 bg-white shadow-2xs">
+              <div
+                data-note-anchor="kpi-turnaround-sla"
+                data-section-title="Turnaround SLA"
+                className="p-3 rounded-lg border border-slate-200 bg-white shadow-2xs"
+              >
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Turnaround SLA</span>
                 <p className="text-[14px] font-bold text-slate-800 mt-0.5">
                   {parameters.turnaround_sla || '24 Hours'}
@@ -1253,7 +1457,11 @@ export default function PolicyWorkspacePane({
                 <span className="text-[11px] text-slate-500 mt-0.5 block">Target: 99.4% adherence</span>
               </div>
 
-              <div className="p-3 rounded-lg border border-slate-200 bg-white shadow-2xs">
+              <div
+                data-note-anchor="kpi-daily-limit"
+                data-section-title="Daily Limit"
+                className="p-3 rounded-lg border border-slate-200 bg-white shadow-2xs"
+              >
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Daily Limit</span>
                 <p className="text-[14px] font-bold text-slate-800 mt-0.5">
                   {parameters.daily_limit || '$25,000 AUD'}
@@ -1261,7 +1469,11 @@ export default function PolicyWorkspacePane({
                 <span className="text-[11px] text-slate-500 mt-0.5 block">Customer ceiling</span>
               </div>
 
-              <div className="p-3 rounded-lg border border-slate-200 bg-white shadow-2xs">
+              <div
+                data-note-anchor="kpi-officer-cap"
+                data-section-title="Officer Approval Cap"
+                className="p-3 rounded-lg border border-slate-200 bg-white shadow-2xs"
+              >
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Officer Approval Cap</span>
                 <p className="text-[14px] font-bold text-slate-800 mt-0.5">
                   {parameters.approval_limits?.officer_cap || '$100,000 AUD'}
@@ -1269,7 +1481,11 @@ export default function PolicyWorkspacePane({
                 <span className="text-[11px] text-slate-500 mt-0.5 block">Delegate approval cap</span>
               </div>
 
-              <div className="p-3 rounded-lg border border-slate-200 bg-white shadow-2xs">
+              <div
+                data-note-anchor="kpi-identity-check"
+                data-section-title="Identity Check"
+                className="p-3 rounded-lg border border-slate-200 bg-white shadow-2xs"
+              >
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Identity Check</span>
                 <p className="text-[14px] font-bold text-slate-800 mt-0.5">
                   {parameters.mandatory_dvs ? 'Mandatory DVS' : 'Equifax + DVS'}
@@ -1279,7 +1495,12 @@ export default function PolicyWorkspacePane({
             </div>
 
             {/* SLA TURNAROUND TRENDLINE & TARGET VS ACTUAL CHART */}
-            <div className="p-4 rounded-xl border border-slate-200 bg-white shadow-2xs space-y-3">
+            <div
+              data-note-anchor="chart-sla-trendline"
+              data-annotatable-asset="graph"
+              data-section-title="SLA Turnaround Trendline: Operational Targets vs. Actuals"
+              className="p-4 rounded-xl border border-slate-200 bg-white shadow-2xs space-y-3"
+            >
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
                 <div>
                   <h4 className="text-[13px] font-bold text-slate-800">
@@ -1406,7 +1627,7 @@ export default function PolicyWorkspacePane({
 
         {/* Tab 2: Training Materials & Staff Onboarding Progress */}
         {activeSupplementaryTab === 'training' && (
-          <div className="space-y-3">
+          <div className="space-y-3" data-supplementary-tab="training" data-section-title="Branch Onboarding & Accreditation Summary">
             <div className="p-3.5 bg-white rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
               <div>
                 <h4 className="text-[13px] font-bold text-slate-900">Branch Onboarding & Accreditation Summary</h4>
@@ -1435,7 +1656,7 @@ export default function PolicyWorkspacePane({
 
         {/* Tab 3: Control Reports */}
         {activeSupplementaryTab === 'reports' && (
-          <div className="space-y-2.5">
+          <div className="space-y-2.5" data-supplementary-tab="reports" data-section-title="Control Reports">
             {reportItems.map(item => (
               <div key={item.id} className="p-3 bg-white rounded-xl border border-[#e5e7eb] flex items-center justify-between">
                 <div>
@@ -1452,7 +1673,7 @@ export default function PolicyWorkspacePane({
 
         {/* Tab 4: Issues & Incidents */}
         {activeSupplementaryTab === 'incidents' && (
-          <div className="space-y-2.5">
+          <div className="space-y-2.5" data-supplementary-tab="incidents" data-section-title="Issues & Incidents">
             {incidentItems.map(item => (
               <div key={item.id} className="p-3 bg-white rounded-xl border border-amber-200 bg-amber-50/30 flex items-center justify-between">
                 <div>
@@ -1469,7 +1690,7 @@ export default function PolicyWorkspacePane({
 
         {/* Tab 5: FAQs */}
         {activeSupplementaryTab === 'faqs' && (
-          <div className="space-y-2.5">
+          <div className="space-y-2.5" data-supplementary-tab="faqs" data-section-title="Policy FAQs">
             {faqItems.map(item => (
               <div key={item.id} className="p-3.5 bg-white rounded-xl border border-[#e5e7eb]">
                 <h4 className="text-[13px] font-bold text-slate-800">{item.title}</h4>
@@ -1483,7 +1704,12 @@ export default function PolicyWorkspacePane({
 
         {/* Tab 6: Regulatory Reference */}
         {activeSupplementaryTab === 'reg_reference' && (
-          <div className="p-4 bg-white rounded-xl border border-[#e5e7eb] space-y-2 text-[13px]">
+          <div
+            data-supplementary-tab="reg_reference"
+            data-note-anchor="reg-reference"
+            data-section-title="Optional Regulatory Reference Mapping"
+            className="p-4 bg-white rounded-xl border border-[#e5e7eb] space-y-2 text-[13px]"
+          >
             <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
               Optional Regulatory Reference Mapping
             </span>
@@ -1497,7 +1723,11 @@ export default function PolicyWorkspacePane({
         )}
 
         {/* Audit & Revision History */}
-        <div className="p-5 rounded-xl border border-[#e5e7eb] bg-white space-y-2.5">
+        <div
+          data-note-anchor="version-timeline"
+          data-section-title="Version Control Timeline"
+          className="p-5 rounded-xl border border-[#e5e7eb] bg-white space-y-2.5"
+        >
           <div className="flex items-center justify-between">
             <h4 className="text-[12px] font-bold text-slate-700 flex items-center gap-1.5 uppercase tracking-wider">
               <HistoryIcon className="w-3.5 h-3.5 text-slate-500" />
@@ -1685,6 +1915,22 @@ export default function PolicyWorkspacePane({
           <span>{taskSuccessToast}</span>
         </div>
       )}
+
+      {/* Right-Click Notes & Visual Annotations Overlay */}
+      <PolicyRightClickNotesOverlay
+        contextMenu={noteContextMenu}
+        onCloseContextMenu={() => setNoteContextMenu(null)}
+        onChooseAction={handleChooseContextAction}
+        captureDraft={captureNoteDraft}
+        onCloseCapture={() => setCaptureNoteDraft(null)}
+        onSaveCapture={handleSaveCapturedNote}
+        isSavingCapture={isSavingUserNote}
+        savedToast={savedUserNoteToast}
+        onDismissToast={() => setSavedUserNoteToast(null)}
+        onOpenNotesWorkspace={(saved) => navigate(`/notes/${encodeURIComponent(saved.id)}`)}
+        spotlightBanner={spotlightBanner}
+        onDismissSpotlight={() => setSpotlightBanner(null)}
+      />
     </main>
   );
 }

@@ -6,22 +6,14 @@ import {
   Trash2, 
   ArrowUp, 
   ArrowDown, 
-  Table as TableIcon, 
-  List, 
-  ListOrdered, 
-  Image as ImageIcon, 
   Quote, 
-  Bold, 
-  Italic, 
-  Underline,
   Save,
   CheckCircle2,
   FileEdit,
   Eye,
   Maximize2,
   Minimize2,
-  Layers,
-  Sparkles
+  Layers
 } from 'lucide-react';
 import { 
   NumberedListBlock, 
@@ -31,6 +23,9 @@ import {
   ParagraphBlock,
   parseMarkdownTable 
 } from './RichContentRenderer';
+import { SectionRichEditor } from '../modals/AddPolicyModal/SectionRichEditor';
+import { normalizeRichHtml, sanitizeRichHtml } from '../../utils/richContentConverter';
+import '../../editor/styles/editor.css';
 
 export default function RichSectionAccordion({
   sections = [],
@@ -142,41 +137,6 @@ export default function RichSectionAccordion({
     });
   };
 
-  // Content formatting toolbar actions
-  const handleInsertFormat = (id, type) => {
-    setLocalSections(prev => prev.map(sec => {
-      if ((sec.id || sec.title) !== id) return sec;
-      let text = sec.content || '';
-
-      switch (type) {
-        case 'bold':
-          text += (text ? '\n' : '') + '**Bold Clause Text**';
-          break;
-        case 'italic':
-          text += (text ? '\n' : '') + '*Italic Operational Note*';
-          break;
-        case 'underline':
-          text += (text ? '\n' : '') + '<u>Underlined Statutory Mandatory</u>';
-          break;
-        case 'table':
-          text += (text ? '\n\n' : '') + '| Role | Responsibility | Requirement |\n|---|---|---|\n| Manager | Review & Sign-off | Mandatory |\n| Officer | Verification Check | Automated |';
-          break;
-        case 'numbered_list':
-          text += (text ? '\n\n' : '') + '1. Identify the document owner\n2. Review the document\n   a. Check the approval requirements';
-          break;
-        case 'bullet_list':
-          text += (text ? '\n\n' : '') + '● Customer verification\n○ Identity verification';
-          break;
-        case 'note':
-          text += (text ? '\n\n' : '') + '> **Statutory Note:** APRA CPS 234 compliance verification required prior to transaction authorization.';
-          break;
-        default:
-          break;
-      }
-      return { ...sec, content: text };
-    }));
-  };
-
   const handleSave = async () => {
     if (onSaveSections) {
       await onSaveSections(localSections);
@@ -213,6 +173,22 @@ export default function RichSectionAccordion({
       } catch {
         // Fall through to text rendering
       }
+    }
+
+    // Rich HTML, embedded images, tables, or markdown markup rendering
+    if (
+      /<(p|h[1-6]|table|ul|ol|blockquote|div|img|hr|figure|strong|em|u|s)\b/i.test(contentStr) ||
+      /!\[[^\]]*\]\([^)]+\)/.test(contentStr) ||
+      /^\s*\|.+\|\s*$/m.test(contentStr)
+    ) {
+      return (
+        <div
+          className="prose-policy-view text-slate-700 leading-relaxed"
+          dangerouslySetInnerHTML={{
+            __html: sanitizeRichHtml(normalizeRichHtml(contentStr))
+          }}
+        />
+      );
     }
 
     // Split text into paragraphs and markdown tables
@@ -435,7 +411,7 @@ export default function RichSectionAccordion({
           return (
             <div
               key={secKey}
-              className={`rounded-2xl border transition-all duration-150 bg-white shadow-2xs overflow-hidden ${
+              className={`rounded-2xl border transition-all duration-150 bg-white shadow-2xs overflow-visible ${
                 isExpanded ? 'border-slate-300 ring-1 ring-slate-100' : 'border-slate-200 hover:border-slate-300'
               }`}
             >
@@ -507,105 +483,15 @@ export default function RichSectionAccordion({
               {isExpanded && (
                 <div className="p-5 space-y-3 bg-white animate-in fade-in">
                   {isEditMode ? (
-                    <div className="space-y-2">
-                      {/* Section Quick Format Bar */}
-                      <div className="flex flex-wrap items-center justify-between gap-1.5 p-1.5 bg-slate-50 rounded-xl border border-slate-200">
-                        <div className="flex flex-wrap items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleInsertFormat(secKey, 'bold')}
-                            className="px-2 py-1 rounded bg-white hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 flex items-center gap-0.5 cursor-pointer"
-                            title="Bold"
-                          >
-                            <Bold className="w-3 h-3" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleInsertFormat(secKey, 'italic')}
-                            className="px-2 py-1 rounded bg-white hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 flex items-center gap-0.5 cursor-pointer"
-                            title="Italic"
-                          >
-                            <Italic className="w-3 h-3" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleInsertFormat(secKey, 'underline')}
-                            className="px-2 py-1 rounded bg-white hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 flex items-center gap-0.5 cursor-pointer"
-                            title="Underline"
-                          >
-                            <Underline className="w-3 h-3" />
-                          </button>
-
-                          <span className="w-px h-4 bg-slate-300 mx-1" />
-
-                          {/* Table Insertion */}
-                          <button
-                            type="button"
-                            onClick={() => handleInsertFormat(secKey, 'table')}
-                            className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-[#0057B8] border border-blue-200 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
-                            title="Insert Table Grid"
-                          >
-                            <TableIcon className="w-3 h-3" />
-                            <span>+ Table</span>
-                          </button>
-
-                          {/* Numbered List */}
-                          <button
-                            type="button"
-                            onClick={() => handleInsertFormat(secKey, 'numbered_list')}
-                            className="px-2 py-1 rounded bg-white hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 flex items-center gap-1 cursor-pointer"
-                            title="Insert Numbered List"
-                          >
-                            <ListOrdered className="w-3 h-3" />
-                            <span>1. List</span>
-                          </button>
-
-                          {/* Bullet List */}
-                          <button
-                            type="button"
-                            onClick={() => handleInsertFormat(secKey, 'bullet_list')}
-                            className="px-2 py-1 rounded bg-white hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 flex items-center gap-1 cursor-pointer"
-                            title="Insert Bullet List"
-                          >
-                            <List className="w-3 h-3" />
-                            <span>● Bullets</span>
-                          </button>
-
-                          {/* Statutory Note */}
-                          <button
-                            type="button"
-                            onClick={() => handleInsertFormat(secKey, 'note')}
-                            className="px-2 py-1 rounded bg-amber-50 hover:bg-amber-100 border border-amber-200 text-xs font-bold text-amber-800 flex items-center gap-1 cursor-pointer"
-                            title="Insert APRA Note"
-                          >
-                            <Quote className="w-3 h-3" />
-                            <span>Note</span>
-                          </button>
-                        </div>
-
-                        <span className="text-[10.5px] font-mono text-slate-400">
-                          {(sec.content || '').length} chars
-                        </span>
-                      </div>
-
-                      {/* Textarea Editor */}
-                      <textarea
-                        rows={6}
+                    <div className="space-y-3">
+                      <SectionRichEditor
+                        sectionId={secKey}
                         value={sec.content || ''}
-                        onChange={(e) => handleUpdateSectionContent(secKey, e.target.value)}
-                        placeholder="Enter section clauses, regulatory parameters, or table rows..."
-                        className="w-full text-xs font-mono text-slate-800 p-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8] leading-relaxed custom-scrollbar"
+                        sectionIndex={idx}
+                        minHeight="140px"
+                        onChange={(val) => handleUpdateSectionContent(secKey, val)}
+                        placeholder="Enter section clauses, regulatory parameters, tables, or images..."
                       />
-
-                      {/* Live Formatted Preview below editor */}
-                      <div className="pt-2 border-t border-slate-100">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-2">
-                          Live Rendered HTML Preview
-                        </span>
-                        <div className="p-3 bg-slate-50/50 rounded-xl border border-slate-100">
-                          {renderRichContent(sec.content, secKey)}
-                        </div>
-                      </div>
                     </div>
                   ) : (
                     <div>{renderRichContent(sec.content, secKey)}</div>

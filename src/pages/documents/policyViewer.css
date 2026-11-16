@@ -1,0 +1,384 @@
+/* ==========================================================================
+   Operational Policy Viewer Styles
+   Master Library Document Specification & Reading View
+   ========================================================================== */
+
+.policy-viewer-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 24px 32px 48px;
+    background: #f1f5f9;
+    min-height: 100%;
+    box-sizing: border-box;
+}
+
+/* ─── Top Policy Header Card ─────────────────────────────────────────── */
+.policy-header-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 22px 28px 24px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.policy-header-top-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+}
+
+/* Breadcrumbs */
+.policy-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8125rem;
+    color: #64748b;
+    font-weight: 500;
+}
+
+.breadcrumb-arrow {
+    color: #94a3b8;
+}
+
+.version-pill {
+    background: #eff6ff;
+    color: #0057B8;
+    border: 1px solid #bfdbfe;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 5px;
+    font-family: monospace;
+}
+
+/* Top Right Actions & Status */
+.policy-top-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.btn-configure {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #0057B8;
+    color: #ffffff;
+    border: none;
+    padding: 7px 16px;
+    border-radius: 8px;
+    font-size: 0.825rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.btn-configure:hover {
+    background: #004494;
+}
+
+.btn-pin-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #ffffff;
+    color: #475569;
+    border: 1px solid #cbd5e1;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-pin-action:hover {
+    background: #f8fafc;
+    border-color: #94a3b8;
+    color: #0f172a;
+}
+
+.btn-pin-action.is-pinned {
+    background: #eff6ff;
+    color: #0057B8;
+    border-color: #93c5fd;
+}
+
+.btn-pin-action.is-pinned:hover {
+    background: #dbeafe;
+    border-color: #60a5fa;
+}
+
+.btn-annotations-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #ffffff;
+    color: #475569;
+    border: 1px solid #cbd5e1;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-annotations-action:hover {
+    background: #f8fafc;
+    border-color: #94a3b8;
+    color: #0f172a;
+}
+
+.btn-annotations-action.active {
+    background: #eff6ff;
+    color: #0057B8;
+    border-color: #93c5fd;
+}
+
+.annot-top-count-badge {
+    font-size: 0.6875rem;
+    background: #0057B8;
+    color: #ffffff;
+    padding: 1px 6px;
+    border-radius: 99px;
+    font-weight: 700;
+}
+
+.status-badge-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    color: #0f172a;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: 8px;
+}
+
+.status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #0057B8;
+}
+
+.status-badge-pill.rejected .status-dot {
+    background: #dc2626;
+}
+
+.status-badge-pill.draft .status-dot {
+    background: #f59e0b;
+}
+
+/* Title & Description */
+.policy-title {
+    font-size: 1.45rem;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 0;
+    letter-spacing: -0.02em;
+}
+
+.policy-description {
+    font-size: 0.875rem;
+    color: #64748b;
+    margin: 0;
+    line-height: 1.5;
+}
+
+/* ─── Detailed Library Info Card (Core Specification) ─────────────────── */
+.policy-spec-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 24px 28px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.policy-spec-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 14px;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.spec-header-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    color: #0f172a;
+    text-transform: uppercase;
+}
+
+.spec-icon {
+    color: #0057B8;
+}
+
+.spec-header-tag {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: #94a3b8;
+    text-transform: uppercase;
+}
+
+/* Editor Seamless Embed — No Double Scrollbar */
+.policy-spec-editor-container {
+    width: 100%;
+}
+
+.policy-spec-editor-container .modern-editor-container {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+}
+
+.policy-spec-editor-container .modern-editor-workspace {
+    padding: 0 !important;
+    background: transparent !important;
+    overflow: visible !important;
+    min-height: unset !important;
+}
+
+.policy-spec-editor-container .document-page-wrapper {
+    width: 100% !important;
+    max-width: 100% !important;
+}
+
+.policy-spec-editor-container .document-page {
+    width: 100% !important;
+    min-height: unset !important;
+    padding: 8px 4px 16px !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: transparent !important;
+    overflow: visible !important;
+}
+
+.policy-spec-editor-container .tiptap.ProseMirror {
+    min-height: unset !important;
+    font-size: 0.925rem !important;
+    line-height: 1.65 !important;
+    color: #1e293b !important;
+}
+
+/* Empty / Fallback State */
+.policy-empty-selection {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 70vh;
+    text-align: center;
+    color: #64748b;
+    gap: 12px;
+}
+
+/* Archived version banner */
+.policy-archived-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #fef3c7;
+    border: 1px solid #fbbf24;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 13px;
+    color: #92400e;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.btn-return-live {
+    margin-left: auto;
+    background: #0057B8;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 5px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.btn-return-live:hover { background: #004a9e; }
+
+/* Version pill as button */
+.version-pill-btn {
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid #bfdbfe;
+    background: #eff6ff;
+    color: #1d4ed8;
+    padding: 2px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: monospace;
+    transition: background 0.15s;
+}
+.version-pill-btn:hover { background: #dbeafe; }
+
+/* Version history icon button */
+.btn-version-history {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    color: #64748b;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.btn-version-history:hover {
+    background: #f1f5f9;
+    color: #0057B8;
+    border-color: #0057B8;
+}
+
+/* Policy info row */
+.policy-info-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+}
+
+.info-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: #64748b;
+    background: #f1f5f9;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-weight: 500;
+}
+
+/* Toast types */
+.templates-toast-alert.info { background: #0057B8; }
+.templates-toast-alert.error { background: #dc2626; }

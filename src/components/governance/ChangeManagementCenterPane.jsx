@@ -28,6 +28,7 @@ import {
   History as HistoryIcon
 } from 'lucide-react';
 import { apiService } from '../../services/apiService';
+import FormattedPolicyContent from '../policy/FormattedPolicyContent';
 
 export function ChangeManagementCenterPane({
   currentUser,
@@ -859,8 +860,10 @@ export function ChangeManagementCenterPane({
                             <div className="space-y-2">
                               {clauses.map((sec, idx) => (
                                 <div key={sec.id || idx} className="p-2.5 rounded-xl bg-white border border-slate-200">
-                                  <h5 className="font-bold text-slate-800 text-xs">{sec.title || `Clause ${idx + 1}`}</h5>
-                                  <p className="text-[11.5px] text-slate-600 mt-1 whitespace-pre-wrap">{sec.content}</p>
+                                  <h5 className="font-bold text-slate-800 text-xs mb-1">{sec.title || `Clause ${idx + 1}`}</h5>
+                                  <div className="text-[11.5px] text-slate-600">
+                                    <FormattedPolicyContent content={sec.content || ''} />
+                                  </div>
                                 </div>
                               ))}
                             </div>
@@ -1056,14 +1059,14 @@ export function ChangeManagementCenterPane({
                                       Clause #{idx + 1}
                                     </span>
                                   </div>
-                                  <p className="text-[11.5px] text-slate-800 whitespace-pre-wrap leading-relaxed pt-1">
-                                    {sec.content}
-                                  </p>
+                                  <div className="text-[11.5px] text-slate-800 leading-relaxed pt-1">
+                                    <FormattedPolicyContent content={sec.content || ''} />
+                                  </div>
                                 </div>
                               ))
                             ) : (
-                              <div className="p-3 rounded-xl bg-blue-50/40 border border-blue-200/80 text-xs whitespace-pre-wrap leading-relaxed font-mono">
-                                {changes.content || 'No custom clauses attached.'}
+                              <div className="p-3 rounded-xl bg-blue-50/40 border border-blue-200/80 text-xs leading-relaxed">
+                                <FormattedPolicyContent content={changes.content || 'No custom clauses attached.'} />
                               </div>
                             )}
                           </div>
@@ -1093,9 +1096,10 @@ export function ChangeManagementCenterPane({
                                     const draftToEdit = {
                                       id: item.policy_id || item.id,
                                       title: item.policy_title || item.title,
+                                      summary: changes?.summary || item.summary || '',
                                       department_name: item.department_name,
                                       content: changes?.content,
-                                      parameters: changes?.parameters,
+                                      parameters: params,
                                       status: 'draft'
                                     };
                                     onEditDraft(draftToEdit);
@@ -1142,9 +1146,10 @@ export function ChangeManagementCenterPane({
                                     const draftToEdit = {
                                       id: item.policy_id || item.id,
                                       title: item.policy_title || item.title,
+                                      summary: changes?.summary || item.summary || '',
                                       department_name: item.department_name,
                                       content: changes?.content,
-                                      parameters: changes?.parameters,
+                                      parameters: params,
                                       status: 'draft'
                                     };
                                     onEditDraft(draftToEdit);
@@ -1342,9 +1347,9 @@ export function ChangeManagementCenterPane({
               {getDraftClauses(viewingDraftClauses).map((sec, idx) => (
                 <div key={sec.id || idx} className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
                   <h5 className="font-bold text-slate-900">{sec.title || `Clause ${idx + 1}`}</h5>
-                  <p className="text-[11.5px] text-slate-700 whitespace-pre-wrap leading-relaxed">
-                    {sec.content}
-                  </p>
+                  <div className="text-[11.5px] text-slate-700 leading-relaxed">
+                    <FormattedPolicyContent content={sec.content || ''} />
+                  </div>
                 </div>
               ))}
             </div>

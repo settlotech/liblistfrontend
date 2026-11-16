@@ -14,6 +14,44 @@ import {
   Layers
 } from 'lucide-react';
 import { apiService } from '../../services/apiService';
+import { SectionRichEditor } from './AddPolicyModal/SectionRichEditor';
+
+function parseConfigureSections(src) {
+  if (!src) return [];
+  const params = typeof src.parameters === 'string'
+    ? JSON.parse(src.parameters || '{}')
+    : (src.parameters || {});
+  if (params.sections && Array.isArray(params.sections) && params.sections.length > 0) {
+    return params.sections.map((s, i) => ({ ...s, id: s.id || `sec-${i}` }));
+  }
+  const raw = src.content || '';
+  const parts = raw.split(/(?=###\s+)/);
+  if (parts.length > 1) {
+    return parts.map((part, i) => {
+      const match = part.match(/^###\s*(?:\d+\.?\s*)?(.*?)\n([\s\S]*)$/);
+      if (match) {
+        return {
+          id: `sec-${i}`,
+          title: match[1].trim(),
+          content: match[2].trim(),
+          type: 'section'
+        };
+      }
+      return {
+        id: `sec-${i}`,
+        title: `Section ${i + 1}`,
+        content: part.trim(),
+        type: 'section'
+      };
+    });
+  }
+  return [
+    { id: 'sec-summary', title: 'Summary', content: src.summary || 'Summary of operational intent and scope.', type: 'section' },
+    { id: 'sec-details', title: 'Details', content: raw || 'Operational execution specifications.', type: 'section' },
+    { id: 'sec-reports', title: 'Reports', content: '1. AUSTRAC automated threshold detection\n2. APRA CPS 234 event telemetry logging', type: 'section' },
+    { id: 'sec-dependencies', title: 'Dependencies', content: '1. CBA Core Banking Network\n2. Australian Document Verification Service (DVS)', type: 'section' }
+  ];
+}
 
 export default function ConfigurePolicyModal({
   isOpen,
@@ -22,17 +60,15 @@ export default function ConfigurePolicyModal({
   currentUser,
   onPolicyUpdated
 }) {
-  if (!isOpen || !policy) return null;
-
   const isChecker = currentUser?.roleType === 'manager' || currentUser?.roleType === 'admin';
   const isEmployee = currentUser?.roleType === 'employee';
 
-  const initialParams = typeof policy.parameters === 'string'
+  const initialParams = typeof policy?.parameters === 'string'
     ? JSON.parse(policy.parameters || '{}')
-    : (policy.parameters || {});
+    : (policy?.parameters || {});
 
-  const [title, setTitle] = useState(policy.title || '');
-  const [content, setContent] = useState(policy.content || '');
+  const [title, setTitle] = useState(policy?.title || '');
+  const [content, setContent] = useState(policy?.content || '');
   const [turnaroundSla, setTurnaroundSla] = useState(initialParams.turnaround_sla || '4 Hours');
   const [officerCap, setOfficerCap] = useState(initialParams.approval_limits?.officer_cap || '$100,000 AUD');
   const [dailyLimit, setDailyLimit] = useState(initialParams.daily_limit || '$25,000 AUD');
@@ -40,42 +76,25 @@ export default function ConfigurePolicyModal({
   const [justification, setJustification] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState(null);
+  const [sections, setSections] = useState(() => parseConfigureSections(policy));
 
-  // Parse existing sections or initialize with standard 4 core sections
-  const parseInitialSections = () => {
-    if (initialParams.sections && Array.isArray(initialParams.sections) && initialParams.sections.length > 0) {
-      return initialParams.sections;
-    }
-    const raw = policy.content || '';
-    const parts = raw.split(/(?=###\s+)/);
-    if (parts.length > 1) {
-      return parts.map((part, i) => {
-        const match = part.match(/^###\s*(?:\d+\.?\s*)?(.*?)\n([\s\S]*)$/);
-        if (match) {
-          return {
-            id: `sec-${i}-${Date.now()}`,
-            title: match[1].trim(),
-            content: match[2].trim(),
-            type: 'section'
-          };
-        }
-        return {
-          id: `sec-${i}-${Date.now()}`,
-          title: `Section ${i + 1}`,
-          content: part.trim(),
-          type: 'section'
-        };
-      });
-    }
-    return [
-      { id: 'sec-summary', title: 'Summary', content: policy.summary || 'Summary of operational intent and scope.', type: 'section' },
-      { id: 'sec-details', title: 'Details', content: raw || 'Operational execution specifications.', type: 'section' },
-      { id: 'sec-reports', title: 'Reports', content: '1. AUSTRAC automated threshold detection\n2. APRA CPS 234 event telemetry logging', type: 'section' },
-      { id: 'sec-dependencies', title: 'Dependencies', content: '1. CBA Core Banking Network\n2. Australian Document Verification Service (DVS)', type: 'section' }
-    ];
-  };
+  useEffect(() => {
+    if (!isOpen || !policy) return;
+    const params = typeof policy.parameters === 'string'
+      ? JSON.parse(policy.parameters || '{}')
+      : (policy.parameters || {});
+    setTitle(policy.title || '');
+    setContent(policy.content || '');
+    setTurnaroundSla(params.turnaround_sla || '4 Hours');
+    setOfficerCap(params.approval_limits?.officer_cap || '$100,000 AUD');
+    setDailyLimit(params.daily_limit || '$25,000 AUD');
+    setMandatoryDvs(Boolean(params.mandatory_dvs ?? true));
+    setJustification('');
+    setStatusMessage(null);
+    setSections(parseConfigureSections(policy));
+  }, [isOpen, policy]);
 
-  const [sections, setSections] = useState(parseInitialSections);
+  if (!isOpen || !policy) return null;
 
   const handleUpdateSectionTitle = (id, newTitle) => {
     setSections(prev => prev.map(s => s.id === id ? { ...s, title: newTitle } : s));
@@ -437,18 +456,19 @@ export default function ConfigurePolicyModal({
                       </div>
                     </div>
 
-                    {/* Section Content Textarea */}
+                    {/* Section Rich Interactive Editor */}
                     <div>
-                      <textarea
-                        rows={section.type === 'paragraph' ? 2 : 3}
-                        value={section.content}
-                        onChange={(e) => handleUpdateSectionContent(section.id, e.target.value)}
+                      <SectionRichEditor
+                        sectionId={section.id}
+                        value={section.content || ''}
+                        sectionIndex={idx}
+                        minHeight={section.type === 'paragraph' ? '90px' : '125px'}
+                        onChange={(val) => handleUpdateSectionContent(section.id, val)}
                         placeholder={
                           section.type === 'paragraph' 
                             ? "Enter standalone paragraph or clause text..." 
-                            : `Enter ${section.title || 'section'} details, operational requirements, or rules...`
+                            : `Enter ${section.title || 'section'} details, operational requirements, tables, or images...`
                         }
-                        className="w-full p-2.5 rounded-lg border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8] text-[12.5px] leading-relaxed text-slate-800 bg-white placeholder-slate-400 custom-scrollbar"
                       />
                     </div>
                   </div>

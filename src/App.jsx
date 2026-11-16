@@ -12,6 +12,9 @@ import DocumentManagementView from './components/documents/DocumentManagementVie
 import NotesWorkspace from './components/notes/NotesWorkspace';
 import './App.css';
 import Task from './components/demotask/task';
+import PdfComparisonPage from './components/policy/PdfComparisonPage';
+import CreateOperationalPolicyPage from './pages/documents/CreateOperationalPolicyPage';
+import PolicyViewerPage from './pages/documents/PolicyViewerPage';
 
 /* ── App Shell: Sidebar + Header + Page Body ── */
 const AppShell = ({ children }) => (
@@ -87,6 +90,14 @@ function App() {
             <Route path="/changelogs" element={<ProtectedRoute><Home initialView="change_management" /></ProtectedRoute>} />
             <Route path="/tasks" element={<ProtectedRoute><Home initialView="tasks" /></ProtectedRoute>} />
             <Route path="/templates" element={<ProtectedRoute><Home initialView="templates" /></ProtectedRoute>} />
+
+            {/* Document Comparison System (Tamilmani side-by-side view) */}
+            <Route path="/compare-policy" element={<ProtectedRoute><PdfComparisonPage /></ProtectedRoute>} />
+
+            {/* Page Architecture & TipTap Paginated Word-like Editor */}
+            <Route path="/create-policy" element={<ProtectedRoute><CreateOperationalPolicyPage /></ProtectedRoute>} />
+            <Route path="/policy-viewer" element={<ProtectedRoute><PolicyViewerPage /></ProtectedRoute>} />
+            <Route path="/policy-viewer/:id" element={<ProtectedRoute><PolicyViewerPage /></ProtectedRoute>} />
 
             {/* Protected System Settings & RBAC */}
             <Route path="/settings" element={<ProtectedRoute><Setting /></ProtectedRoute>} />

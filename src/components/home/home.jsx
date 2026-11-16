@@ -14,6 +14,7 @@ import { apiService } from '../../services/apiService';
 import { banksList, policiesDatabase } from '../../data/mockData';
 import { DEFAULT_DEPARTMENTS, DEFAULT_POLICIES } from '../../data/defaultPolicies';
 import { useAuth } from '../../context/AuthContext';
+import { getUserNoteById } from '../../utils/userNotesStorage';
 import './home.css';
 
 export default function Home({ initialView = 'policy' }) {
@@ -27,6 +28,7 @@ export default function Home({ initialView = 'policy' }) {
   const urlTab = searchParams.get('tab');
   const urlItem = searchParams.get('item');
   const urlView = searchParams.get('view');
+  const urlNoteNav = searchParams.get('noteNav');
 
   // Current active user persona
   const [currentUser, setCurrentUser] = useState(() => {
@@ -445,7 +447,7 @@ export default function Home({ initialView = 'policy' }) {
             onBackToPolicy={null}
             onOpenAddPolicyModal={handleOpenAddPolicyModal}
                         onEditDraft={(draft) => {
-              const fullPolicy = allPolicies.find(p => p.id === draft.id) || draft;
+              const fullPolicy = allPolicies.find(p => String(p.id) === String(draft.id)) || draft;
               setViewingDraft(fullPolicy);
               setSelectedPolicyId(fullPolicy.id);
               setActiveWorkspaceView('policy');
@@ -523,11 +525,18 @@ export default function Home({ initialView = 'policy' }) {
             canEditPolicy={true}
             canCreateDocument={true}
             initialEditMode={isDraftEditing}
+            noteNavTarget={
+              location.state?.noteNavTarget ||
+              (urlNoteNav ? getUserNoteById(authUser || currentUser, urlNoteNav) : null)
+            }
             onDraftSaved={() => setIsDraftEditing(false)}
             onOpenConfigureModal={(doc) => {
               const isDraft = Boolean(viewingDraft || doc?.status === 'draft');
               if (isDraft) {
-                const target = viewingDraft || doc;
+                const target =
+                  doc && (!viewingDraft || String(doc.id) === String(viewingDraft.id))
+                    ? { ...(viewingDraft || {}), ...doc }
+                    : (doc || viewingDraft);
                 setEditingPolicy(target);
                 setPreselectedDept({
                   id: target.department_id || target.deptId || null,
@@ -644,7 +653,9 @@ export default function Home({ initialView = 'policy' }) {
           setIsAddPolicyModalOpen(false);
           const wasDraft = editingPolicy?.status === 'draft';
           setEditingPolicy(null);
+          setIsDraftEditing(false);
           if (wasDraft) {
+            setViewingDraft(null);
             setActiveWorkspaceView('change_management');
           }
         }}
@@ -655,14 +666,18 @@ export default function Home({ initialView = 'policy' }) {
         departments={departments}
         onPolicyCreated={(newPolicy) => {
           setEditingPolicy(null);
+          setIsDraftEditing(false);
           setRefreshTrigger(prev => prev + 1);
           setIsAddPolicyModalOpen(false);
           const pId = typeof newPolicy === 'string' ? newPolicy : (newPolicy && newPolicy.id);
           if (pId) {
             setSelectedPolicyId(pId);
             if (newPolicy?.status !== 'draft') {
+              setViewingDraft(null);
               setActiveWorkspaceView('policy');
             } else {
+              setViewingDraft(prev => (prev && String(prev.id) === String(pId) ? newPolicy : prev));
+              setSelectedDraft(newPolicy);
               setActiveWorkspaceView('change_management');
             }
           }

@@ -96,7 +96,7 @@ export default function Sidebar() {
                 { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
                 { id: 'task', label: 'Tasks Workspace', icon: ListChecks, path: '/demotask' },
                 { id: 'changelogs', label: 'Change Management', icon: ShieldCheck, path: '/changelogs' },
-                { id: 'notes', label: 'Notes', icon: FileText, path: '/notes' },
+                { id: 'notes', label: 'Notes & Annotations', icon: FileText, path: '/notes' },
         
                 { id: 'templates', label: 'Policy Templates', icon: FileText, path: '/templates' }
             ]

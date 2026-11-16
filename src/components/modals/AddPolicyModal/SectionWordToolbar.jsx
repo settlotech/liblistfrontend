@@ -13,7 +13,6 @@ import {
   Plus, 
   Columns, 
   Rows, 
-  Quote, 
   CheckSquare, 
   FileText,
   Sparkles,
@@ -201,17 +200,6 @@ export function SectionWordToolbar({
             <span>+Col</span>
           </button>
         </div>
-
-        {/* Statutory Note / Callout */}
-        <button
-          type="button"
-          onClick={(e) => handleAction(e, 'note')}
-          title="Insert APRA Compliance Callout"
-          className="px-2 py-1 bg-white hover:bg-amber-50 text-slate-700 hover:text-amber-800 border border-slate-200 hover:border-amber-300 rounded-md text-[10.5px] font-semibold transition cursor-pointer flex items-center gap-1 shadow-2xs"
-        >
-          <Quote className="w-3 h-3 text-amber-600" />
-          <span>Note</span>
-        </button>
       </div>
 
       {/* Right Word Page Cue / Layout Status */}
