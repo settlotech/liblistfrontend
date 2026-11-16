@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
     ListChecks,
     Search,
@@ -14,12 +14,15 @@ import {
     Clock,
     Layers,
     FileText,
-    MousePointerClick
+    MousePointerClick,
+    Table,
+    LayoutGrid
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { taskApi } from '../../services/api/taskApi';
 import TaskList from './TaskList';
 import TaskCard from './TaskCard';
+import TaskTable from './TaskTable';
 import TaskContextMenu from './TaskContextMenu';
 import CreateTaskDialog from './CreateTaskDialog';
 import TaskDetailsPane from './TaskDetailsPane';
@@ -48,6 +51,7 @@ export default function TaskPane() {
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'pending' | 'responded' | 'completed' | 'approved' | 'cancelled'
     const [activeTab, setActiveTab] = useState('all'); // 'all' | 'common' | 'pinned' | 'general'
+    const [viewMode, setViewMode] = useState('table'); // 'table' | 'cards' (defaults to table)
 
     // Selected task for details pane
     const [selectedTask, setSelectedTask] = useState(null);
@@ -58,7 +62,15 @@ export default function TaskPane() {
     // Dialog state
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
-    // Load tasks from backend
+    // Ref to track selectedTask.id inside loadTasks without making it a dep
+    const selectedTaskIdRef = useRef(null);
+
+    // Keep ref in sync whenever selectedTask changes (no re-fetch triggered)
+    useEffect(() => {
+        selectedTaskIdRef.current = selectedTask?.id ?? null;
+    }, [selectedTask]);
+
+    // Load tasks from backend — selectedTask?.id removed from deps to break circular dependency
     const loadTasks = useCallback(async () => {
         setIsLoading(true);
         try {
@@ -67,14 +79,15 @@ export default function TaskPane() {
                 page: currentPage,
                 limit: pageSize
             });
+            console.log("res ==> ", res);
             if (res?.success) {
                 const list = res.data?.tasks || [];
                 setTasks(list);
                 setTotalTasks(res.data?.total || list.length);
 
-                // If currently open task was modified, update selection
-                if (selectedTask) {
-                    const updatedSelected = list.find(t => t.id === selectedTask.id);
+                // Use ref — no dep, loadTasks is NOT recreated when selectedTask changes
+                if (selectedTaskIdRef.current) {
+                    const updatedSelected = list.find(t => t.id === selectedTaskIdRef.current);
                     if (updatedSelected) {
                         setSelectedTask(updatedSelected);
                     }
@@ -85,23 +98,29 @@ export default function TaskPane() {
         } finally {
             setIsLoading(false);
         }
-    }, [searchQuery, currentPage, pageSize, selectedTask?.id]);
+    }, [searchQuery, currentPage, pageSize]); // selectedTask?.id intentionally removed
 
+    // Trigger data load only when real fetch params change
     useEffect(() => {
         loadTasks();
+    }, [currentPage, pageSize, searchQuery]); // loadTasks intentionally NOT listed here
 
-        const handleRealtimeTaskEvent = () => {
-            loadTasks();
-        };
+    // Stable ref to always point at latest loadTasks for realtime events
+    const loadTasksRef = useRef(loadTasks);
+    useEffect(() => {
+        loadTasksRef.current = loadTasks;
+    }, [loadTasks]);
 
+    // Realtime event listeners — empty deps so they never re-register on row click
+    useEffect(() => {
+        const handleRealtimeTaskEvent = () => loadTasksRef.current();
         window.addEventListener('liblist:task_created', handleRealtimeTaskEvent);
         window.addEventListener('liblist:task_updated', handleRealtimeTaskEvent);
-
         return () => {
             window.removeEventListener('liblist:task_created', handleRealtimeTaskEvent);
             window.removeEventListener('liblist:task_updated', handleRealtimeTaskEvent);
         };
-    }, [currentPage, pageSize, searchQuery, loadTasks]);
+    }, []); // empty deps — stable via ref above
 
     // Handle Right Click on Task Pane
     const handleContextMenu = (e) => {
@@ -178,6 +197,15 @@ export default function TaskPane() {
         return filteredTasks.filter(t => t.category === 'general' && !t.is_pinned && t.display_category !== 'pinned');
     }, [filteredTasks]);
 
+    // Current tasks for the active tab view
+    const activeTabTasks = useMemo(() => {
+        if (activeTab === 'assigned') return assignedTasks;
+        if (activeTab === 'common') return commonTasks;
+        if (activeTab === 'pinned') return pinnedTasks;
+        if (activeTab === 'general') return generalTasks;
+        return filteredTasks;
+    }, [activeTab, assignedTasks, commonTasks, pinnedTasks, generalTasks, filteredTasks]);
+
     const totalPages = Math.ceil(totalTasks / pageSize) || 1;
 
     return (
@@ -208,6 +236,8 @@ export default function TaskPane() {
                     </div>
 
                     <div className="flex items-center gap-2">
+                         
+                        
                         <button
                             type="button"
                             onClick={() => setIsCreateModalOpen(true)}
@@ -287,107 +317,100 @@ export default function TaskPane() {
                             General ({generalTasks.length})
                         </button>
                     </div>
-
-                    {/* Search & Status Filters */}
-                    <div className="flex items-center gap-2">
-                        {/* Status Filter */}
-                        <select
-                            value={statusFilter}
-                            onChange={(e) => setStatusFilter(e.target.value)}
-                            className="text-xs p-1.5 rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-[#0057B8]"
-                        >
-                            <option value="all">All Statuses</option>
-                            <option value="pending">Pending</option>
-                            <option value="responded">Responded</option>
-                            <option value="completed">Completed</option>
-                            <option value="approved">Approved</option>
-                            <option value="cancelled">Cancelled</option>
-                        </select>
-
-                        {/* Search input */}
-                        <div className="relative w-48 sm:w-64">
-                            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                            <input
-                                type="text"
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                placeholder="Search tasks by code, title..."
-                                className="w-full text-xs pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:border-[#0057B8]"
-                            />
-                        </div>
-                    </div>
+ 
                 </div>
 
                 {/* Task List Workspace Content */}
-                <div className="flex-1 overflow-y-auto p-6 custom-scrollbar space-y-6">
-                    {filteredTasks.length === 0 && !isLoading ? (
-                        <div className="text-center py-16 bg-white rounded-2xl border border-slate-200 max-w-lg mx-auto">
-                            <div className="w-12 h-12 rounded-2xl bg-blue-50 text-[#0057B8] flex items-center justify-center mx-auto mb-3">
-                                <ListChecks className="w-6 h-6" />
-                            </div>
-                            <h3 className="font-bold text-slate-800 text-sm">No Tasks Found</h3>
-                            <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto leading-relaxed">
-                                No tasks match your current filter. Right-click anywhere in this pane to create a new task.
-                            </p>
-                        </div>
+                <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+                    {viewMode === 'table' ? (
+                        <TaskTable
+                            tasks={activeTabTasks}
+                            isLoading={isLoading}
+                            selectedTaskId={selectedTask?.id}
+                            onTaskClick={(t) => setSelectedTask(t)}
+                            onPin={handlePin}
+                            onUnpin={handleUnpin}
+                            currentUserId={user?.id}
+                            emptyMessage={
+                                activeTab === 'assigned' ? 'No tasks assigned directly to your profile' :
+                                activeTab === 'pinned' ? 'No pinned tasks' :
+                                activeTab === 'common' ? 'No common tasks shared across workspace' :
+                                activeTab === 'general' ? 'No general tasks found' :
+                                'No tasks match your current filter criteria'
+                            }
+                        />
                     ) : (
-                        <>
-                            {/* Pinned Tasks Category */}
-                            {(activeTab === 'all' || activeTab === 'pinned') && pinnedTasks.length > 0 && (
-                                <TaskList
-                                    title="Pinned Tasks"
-                                    tasks={pinnedTasks}
-                                    isLoading={isLoading}
-                                    selectedTaskId={selectedTask?.id}
-                                    onTaskClick={(t) => setSelectedTask(t)}
-                                    onPin={handlePin}
-                                    onUnpin={handleUnpin}
-                                    emptyMessage="No pinned tasks"
-                                />
-                            )}
+                        <div className="space-y-6">
+                            {filteredTasks.length === 0 && !isLoading ? (
+                                <div className="text-center py-16 bg-white rounded-2xl border border-slate-200 max-w-lg mx-auto">
+                                    <div className="w-12 h-12 rounded-2xl bg-blue-50 text-[#0057B8] flex items-center justify-center mx-auto mb-3">
+                                        <ListChecks className="w-6 h-6" />
+                                    </div>
+                                    <h3 className="font-bold text-slate-800 text-sm">No Tasks Found</h3>
+                                    <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto leading-relaxed">
+                                        No tasks match your current filter. Right-click anywhere in this pane to create a new task.
+                                    </p>
+                                </div>
+                            ) : (
+                                <>
+                                    {/* Pinned Tasks Category */}
+                                    {(activeTab === 'all' || activeTab === 'pinned') && pinnedTasks.length > 0 && (
+                                        <TaskList
+                                            title="Pinned Tasks"
+                                            tasks={pinnedTasks}
+                                            isLoading={isLoading}
+                                            selectedTaskId={selectedTask?.id}
+                                            onTaskClick={(t) => setSelectedTask(t)}
+                                            onPin={handlePin}
+                                            onUnpin={handleUnpin}
+                                            emptyMessage="No pinned tasks"
+                                        />
+                                    )}
 
-                            {/* Common Tasks Category */}
-                            {(activeTab === 'all' || activeTab === 'common') && (
-                                <TaskList
-                                    title="Common Tasks (Workspace Shared)"
-                                    tasks={commonTasks}
-                                    isLoading={isLoading}
-                                    selectedTaskId={selectedTask?.id}
-                                    onTaskClick={(t) => setSelectedTask(t)}
-                                    onPin={handlePin}
-                                    onUnpin={handleUnpin}
-                                    emptyMessage="No common tasks shared across workspace"
-                                />
-                            )}
+                                    {/* Common Tasks Category */}
+                                    {(activeTab === 'all' || activeTab === 'common') && (
+                                        <TaskList
+                                            title="Common Tasks (Workspace Shared)"
+                                            tasks={commonTasks}
+                                            isLoading={isLoading}
+                                            selectedTaskId={selectedTask?.id}
+                                            onTaskClick={(t) => setSelectedTask(t)}
+                                            onPin={handlePin}
+                                            onUnpin={handleUnpin}
+                                            emptyMessage="No common tasks shared across workspace"
+                                        />
+                                    )}
 
-                            {/* Assigned to Me Category */}
-                            {activeTab === 'assigned' && (
-                                <TaskList
-                                    title="Tasks Assigned Directly to You"
-                                    tasks={assignedTasks}
-                                    isLoading={isLoading}
-                                    selectedTaskId={selectedTask?.id}
-                                    onTaskClick={(t) => setSelectedTask(t)}
-                                    onPin={handlePin}
-                                    onUnpin={handleUnpin}
-                                    emptyMessage="No tasks currently assigned to your profile"
-                                />
-                            )}
+                                    {/* Assigned to Me Category */}
+                                    {activeTab === 'assigned' && (
+                                        <TaskList
+                                            title="Tasks Assigned Directly to You"
+                                            tasks={assignedTasks}
+                                            isLoading={isLoading}
+                                            selectedTaskId={selectedTask?.id}
+                                            onTaskClick={(t) => setSelectedTask(t)}
+                                            onPin={handlePin}
+                                            onUnpin={handleUnpin}
+                                            emptyMessage="No tasks currently assigned to your profile"
+                                        />
+                                    )}
 
-                            {/* General Tasks Category */}
-                            {(activeTab === 'all' || activeTab === 'general') && (
-                                <TaskList
-                                    title="General Tasks"
-                                    tasks={generalTasks}
-                                    isLoading={isLoading}
-                                    selectedTaskId={selectedTask?.id}
-                                    onTaskClick={(t) => setSelectedTask(t)}
-                                    onPin={handlePin}
-                                    onUnpin={handleUnpin}
-                                    emptyMessage="No general tasks assigned or created by you"
-                                />
+                                    {/* General Tasks Category */}
+                                    {(activeTab === 'all' || activeTab === 'general') && (
+                                        <TaskList
+                                            title="General Tasks"
+                                            tasks={generalTasks}
+                                            isLoading={isLoading}
+                                            selectedTaskId={selectedTask?.id}
+                                            onTaskClick={(t) => setSelectedTask(t)}
+                                            onPin={handlePin}
+                                            onUnpin={handleUnpin}
+                                            emptyMessage="No general tasks assigned or created by you"
+                                        />
+                                    )}
+                                </>
                             )}
-                        </>
+                        </div>
                     )}
                 </div>
 

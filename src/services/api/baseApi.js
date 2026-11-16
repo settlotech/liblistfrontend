@@ -1,7 +1,8 @@
 import { getAccessToken, refreshSession } from '../auth.service';
 
- 
-const rawApiUrl = (import.meta.env.VITE_API_URL || 'https://liblistbackend.vercel.app/api').trim(); 
+const rawApiUrl = 'http://localhost:5000/api'.trim(); 
+console.log("rawApiUrl ==> ", rawApiUrl);
+// const rawApiUrl = (import.meta.env.VITE_API_URL || 'https://liblistbackend.vercel.app/api').trim(); 
 export const API_BASE = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl.replace(/\/+$/, '')}/api`;
 
 /**

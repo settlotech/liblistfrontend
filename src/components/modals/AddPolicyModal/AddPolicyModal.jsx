@@ -2754,7 +2754,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                   <Loader2 className="w-10 h-10 text-[#0057B8] animate-spin mx-auto" />
                   <div className="space-y-1">
                     <p className="text-base font-bold text-slate-900">
-                      AI & RAG Engine Processing Documents...
+                       Engine Processing Documents...
                     </p>
                     <p className="text-xs text-slate-500">
                       Extracting Summary, Details, Reports, Dependencies, and Operational Events independently for each document.

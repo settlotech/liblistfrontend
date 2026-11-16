@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import liblistLogo from '../../assets/liblist-logo.png';
-import loginIllustration from '../../assets/login-illustration.jpg';
+import LoginSlideShow from './LoginSlideShow';
 import {
     User,
     Mail,
@@ -128,48 +128,26 @@ export default function Login() {
 
                 <div className="login-left-pane">
                     <div className="left-pane-header">
-                        <img src={liblistLogo} alt="Liblist Logo" className="liblist-brand-logo" />
+                        <div className="brand-header-cluster">
+                            <img src={liblistLogo} alt="Liblist Logo" className="liblist-brand-logo" />
+                            <span className="brand-header-tagline">Banking & Policy Governance Platform</span>
+                        </div>
                         <span className="product-version-text">{version}</span>
                     </div>
-                    <div className="left-pane-desc-box">
-                        <span className="desc-title">Banking & Policy Governance Platform</span>
-                        <p className="desc-text">
-                            Centralized policy oversight , multi-bank compliance registry.
-                        </p>
-                    </div>
-                    <div className="left-pane-illustration-wrap">
-                        <img
-                            src={loginIllustration}
-                            alt="Liblist Platform Illustration"
-                            className="login-side-illustration"
-                        />
-                    </div>
-                    <div className="why-liblist-section">
-                        <h3 className="why-liblist-heading">Why Liblist</h3>
-                        <ul className="why-features-list">
-                            {
-                                about.map((val) => 
-                                    <li key={val}>
-                                        <CheckCircle2 size={16} className="feature-check-icon" />
-                                        <span>{val}</span>
-                                    </li>
-                                )
-                            } 
-                        </ul>
-                    </div>
+                    <LoginSlideShow />
                 </div>
                 
                 <div className="login-right-pane">
 
                     <div className="right-pane-top-bar">
                         <div className="top-switch-prompt">
-                            <span>Don't have an account?</span>
+                            {/* <span>Don't have an account?</span> */}
                             <button
                                 type="button"
                                 className="btn-switch-pill"
                                 onClick={SignupComponentsOpen}
                             >
-                                Sign up
+                               Request for Access
                             </button>
                         </div>
                     </div>
@@ -325,7 +303,7 @@ export default function Login() {
                         </form>
                     </div>
                 </div>
-            </div>
+            </div> 
 
 
             {forgotModalOpen && (
