@@ -1,6 +1,6 @@
 import axios from 'axios';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
+import { API_BASE } from '../config/apiConfig';
+import { getAccessToken, setAccessToken } from '../services/auth.service';
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -10,7 +10,7 @@ const api = axios.create({
 
 // ── Request Interceptor: Attach Access Token ──────────────────────────────────
 api.interceptors.request.use((config) => {
-  const token = sessionStorage.getItem('accessToken');
+  const token = getAccessToken();
   if (token) {
     config.headers['Authorization'] = `Bearer ${token}`;
   }
@@ -63,7 +63,7 @@ api.interceptors.response.use(
         const newToken = data?.data?.accessToken;
         if (!newToken) throw new Error('No new token returned');
 
-        sessionStorage.setItem('accessToken', newToken);
+        setAccessToken(newToken);
         processQueue(null, newToken);
 
         original.headers['Authorization'] = `Bearer ${newToken}`;

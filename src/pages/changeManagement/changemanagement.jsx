@@ -16,12 +16,14 @@ import {
     X,
     AlertCircle,
     Eye,
-    Trash2
+    Trash2,
+    GitBranch
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { documentManagementApi } from '../../services/api/documentManagementApi';
 import FullscreenEditorModal from '../../components/common/FullscreenEditorModal';
 import './changemanagement.css';
+import LoadMoreOnScroll from '../../components/common/LoadMoreOnScroll';
 
 export default function ChangeManagementPage() {
     const { user } = useAuth();
@@ -33,6 +35,9 @@ export default function ChangeManagementPage() {
 
     const [documents, setDocuments]       = useState([]);
     const [isLoading, setIsLoading]       = useState(true);
+    const [documentsPage, setDocumentsPage] = useState(1);
+    const [documentsHasMore, setDocumentsHasMore] = useState(false);
+    const [loadingMoreDocuments, setLoadingMoreDocuments] = useState(false);
     const [activeTab, setActiveTab]       = useState('all'); // 'all' | 'draft' | 'pending' | 'approved' | 'rejected'
     const [searchQuery, setSearchQuery]   = useState('');
 
@@ -76,22 +81,27 @@ export default function ChangeManagementPage() {
     return () => clearTimeout(timer);
     }, [toastMsg]);
 
-    const loadPolicies = useCallback(async () => {
-        setIsLoading(true);
+    const loadPolicies = useCallback(async (page = 1, append = false) => {
+        if (append) setLoadingMoreDocuments(true); else setIsLoading(true);
         try {
             const [docsRes, libRes, polRemRes] = await Promise.all([
-                documentManagementApi.getDocuments({ limit: 100 }).catch(() => ({ data: [] })),
-                documentManagementApi.getPendingLibraryRemovals().catch(() => ({ data: [] })),
-                documentManagementApi.getPendingPolicyRemovals().catch(() => ({ data: [] }))
+                documentManagementApi.getDocuments({ page, limit: 30, scope: 'change_management' }).catch(() => ({ data: [] })),
+                append ? Promise.resolve(null) : documentManagementApi.getPendingLibraryRemovals().catch(() => ({ data: [] })),
+                append ? Promise.resolve(null) : documentManagementApi.getPendingPolicyRemovals().catch(() => ({ data: [] }))
             ]);
             const list = docsRes?.data?.documents || docsRes?.data || [];
-            setDocuments(list);
-            setPendingLibraryRemovals(libRes?.data || []);
-            setPendingPolicyRemovals(polRemRes?.data || []);
+            setDocuments(current => append ? [...current, ...list] : list);
+            setDocumentsPage(page);
+            setDocumentsHasMore(page < (docsRes?.pagination?.totalPages || 1));
+            if (!append) {
+                setPendingLibraryRemovals(libRes?.data || []);
+                setPendingPolicyRemovals(polRemRes?.data || []);
+            }
         } catch (err) {
             console.error('Failed to load change management data:', err);
         } finally {
             setIsLoading(false);
+            setLoadingMoreDocuments(false);
         }
     }, []);
 
@@ -221,6 +231,82 @@ export default function ChangeManagementPage() {
         }
     };
 
+    // Open the PARENT (live/approved/base) version of a revision policy in the editor
+    const handleOpenParentDocument = async (e, doc) => {
+        e.stopPropagation();
+        const parentVerId = doc.parent_version_id || doc.live_version_id;
+        const parentVerNum = doc.parent_version_number || doc.live_version_number || '1.0';
+
+        setIsLoadingDoc(true);
+        try {
+            let parsed = null;
+            let fullDoc = doc;
+
+            // 1. Try to load exact snapshot sections if parentVerId exists
+            if (parentVerId) {
+                try {
+                    const verSecRes = await documentManagementApi.getVersionSections(doc.id, parentVerId);
+                    const verSections = verSecRes?.data || [];
+                    if (verSections.length > 0) {
+                        const allBlocks = [];
+                        verSections.forEach(sec => {
+                            const c = sec.content;
+                            if (c) {
+                                try {
+                                    const j = typeof c === 'string' ? JSON.parse(c) : c;
+                                    if (j?.content) j.content.forEach(b => allBlocks.push(b));
+                                    else if (Array.isArray(j)) j.forEach(b => allBlocks.push(b));
+                                } catch {}
+                            }
+                        });
+                        if (allBlocks.length > 0) parsed = { type: 'doc', content: allBlocks };
+                    }
+                } catch (vErr) {
+                    console.warn('Could not load specific version snapshot, trying document metadata:', vErr);
+                }
+            }
+
+            // 2. Fallback: load complete document metadata and use committed live content
+            if (!parsed) {
+                const res = await documentManagementApi.getDocumentMetadata(doc.id);
+                fullDoc = res?.data || doc;
+                const sections = fullDoc.sections || [];
+                const allBlocks = [];
+                sections.forEach(sec => {
+                    const c = sec.content; // committed live content
+                    if (c) {
+                        try {
+                            const j = typeof c === 'string' ? JSON.parse(c) : c;
+                            if (j?.content) j.content.forEach(b => allBlocks.push(b));
+                            else if (Array.isArray(j)) j.forEach(b => allBlocks.push(b));
+                        } catch {}
+                    }
+                });
+                if (allBlocks.length > 0) parsed = { type: 'doc', content: allBlocks };
+            }
+
+            if (!parsed) {
+                parsed = {
+                    type: 'doc',
+                    content: [{ type: 'paragraph', content: [{ type: 'text', text: fullDoc.description || 'No content found for parent version.' }] }]
+                };
+            }
+
+            setOpenDoc({
+                ...fullDoc,
+                _viewingParent: true,
+                _parentVersionLabel: `v${parentVerNum}`,
+                document_name: `${fullDoc.document_name} [Parent v${parentVerNum}]`,
+            });
+            setOpenDocContent(parsed);
+        } catch (err) {
+            console.error('Failed to load parent document:', err);
+            setToastMsg('Failed to open parent version.');
+        } finally {
+            setIsLoadingDoc(false);
+        }
+    };
+
     // Review Library Removal (Super Admin)
     const handleConfirmLibraryReview = async () => {
         if (!reviewingLibrary) return;
@@ -342,7 +428,7 @@ export default function ChangeManagementPage() {
                     </span>
                 </button> */}
 
-                <button
+                {/* <button
                     type="button"
                     className={`change-mgmt-tab ${activeTab === 'library_removals' ? 'active' : ''}`}
                     onClick={() => setActiveTab('library_removals')}
@@ -352,7 +438,7 @@ export default function ChangeManagementPage() {
                     <span className="change-mgmt-badge" style={{ background: pendingLibraryRemovals.length > 0 ? '#fee2e2' : '', color: pendingLibraryRemovals.length > 0 ? '#b91c1c' : '' }}>
                         {pendingLibraryRemovals.length}
                     </span>
-                </button>
+                </button> */}
 
                 {/* <button
                     type="button"
@@ -384,7 +470,7 @@ export default function ChangeManagementPage() {
                     onClick={() => setActiveTab('rejected')}
                 >
                     <XCircle size={15} />
-                    <span>Rework / Rejected</span>
+                    <span>Rejected</span>
                     <span className="change-mgmt-badge" style={{ background: rejectedCount > 0 ? '#fee2e2' : '', color: rejectedCount > 0 ? '#b91c1c' : '' }}>
                         {rejectedCount}
                     </span>
@@ -661,24 +747,25 @@ export default function ChangeManagementPage() {
                     <table className="change-mgmt-table">
                         <thead>
                             <tr>
-                                <th style={{ width: '32%' }}>Policy Name &amp; Master Library</th>
-                                <th style={{ width: '15%' }}>Status</th>
-                                <th style={{ width: '15%' }}>Version</th>
-                                <th style={{ width: '18%' }}>Authored By</th>
+                                <th style={{ width: '25%' }}>Policy Name &amp; Master Library</th>
+                                <th style={{ width: '12%' }}>Status</th>
+                                <th style={{ width: '12%' }}>Version</th>
+                                <th style={{ width: '15%' }}>Parent</th>
+                                <th style={{ width: '15%' }}>Authored By</th>
                                 <th style={{ width: '10%' }}>Updated Date</th>
-                                <th style={{ width: '10%', textAlign: 'right' }}>Actions</th>
+                                <th style={{ width: '11%', textAlign: 'right' }}>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {isLoading ? (
                                 <tr>
-                                    <td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
-                                        Loading policy lifecycle entries...
+                                    <td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
+                                        Loading policy entries...
                                     </td>
                                 </tr>
                             ) : displayedDocs.length === 0 ? (
                                 <tr>
-                                    <td colSpan={6} style={{ padding: '60px 20px', textAlign: 'center' }}>
+                                    <td colSpan={7} style={{ padding: '60px 20px', textAlign: 'center' }}>
                                         <FileText size={32} style={{ color: '#94a3b8', margin: '0 auto 10px', display: 'block' }} />
                                         <h4 style={{ margin: '0 0 4px', fontSize: '14px', color: '#334155' }}>
                                             No policies found in this category
@@ -710,9 +797,9 @@ export default function ChangeManagementPage() {
                                                 <div className="policy-cell-sub">
                                                     <Folder size={12} style={{ color: '#0057B8' }} />
                                                     <span>{doc.library_name || 'Master Library'}</span>
-                                                    {doc.description && (
+                                                    {/* {doc.description && (
                                                         <span style={{ color: '#94a3b8' }}>• {doc.description.slice(0, 40)}...</span>
-                                                    )}
+                                                    )} */}
                                                 </div>
                                             </td>
 
@@ -746,9 +833,31 @@ export default function ChangeManagementPage() {
                                                         ? `v${doc.current_version_number || 1}.0 → v${doc.pending_revision_version}`
                                                         : `v${doc.current_version_number || 1}.0`}
                                                 </span>
-                                                <span style={{ fontSize: '11px', color: '#64748b', marginLeft: '6px' }}>
+                                                {/* <span style={{ fontSize: '11px', color: '#64748b', marginLeft: '6px' }}>
                                                     ({doc.section_count || 6} Sections)
-                                                </span>
+                                                </span> */}
+                                            </td>
+
+                                            {/* Parent Version Policy */}
+                                            <td>
+                                                {(doc.has_pending_revision || doc.parent_version_number || doc.live_version_id) ? (
+                                                    <button
+                                                        type="button"
+                                                        className="policy-parent-link-btn"
+                                                        // onClick={(e) => handleOpenParentDocument(e, doc)}
+                                                        // title={`Click to open parent version (v${doc.parent_version_number || doc.live_version_number || '1.0'}) in editor`}
+                                                    >
+                                                        {/* <GitBranch size={13} style={{ color: '#0057B8', flexShrink: 0 }} /> */}
+                                                        <span className="policy-parent-text">
+                                                            {/* {`v${doc.parent_version_number || doc.live_version_number || '1.0'} - ${doc.document_name}`} */}
+                                                            {`${doc.document_name}`}
+                                                        </span>
+                                                    </button>
+                                                ) : (
+                                                    <span style={{ fontSize: '12px', color: '#94a3b8' }}>
+                                                        —
+                                                    </span>
+                                                )}
                                             </td>
 
                                             {/* Author */}
@@ -825,6 +934,7 @@ export default function ChangeManagementPage() {
                             )}
                         </tbody>
                     </table>
+                    <LoadMoreOnScroll hasMore={documentsHasMore} loading={loadingMoreDocuments} onLoadMore={() => loadPolicies(documentsPage + 1, true)} label="Load more policies" />
                 </div>
             )}
 
@@ -923,7 +1033,8 @@ export default function ChangeManagementPage() {
 
             {/* Fullscreen Editor Modal for Review & Direct Approval */}
             {openDoc && (() => {
-                const docNeedsReview = isPendingReview(openDoc) || isDraftStatus(openDoc);
+                const isViewingParent = Boolean(openDoc._viewingParent);
+                const docNeedsReview = !isViewingParent && (isPendingReview(openDoc) || isDraftStatus(openDoc));
             
     return (
                     <FullscreenEditorModal
@@ -931,14 +1042,16 @@ export default function ChangeManagementPage() {
                         onClose={() => setOpenDoc(null)}
                         title={openDoc.document_name}
                         subtitle={
-                            openDoc.has_pending_revision
-                                ? `Reviewing Revision v${openDoc.pending_revision_version || '1.1'} submitted for review by ${openDoc.pending_revision_by_name || 'Author'}`
-                                : (openDoc.status === 'active' || openDoc.status === 'approved')
-                                    ? `Published Policy v${openDoc.current_version_number || '1.0'} (Active in Master Library)`
-                                    : `Reviewing Operational Policy v${openDoc.current_version_number || '1.0'} (${openDoc.status === 'draft' ? 'Draft' : openDoc.status} submitted by ${openDoc.requested_by_name || openDoc.created_by_name || 'Author'})`
+                            isViewingParent
+                                ? `Viewing Reference Parent Policy ${openDoc._parentVersionLabel || ''} (Committed Active Version)`
+                                : openDoc.has_pending_revision
+                                    ? `Reviewing Revision v${openDoc.pending_revision_version || '1.1'} submitted for review by ${openDoc.pending_revision_by_name || 'Author'}`
+                                    : (openDoc.status === 'active' || openDoc.status === 'approved')
+                                        ? `Published Policy v${openDoc.current_version_number || '1.0'} (Active in Master Library)`
+                                        : `Reviewing Operational Policy v${openDoc.current_version_number || '1.0'} (${openDoc.status === 'draft' ? 'Draft' : openDoc.status} submitted by ${openDoc.requested_by_name || openDoc.created_by_name || 'Author'})`
                         }
                         initialContent={openDocContent}
-                        readOnly={!docNeedsReview}
+                        readOnly={isViewingParent ? true : !docNeedsReview}
                         onChange={(val) => {
                             const doc = val?.json || (val?.type === 'doc' ? val : null) || val;
                             setOpenDocContent(doc);

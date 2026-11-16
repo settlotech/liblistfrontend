@@ -27,10 +27,18 @@ const formatTimeAgo = (dateStr) => {
 };
 
 const Navbar = ({ onToggleSidebar, onToggleChatPanel, chatPanelOpen }) => {
-  const { user, logout } = useAuth();
+  const { user, logout, hasPermission } = useAuth();
   const navigate = useNavigate();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+
+  const canViewPolicyAccess =
+    user?.isSuperAdmin ||
+    (user?.roles || []).some(r => {
+      const name = typeof r === 'string' ? r : r.role_name;
+      return name?.toLowerCase() === 'super admin';
+    }) ||
+    Boolean(hasPermission?.('policy_access', 'read'));
 
   const dropdownRef = useRef(null);
   const notifRef = useRef(null);
@@ -112,15 +120,17 @@ const Navbar = ({ onToggleSidebar, onToggleChatPanel, chatPanelOpen }) => {
 
       {/* ── Right Side: Access + Bell + Hamburger for Chats & Shidney + Profile ── */}
       <div className={styles.navRight}>
-        <button
-          type="button"
-          className={styles.accessBtn}
-          onClick={() => navigate('/settings?tab=policyaccess')}
-          title="Manage Policy-Specific User Access Controls"
-        >
-          <Users size={15} strokeWidth={2} />
-          <span>Bank Users & Access</span>
-        </button>
+        {canViewPolicyAccess && (
+          <button
+            type="button"
+            className={styles.accessBtn}
+            onClick={() => navigate('/settings?tab=policyaccess')}
+            title="Manage Policy-Specific User Access Controls"
+          >
+            <Users size={15} strokeWidth={2} />
+            <span>Bank Users & Access</span>
+          </button>
+        )}
 
         {/* ── Notification Bell with Popover ── */}
         <div style={{ position: 'relative' }} ref={notifRef}>

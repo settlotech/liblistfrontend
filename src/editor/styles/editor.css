@@ -18,8 +18,9 @@
   --rte-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --rte-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
   --rte-shadow-lg: 0 10px 25px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
-  --rte-page-width: 816px;
-  --rte-page-height: 1056px;
+  --rte-page-width: 794px;
+  --rte-page-height: 1123px;
+  --rte-page-gap: 32px;
 }
 
 /* --------------------------------------------------------------------------
@@ -87,6 +88,29 @@
   height: 20px;
   background-color: var(--rte-border);
   margin: 0 4px;
+}
+
+.page-margins-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 7px;
+  color: var(--rte-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.page-margins-control select {
+  height: 24px;
+  padding: 0 20px 0 6px;
+  border: 1px solid var(--rte-border);
+  border-radius: 4px;
+  background: #ffffff;
+  color: var(--rte-text-secondary);
+  font: inherit;
+  cursor: pointer;
 }
 
 /* Tool Buttons */
@@ -948,11 +972,14 @@
 .modern-editor-workspace.flow-mode .document-page-wrapper {
   width: 100%;
   max-width: 100%;
+  flex-shrink: 1;
 }
 
 .modern-editor-workspace.flow-mode .document-page {
   width: 100%;
+  max-width: 100%;
   min-height: unset;
+  flex-shrink: 1;
   box-shadow: none;
   border: none;
   padding: 0;
@@ -966,23 +993,38 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 100%;
+  width: var(--rte-page-width);
+  max-width: none;
+  flex-shrink: 0;
 }
 
 /* MS Word style: single continuous white page card that grows with content.
    The page boundary is a VISUAL indicator only — not a hard height boundary. */
 .document-page {
   width: var(--rte-page-width);
-  max-width: 100%;
-  min-height: 1056px;           /* at least one A4 page tall */
-  background: #ffffff;
-  padding: 64px 72px;
+  max-width: none;
+  flex-shrink: 0;
+  min-height: var(--rte-page-height);
+  background: repeating-linear-gradient(
+    to bottom,
+    #ffffff 0,
+    #ffffff calc(var(--rte-page-height) - 1px),
+    #94a3b8 calc(var(--rte-page-height) - 1px),
+    #cbd5e1 var(--rte-page-height),
+    #cbd5e1 calc(var(--rte-page-height) + var(--rte-page-gap)),
+    #ffffff calc(var(--rte-page-height) + var(--rte-page-gap))
+  );
+  padding: 96px;
   margin: 0 auto 32px;          /* bottom gap = workspace gap between pages */
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
   border: 1px solid #94a3b8;
   border-radius: 2px;
   box-sizing: border-box;
   position: relative;
+}
+
+.document-page .tiptap > :not(.document-page-break) {
+  background-color: #ffffff;
 }
 
 /* Automatic Visual Page Break Boundaries (MS Word Style Divider Gap) */
@@ -1055,6 +1097,17 @@
 .tiptap .document-page-break.ProseMirror-selectednode .page-break-badge {
   border-color: #3b82f6;
   color: #1d4ed8;
+}
+
+/* Automatic A4 pagination replaces legacy visible page-break markers. */
+.tiptap .document-page-break {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  page-break-after: auto !important;
+  break-after: auto !important;
 }
 
 .auto-page-break-line {

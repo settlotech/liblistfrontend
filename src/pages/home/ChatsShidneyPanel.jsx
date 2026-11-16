@@ -29,30 +29,7 @@ const ChatsShidneyPanel = ({ isOpen }) => {
           <span>Chats & Shidney</span>
         </div>
 
-        {/* Tab Switcher Pills */}
-        <div className={styles.chatTabPillWrap}>
-          <button
-            type="button"
-            className={`${styles.chatTabBtn} ${
-              activeTab === 'Shidney' ? styles.chatTabBtnActive : ''
-            }`}
-            onClick={() => setActiveTab('Shidney')}
-          >
-            <Sparkles size={13} strokeWidth={2.2} />
-            <span>Shidney</span>
-          </button>
-
-          <button
-            type="button"
-            className={`${styles.chatTabBtn} ${
-              activeTab === 'Chats' ? styles.chatTabBtnActive : ''
-            }`}
-            onClick={() => setActiveTab('Chats')}
-          >
-            <MessageSquare size={13} strokeWidth={2.2} />
-            <span>Chats</span>
-          </button>
-        </div>
+        
       </div>
 
       {/* ── Body: Empty discussion placeholder ── */}

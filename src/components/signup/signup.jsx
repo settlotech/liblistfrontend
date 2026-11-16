@@ -135,7 +135,7 @@ export default function Signup() {
                 />
                 <div className="signup-header-actions">
                     <span className="signup-login-prompt">
-                        Already have an account?
+                        {/* Already have an account? */}
                         <button
                             type="button"
                             className="btn-link-login"

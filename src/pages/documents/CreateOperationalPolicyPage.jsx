@@ -27,7 +27,8 @@ import {
     ChevronUp,
     Plus,
     Trash2,
-    Loader2
+    Loader2,
+    Copy
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { documentManagementApi } from '../../services/api/documentManagementApi';
@@ -99,6 +100,7 @@ export default function CreateOperationalPolicyPage() {
     const [uploadEditorKey, setUploadEditorKey] = useState(Date.now());
     const [unmappedDismissed, setUnmappedDismissed] = useState(new Set());
     const [unmappedCollapsed, setUnmappedCollapsed] = useState(false);
+    const [copiedUnmappedKey, setCopiedUnmappedKey] = useState(null);
 
     // Unmapped container free dragging state
     const [unmappedPos, setUnmappedPos] = useState(null); // { x, y }
@@ -125,6 +127,16 @@ export default function CreateOperationalPolicyPage() {
             uploadStepPanelRef.current.scrollTop = 0;
         }
     }, [uploadStep]);
+
+    // Start the review editor at the beginning when switching between fitted
+    // and fullscreen layouts so the document doesn't reopen mid-page.
+    useEffect(() => {
+        if (uploadStep !== 3) return;
+        requestAnimationFrame(() => {
+            document.querySelectorAll('.upload-review-container .modern-editor-workspace')
+                .forEach(workspace => { workspace.scrollTop = 0; workspace.scrollLeft = 0; });
+        });
+    }, [isReviewFullscreen, uploadStep]);
 
     // Load available libraries and approved templates on mount
     useEffect(() => {
@@ -368,8 +380,12 @@ export default function CreateOperationalPolicyPage() {
         // shown as a visual grey gap in the editor workspace.
         return sections.map((sec, idx) => {
             const title = sec.section_title || sec.title || `Section ${idx + 1}`;
-            const contentHtml = sec.content || '<p></p>';
-            return `<h2>${title}</h2>\n${contentHtml}`;
+            const contentTemplate = document.createElement('template');
+            contentTemplate.innerHTML = sec.content || '<p></p>';
+            contentTemplate.content
+                .querySelectorAll('div[data-type="page-break"], div.document-page-break, hr.page-break')
+                .forEach((pageBreak) => pageBreak.remove());
+            return `<h2>${title}</h2>\n${contentTemplate.innerHTML}`;
         }).join('\n<p></p>\n');
     };
 
@@ -480,6 +496,26 @@ export default function CreateOperationalPolicyPage() {
         setUploadEditorKey(Date.now());
     };
 
+    const handleCopyUnmapped = async (clause, key) => {
+        const plainText = [clause.title, clause.content]
+            .filter(Boolean)
+            .map(value => {
+                const container = document.createElement('div');
+                container.innerHTML = value;
+                return container.textContent || '';
+            })
+            .join('\n\n')
+            .trim();
+
+        try {
+            await navigator.clipboard.writeText(plainText);
+            setCopiedUnmappedKey(key);
+            window.setTimeout(() => setCopiedUnmappedKey(current => current === key ? null : current), 1800);
+        } catch (error) {
+            console.error('Could not copy unmapped clause:', error);
+        }
+    };
+
     const handleUploadSaveToDraft = async () => {
         if (!uploadLibraryId) {
             setUploadError('Please select a target library.');
@@ -493,15 +529,16 @@ export default function CreateOperationalPolicyPage() {
         setUploadError('');
         try {
             // Build sections preserving full TipTap AST (tables, lists, images)
-            let cleanUploadContent = {
-                type: 'doc',
-                content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Operational clauses and controls.' }] }]
-            };
+            let cleanUploadContent = null;
             if (uploadEditorContent) {
                 const rawJson = uploadEditorContent?.json || (uploadEditorContent?.type === 'doc' ? uploadEditorContent : null);
                 if (rawJson) {
                     cleanUploadContent = JSON.parse(JSON.stringify(rawJson));
                 }
+            }
+
+            if (!cleanUploadContent) {
+                throw new Error('The extracted document is still loading. Please wait a moment and try again.');
             }
 
             const sections = [
@@ -1077,12 +1114,8 @@ export default function CreateOperationalPolicyPage() {
                                     <div className="native-format-content">
                                         <h4>Keep Original Document Structure</h4>
                                         <p>
-                                            The document will not be forced into any template sections.
-                                            The AI engine will parse and extract the document's <strong>native clauses, headings, and formatting</strong> directly as authored in the source file.
-                                        </p>
-                                        <span className="native-format-tag">
-                                            <Sparkles size={13} /> Native Formatting Active
-                                        </span>
+                                            The document will not be forced into any template sections. 
+                                        </p> 
                                     </div>
                                 </div>
                             )}
@@ -1129,6 +1162,14 @@ export default function CreateOperationalPolicyPage() {
                                     <span className="upload-review-filename">{uploadedFile?.name}</span>
                                 </div>
                                 <div className="upload-review-topbar-right">
+                                    <button
+                                        type="button"
+                                        className="btn btn-secondary upload-review-back-btn"
+                                        onClick={() => setUploadStep(2)}
+                                    >
+                                        <ArrowLeft size={15} />
+                                        <span>Back</span>
+                                    </button>
                                     <button
                                         type="button"
                                         className="btn btn-secondary upload-swap-btn"
@@ -1185,10 +1226,11 @@ export default function CreateOperationalPolicyPage() {
                                             <div className="upload-panel-body upload-panel-editor">
                                                 <RichTextEditor
                                                     key={`upload-editor-${uploadEditorKey}`}
-                                                    paged={false}
+                                                    paged={true}
                                                     placeholder="AI extracted content appears here…"
                                                     initialContent={uploadEditorContent}
                                                     onChange={(val) => setUploadEditorContent(val?.json || val)}
+                                                    onReady={(val) => setUploadEditorContent(val.json)}
                                                 />
                                             </div>
                                         </div>
@@ -1200,10 +1242,11 @@ export default function CreateOperationalPolicyPage() {
                                             <div className="upload-panel-body upload-panel-editor">
                                                 <RichTextEditor
                                                     key={`upload-editor-swap-${uploadEditorKey}`}
-                                                    paged={false}
+                                                    paged={true}
                                                     placeholder="AI extracted content appears here…"
                                                     initialContent={uploadEditorContent}
                                                     onChange={(val) => setUploadEditorContent(val?.json || val)}
+                                                    onReady={(val) => setUploadEditorContent(val.json)}
                                                 />
                                             </div>
                                         </div>
@@ -1297,13 +1340,24 @@ export default function CreateOperationalPolicyPage() {
                                                         {clause.suggested_section && (
                                                             <p className="unmapped-suggested">Suggested: {clause.suggested_section}</p>
                                                         )}
-                                                        <button
-                                                            type="button"
-                                                            className="unmapped-insert-btn"
-                                                            onClick={() => handleInsertUnmapped(clause)}
-                                                        >
-                                                            <Plus size={12} /> Insert into Editor
-                                                        </button>
+                                                        <div className="unmapped-item-actions">
+                                                            <button
+                                                                type="button"
+                                                                className="unmapped-insert-btn"
+                                                                onClick={() => handleInsertUnmapped(clause)}
+                                                            >
+                                                                <Plus size={12} /> Insert into Editor
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="unmapped-copy-btn"
+                                                                onClick={() => handleCopyUnmapped(clause, clause.id || clause.title || idx)}
+                                                                title="Copy clause text so you can paste it anywhere in the editor"
+                                                            >
+                                                                <Copy size={12} />
+                                                                {copiedUnmappedKey === (clause.id || clause.title || idx) ? 'Copied' : 'Copy'}
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 ))
                                             }
@@ -1314,9 +1368,7 @@ export default function CreateOperationalPolicyPage() {
 
                             {/* Step actions */}
                             <div className="upload-step-actions upload-review-actions">
-                                <button type="button" className="btn btn-secondary" onClick={() => setUploadStep(2)}>
-                                    <ArrowLeft size={15} /> Back
-                                </button>
+                                <div />
                                 <button type="button" className="btn btn-primary" onClick={() => { setUploadError(''); setUploadStep(4); }}>
                                     Continue to Finalise <ArrowRight size={15} />
                                 </button>
@@ -1523,10 +1575,10 @@ export default function CreateOperationalPolicyPage() {
                                             onClick={handleUploadSaveToDraft}
                                         >
                                             <Save size={15} />
-                                            {isUploadSubmitting ? 'Saving Draft…' : 'Save as Draft'}
+                                            {isUploadSubmitting ? 'Saving Draft…' : 'Save as Draft & Send to Review'}
                                         </button>
                                         <button type="button" className="btn btn-secondary" onClick={() => setUploadStep(3)}>
-                                            <ArrowLeft size={15} /> Back to Review
+                                            <ArrowLeft size={15} /> Back 
                                         </button>
                                     </div>
                                 </div>

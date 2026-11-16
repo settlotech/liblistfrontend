@@ -26,8 +26,15 @@ import EditorToolbar from './EditorToolbar';
 import EditorStatusBar from './EditorStatusBar';
 import './styles/editor.css';
 
-// Printable content height per page in pixels (A4 standard ratio)
-const PAGE_HEIGHT_PX = 960;
+// A4 at 96 DPI, with a 32px visual gap between sheets.
+const PAGE_HEIGHT_PX = 1123;
+const PAGE_GAP_PX = 32;
+const PAGE_INTERVAL_PX = PAGE_HEIGHT_PX + PAGE_GAP_PX;
+const PAGE_MARGIN_PRESETS = {
+  normal: { vertical: 96, horizontal: 96 },
+  narrow: { vertical: 48, horizontal: 48 },
+  wide: { vertical: 144, horizontal: 144 },
+};
 
 // Default demo template showcasing simple text prompt
 const DEMO_TEMPLATE = {
@@ -50,6 +57,7 @@ export const RichTextEditor = ({
   defaultValue,
   initialContent,
   onChange,
+  onReady,
   onSave,
   onImageUpload,
   placeholder = "Start writing or press '/' for commands...",
@@ -74,6 +82,7 @@ export const RichTextEditor = ({
   });
 
   const [isPaged, setIsPaged] = useState(paged);
+  const [marginPreset, setMarginPreset] = useState('normal');
   const [pageCount, setPageCount] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
   const [saveStatus, setSaveStatus] = useState('saved');
@@ -100,8 +109,20 @@ export const RichTextEditor = ({
     }
     if (typeof c === 'object') {
       if (c.json) return normalizeDocContent(c.json);
-      if (c.type === 'doc') return c;
-      if (Array.isArray(c.content)) return { type: 'doc', content: c.content };
+      if (c.type === 'doc' || Array.isArray(c.content)) {
+        const withoutManualBreaks = (node) => {
+          if (Array.isArray(node)) {
+            return node.map(withoutManualBreaks).filter(Boolean);
+          }
+          if (!node || typeof node !== 'object') return node;
+          if (node.type === 'pageBreak') return null;
+          return Object.fromEntries(
+            Object.entries(node).map(([key, value]) => [key, withoutManualBreaks(value)])
+          );
+        };
+        const normalized = withoutManualBreaks(c);
+        return normalized.type === 'doc' ? normalized : { type: 'doc', content: normalized.content };
+      }
     }
     return null;
   };
@@ -130,22 +151,64 @@ export const RichTextEditor = ({
     return DEMO_TEMPLATE;
   };
 
-  // Recalculate multi-page pagination based on page breaks or content height
+  // Keep top-level blocks inside the printable area of each A4 page.
   const updatePagination = useCallback(() => {
     if (!workspaceRef.current) return;
     const editorDom = workspaceRef.current.querySelector('.tiptap');
     if (!editorDom) return;
 
-    // Check for explicit page breaks in the document
-    const explicitBreaks = editorDom.querySelectorAll('.document-page-break');
-    let computedPages = 1;
+    const blocks = Array.from(editorDom.children);
+    blocks.forEach((block) => {
+      if (block.dataset.autoPageMargin) {
+        block.style.marginTop = '';
+        delete block.dataset.autoPageMargin;
+      }
+    });
 
-    if (explicitBreaks.length > 0) {
-      computedPages = explicitBreaks.length + 1;
-    } else {
-      const contentHeight = editorDom.scrollHeight;
-      computedPages = Math.max(1, Math.ceil(contentHeight / PAGE_HEIGHT_PX));
+    if (isPaged) {
+      const scale = zoomLevel / 100 || 1;
+      const editorTop = editorDom.getBoundingClientRect().top;
+      const pageMargins = PAGE_MARGIN_PRESETS[marginPreset] || PAGE_MARGIN_PRESETS.normal;
+      const pageContentHeight = PAGE_HEIGHT_PX - pageMargins.vertical * 2;
+
+      blocks.forEach((block) => {
+        // Ignore old explicit break nodes; automatic page layout is authoritative.
+        if (block.classList.contains('document-page-break')) return;
+
+        const rect = block.getBoundingClientRect();
+        const top = (rect.top - editorTop) / scale;
+        const height = rect.height / scale;
+        const pageIndex = Math.floor(top / PAGE_INTERVAL_PX);
+        const pageStart = pageIndex * PAGE_INTERVAL_PX;
+        const offsetInPage = top - pageStart;
+        const overflowsPage = offsetInPage + height > pageContentHeight;
+        const fitsOnPage = height <= pageContentHeight;
+        const alreadyAtPageTop = offsetInPage <= 48;
+
+        // Keep blocks together when they fit. A block taller than one page can
+        // still move forward when it starts late on a page, but won't be pushed
+        // repeatedly when it already begins at the top of a page.
+        if (overflowsPage && (fitsOnPage || !alreadyAtPageTop)) {
+          // The editor is one continuous page element, so CSS padding only
+          // creates a top margin for page 1. Add the virtual page's top margin
+          // here as well to keep content clear of the page break on later pages.
+          const nextPageTop = (pageIndex + 1) * PAGE_INTERVAL_PX + pageMargins.vertical;
+          const naturalMarginTop = parseFloat(window.getComputedStyle(block).marginTop) || 0;
+          const previousMarginBottom = block.previousElementSibling
+            ? parseFloat(window.getComputedStyle(block.previousElementSibling).marginBottom) || 0
+            : 0;
+          const naturalCollapsedMargin = Math.max(naturalMarginTop, previousMarginBottom);
+          const margin = naturalCollapsedMargin + Math.max(0, nextPageTop - top);
+          if (margin > 0) {
+            block.style.marginTop = `${margin}px`;
+            block.dataset.autoPageMargin = 'true';
+          }
+        }
+      });
     }
+
+    const contentHeight = editorDom.scrollHeight;
+    const computedPages = Math.max(1, Math.ceil(contentHeight / PAGE_INTERVAL_PX));
     setPageCount(computedPages);
 
     // Current page based on cursor position
@@ -154,28 +217,17 @@ export const RichTextEditor = ({
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
 
-      if (explicitBreaks.length > 0) {
-        let cur = 1;
-        explicitBreaks.forEach((brk, idx) => {
-          const brkRect = brk.getBoundingClientRect();
-          if (rect.top > brkRect.bottom) {
-            cur = idx + 2;
-          }
-        });
-        setCurrentPage(Math.min(computedPages, cur));
-      } else {
-        const domRect = editorDom.getBoundingClientRect();
-        const relativeTop = rect.top - domRect.top + editorDom.scrollTop;
-        if (relativeTop >= 0) {
-          const cur = Math.min(
-            computedPages,
-            Math.max(1, Math.ceil(relativeTop / PAGE_HEIGHT_PX))
-          );
-          setCurrentPage(cur);
-        }
+      const domRect = editorDom.getBoundingClientRect();
+      const relativeTop = (rect.top - domRect.top) / (zoomLevel / 100 || 1);
+      if (relativeTop >= 0) {
+        const cur = Math.min(
+          computedPages,
+          Math.max(1, Math.floor(relativeTop / PAGE_INTERVAL_PX) + 1)
+        );
+        setCurrentPage(cur);
       }
     }
-  }, []);
+  }, [isPaged, marginPreset, zoomLevel]);
 
   const editor = useEditor({
     extensions: [
@@ -264,6 +316,12 @@ export const RichTextEditor = ({
       }, 1200);
     },
 
+    onCreate: ({ editor }) => {
+      if (onReady) {
+        onReady({ json: editor.getJSON(), html: editor.getHTML(), text: editor.getText(), editor });
+      }
+    },
+
     onSelectionUpdate: () => {
       updatePagination();
     },
@@ -279,6 +337,7 @@ export const RichTextEditor = ({
       updatePagination();
     });
     resizeObserverRef.current.observe(editorDom);
+    updatePagination();
 
     return () => {
       if (resizeObserverRef.current) {
@@ -415,6 +474,8 @@ export const RichTextEditor = ({
           onTogglePaged={() => setIsPaged(!isPaged)}
           pageCount={pageCount}
           currentPage={currentPage}
+          marginPreset={marginPreset}
+          onMarginPresetChange={setMarginPreset}
         />
       )}
 
@@ -482,7 +543,10 @@ export const RichTextEditor = ({
           <div
             className="document-page"
             style={{
-              minHeight: isPaged ? '1056px' : 'unset',
+              minHeight: isPaged ? 'var(--rte-page-height)' : 'unset',
+              padding: isPaged
+                ? `${PAGE_MARGIN_PRESETS[marginPreset].vertical}px ${PAGE_MARGIN_PRESETS[marginPreset].horizontal}px`
+                : undefined,
             }}
           >
             <EditorContent editor={editor} />

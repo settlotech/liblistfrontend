@@ -42,3 +42,14 @@ export const fetchActivityTimeline = async (days = 14) => {
 
     return result.data;
 };
+
+export const fetchDashboardChangeManagement = async () => {
+    const response = await apiFetch(`/dashboard/change-management`);
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Failed to fetch change management data');
+    }
+
+    return result.data;
+};

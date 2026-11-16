@@ -18,6 +18,7 @@ import Alert from '../../components/ui/Alert';
 import Spinner from '../../components/ui/Spinner';
 import logoImg from '../../assets/liblist-logo.png';
 import illustrationImg from '../../assets/login-illustration.jpg';
+import LoginSlideshow from '../../components/auth/LoginSlideshow';
 import styles from './LoginPage.module.css';
 
 // ── Demo Personas ─────────────────────────────────────────────────────────────
@@ -155,7 +156,7 @@ const LoginPage = () => {
 
   return (
     <div className={styles.page}>
-      {/* ── LEFT PANEL (60%) ── */}
+      {/* ── LEFT PANEL (58%) ── */}
       <div className={styles.leftPanel}>
         {/* Top Header */}
         <div className={styles.leftTopBar}>
@@ -165,42 +166,9 @@ const LoginPage = () => {
           <span className={styles.versionTag}>v0.0.1</span>
         </div>
 
-        {/* Platform Title */}
-        <div className={styles.platformHeader}>
-          <h2 className={styles.platformTitle}>
-            Banking & Policy Governance Platform
-          </h2>
-          <p className={styles.platformSubtitle}>
-            Centralized policy oversight , multi-bank compliance registry.
-          </p>
-        </div>
-
-        {/* Center Illustration */}
-        <div className={styles.illustrationContainer}>
-          <img
-            src={illustrationImg}
-            alt="LibList Banking Platform"
-            className={styles.illustrationImg}
-          />
-        </div>
-
-        {/* Why Liblist Footer */}
-        <div className={styles.whySection}>
-          <h3 className={styles.whyTitle}>Why Liblist</h3>
-          <ul className={styles.whyList}>
-            <li className={styles.whyItem}>
-              <span className={styles.checkIcon}>
-                <CheckCircle2 size={13} strokeWidth={2.5} />
-              </span>
-              <span>Multi-bank master policy</span>
-            </li>
-            <li className={styles.whyItem}>
-              <span className={styles.checkIcon}>
-                <CheckCircle2 size={13} strokeWidth={2.5} />
-              </span>
-              <span>Real-time Maker-Checker auditing & change management</span>
-            </li>
-          </ul>
+        {/* Feature Slideshow (Automatic Scrolling) */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', marginTop: '16px' }}>
+          <LoginSlideshow autoPlayInterval={4500} />
         </div>
       </div>
 
@@ -208,7 +176,7 @@ const LoginPage = () => {
       <div className={styles.rightPanel}>
         {/* Top Sign Up Nav */}
         <div className={styles.rightTopNav}>
-          <span className={styles.signupPrompt}>Don't have an account?</span>
+          {/* <span className={styles.signupPrompt}>Don't have an account?</span> */}
           <button
             type="button"
             className="btn-outline-pill"

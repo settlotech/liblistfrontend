@@ -2,8 +2,9 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { loginApi, logoutApi, getMeApi } from '../api/authApi';
+import { API_BASE } from '../config/apiConfig';
+import { refreshSession } from '../services/auth.service';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
 
 const AuthContext = createContext(null);
 
@@ -54,14 +55,8 @@ export const AuthProvider = ({ children }) => {
       } else {
         // Try refreshing via cookie
         try {
-          const { data } = await axios.post(
-            `${API_BASE}/auth/refresh`,
-            {},
-            { withCredentials: true }
-          );
-          const newToken = data?.data?.accessToken;
-          if (newToken && isMounted) {
-            sessionStorage.setItem('accessToken', newToken);
+          const refreshed = await refreshSession();
+          if (refreshed && isMounted) {
             const userRes = await getMeApi();
             const fetchedUser = userRes?.data?.user || userRes?.data;
             if (isMounted && fetchedUser) {
@@ -118,9 +113,16 @@ export const AuthProvider = ({ children }) => {
     } catch { /* silent */ }
     sessionStorage.removeItem('accessToken');
     sessionStorage.removeItem('user');
+    sessionStorage.removeItem('libtrak_access_token');
+    sessionStorage.removeItem('libtrak_authenticated_user');
     localStorage.removeItem('accessToken');
     localStorage.removeItem('user');
+    localStorage.removeItem('libtrak_access_token');
+    localStorage.removeItem('libtrak_authenticated_user');
     setUser(null);
+    // Hard redirect — forces full page reload which remounts the entire React
+    // tree and clears all stale context state (DashboardContext, etc.)
+    window.location.href = '/login';
   }, []);
 
   const fetchMe = useCallback(async () => {

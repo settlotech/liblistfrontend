@@ -940,6 +940,22 @@
     flex-direction: column;
 }
 
+/* Keep the rich editor fitted to the review panel in fullscreen. Its default
+   480px workspace minimum otherwise forces an inner scroll area and can leave
+   the document scrolled to a misleading position after maximizing. */
+.upload-review-container.fullscreen-mode .upload-panel-editor .modern-editor-container {
+    height: 100%;
+    min-height: 0 !important;
+    flex: 1 1 auto;
+}
+
+.upload-review-container.fullscreen-mode .upload-panel-editor .modern-editor-workspace {
+    flex: 1 1 auto;
+    min-height: 0 !important;
+    padding: 16px 12px 24px;
+    align-items: flex-start;
+}
+
 .upload-pdf-iframe {
     width: 100%;
     height: 100%;
@@ -1096,7 +1112,16 @@
     font-style: italic;
 }
 
-.unmapped-insert-btn {
+.unmapped-item-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+}
+
+.unmapped-insert-btn,
+.unmapped-copy-btn {
     display: flex;
     align-items: center;
     gap: 5px;
@@ -1110,9 +1135,18 @@
     font-weight: 600;
     transition: all 0.2s;
     align-self: flex-start;
-    margin-top: 4px;
 }
 .unmapped-insert-btn:hover { background: var(--btn-primary-bg, #0057B8); color: #fff; border-color: transparent; }
+
+.unmapped-copy-btn {
+    color: #475569;
+}
+
+.unmapped-copy-btn:hover {
+    color: var(--btn-primary-bg, #0057B8);
+    border-color: var(--btn-primary-bg, #0057B8);
+    background: #eff6ff;
+}
 
 /* ═══════════════════════════════════════════════
    STEP 4 — Finalise Form (UI Grid)

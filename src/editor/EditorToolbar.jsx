@@ -48,6 +48,8 @@ export const EditorToolbar = ({
   onTogglePaged,
   pageCount = 1,
   currentPage = 1,
+  marginPreset = 'normal',
+  onMarginPresetChange,
 }) => {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [copiedNotification, setCopiedNotification] = useState(false);
@@ -368,21 +370,23 @@ export const EditorToolbar = ({
 
         <div className="modern-separator" />
 
-        {/* Objects (Table, Image, Link, Page Break) */}
+        {/* Objects (Table, Image, Link) */}
         <ToolbarGroup>
           <TableControls editor={editor} />
           <ImageControls editor={editor} onImageUpload={onImageUpload} />
           <LinkControls editor={editor} />
-          <button
-            type="button"
-            className="modern-tool-btn"
-            onClick={() => editor.chain().focus().setPageBreak().run()}
-            title="Insert Page Break (Ctrl+Enter)"
-            style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '0 6px', fontSize: '11px', fontWeight: 600 }}
-          >
-            <FileText size={14} />
-            <span>Page Break</span>
-          </button>
+          <label className="page-margins-control" title="Set A4 page margins">
+            <span>Margins</span>
+            <select
+              aria-label="Page margins"
+              value={marginPreset}
+              onChange={(event) => onMarginPresetChange?.(event.target.value)}
+            >
+              <option value="normal">Normal</option>
+              <option value="narrow">Narrow</option>
+              <option value="wide">Wide</option>
+            </select>
+          </label>
         </ToolbarGroup>
 
         <div className="modern-separator" />

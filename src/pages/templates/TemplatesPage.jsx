@@ -27,6 +27,7 @@ import { useAuth } from '../../context/AuthContext';
 import { documentManagementApi } from '../../services/api/documentManagementApi';
 import RichTextEditor from '../../editor/RichTextEditor';
 import './templates.css';
+import LoadMoreOnScroll from '../../components/common/LoadMoreOnScroll';
 
 /* ─────────────────────────────────────────────────────────────
    CategoryCombobox
@@ -166,6 +167,9 @@ export default function TemplatesPage() {
     const { user } = useAuth();
     const [templates, setTemplates]         = useState([]);
     const [isLoading, setIsLoading]         = useState(true);
+    const [templatePage, setTemplatePage] = useState(1);
+    const [templatesHasMore, setTemplatesHasMore] = useState(false);
+    const [loadingMoreTemplates, setLoadingMoreTemplates] = useState(false);
 
     // Active sub-tab: 'approved' | 'pending' | 'all'
     const [activeTab, setActiveTab]         = useState('approved');
@@ -215,17 +219,21 @@ export default function TemplatesPage() {
     const hasUpdatePermission   = isSuperAdmin || (user?.permissionStrings || user?.permissions || []).includes('templates:update');
     const hasApprovalPermission = isSuperAdmin || (user?.permissionStrings || user?.permissions || []).includes('templates:approval');
 
-    const loadTemplates = useCallback(async () => {
-        setIsLoading(true);
+    const loadTemplates = useCallback(async (page = 1, append = false) => {
+        if (append) setLoadingMoreTemplates(true); else setIsLoading(true);
         try {
             // Approvers and admins see all statuses; others see approved only
             const params = hasApprovalPermission ? {} : { status: 'approved' };
-            const res = await documentManagementApi.getTemplates(params);
-            setTemplates(res?.data?.templates || res?.data || []);
+            const res = await documentManagementApi.getTemplates({ ...params, page, limit: 30 });
+            const list = res?.data?.templates || res?.data || [];
+            setTemplates(current => append ? [...current, ...list] : list);
+            setTemplatePage(page);
+            setTemplatesHasMore(page * 30 < (res?.pagination?.total || 0));
         } catch (err) {
             console.error('Failed to load templates:', err);
         } finally {
             setIsLoading(false);
+            setLoadingMoreTemplates(false);
         }
     }, [hasApprovalPermission]);
 
@@ -760,6 +768,7 @@ export default function TemplatesPage() {
                         )}
                     </tbody>
                 </table>
+                <LoadMoreOnScroll hasMore={templatesHasMore} loading={loadingMoreTemplates} onLoadMore={() => loadTemplates(templatePage + 1, true)} label="Load more templates" />
             </div>
 
             {/* ─────────────────────────────────────────────────────────────

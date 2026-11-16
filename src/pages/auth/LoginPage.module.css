@@ -13,10 +13,11 @@
   max-width: 58%;
   background: #ffffff;
   border-right: 1px solid #f1f5f9;
-  padding: 40px 56px 40px 64px;
+  padding: 32px 48px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  overflow-y: auto;
 }
 
 /* Top bar: Logo + Version */

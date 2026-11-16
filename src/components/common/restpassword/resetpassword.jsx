@@ -2,9 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Lock, CheckCircle2 } from 'lucide-react';
 import './resetpassword.css';
-
-const rawApiUrl = ((import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1').trim()).replace(/\/v\d+$/, '');
-const API_URL = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl.replace(/\/+$/, '')}/api`;
+import { API_BASE as API_URL } from '../../../config/apiConfig';
 
 const OTP_LENGTH = 6;
 const RESEND_SECONDS = 27;

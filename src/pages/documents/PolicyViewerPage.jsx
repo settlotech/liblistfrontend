@@ -515,9 +515,8 @@ export default function PolicyViewerPage() {
                         </button>
                     </div>
 
-                    <div className="policy-top-actions">
-                        {/* Super Admin review buttons for Pending Initial Policy or Submitted Revision */}
-                        {isSuperAdmin && (isPending || isDraft || (documentData.has_pending_revision && documentData.revision_status === 'pending_review')) && !isArchived && (
+                    <div className="policy-top-actions"> 
+                        {/* {isSuperAdmin && (isPending || isDraft || (documentData.has_pending_revision && documentData.revision_status === 'pending_review')) && !isArchived && (
                             <>
                                 <button type="button" className="btn btn-sm btn-danger"
                                     onClick={() => { setReviewAction('reject'); setIsReviewModalOpen(true); }}>
@@ -530,7 +529,7 @@ export default function PolicyViewerPage() {
                                     <span>{documentData.has_pending_revision ? `Approve Revision v${documentData.pending_revision_version || ''}` : 'Approve & Publish'}</span>
                                 </button>
                             </>
-                        )}
+                        )} */}
                           
                           <button
                             type="button"
@@ -543,7 +542,7 @@ export default function PolicyViewerPage() {
                             <span>{isPinned ? 'Pinned' : 'Pin'}</span>
                         </button>
                          
-                        {/* Configure / Edit Revision Draft: author edits their draft, Super Admin can bypass */}
+                        
                         {canEditPolicy && !isArchived && (
                             documentData.has_pending_revision ? (
                                 isRevisionAuthor ? (

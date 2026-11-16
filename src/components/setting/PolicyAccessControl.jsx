@@ -241,6 +241,8 @@ export default function PolicyAccessControl({ canUpdate = true, canCreate = true
             }));
             await documentManagementApi.bulkUpdateUserPolicyAccess(selectedUser.id, payload);
             showToast(`Access permissions saved for ${selectedUser.name}.`);
+            window.dispatchEvent(new CustomEvent('liblist:refresh-nav'));
+            window.dispatchEvent(new CustomEvent('liblist:document-updated'));
         } catch (err) {
             console.error('Failed saving policy access:', err);
             showToast('Failed to save. Please try again.', 'error');

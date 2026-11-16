@@ -105,7 +105,7 @@ export default function MasterLibraryTree({
         try {
             const [hierRes, docsRes] = await Promise.all([
                 documentManagementApi.getLibraryHierarchy().catch(() => ({ data: [] })),
-                documentManagementApi.getDocuments({ limit: 100 }).catch(() => ({ data: [] }))
+                documentManagementApi.getDocuments({ limit: 1000 }).catch(() => ({ data: [] }))
             ]);
 
             const libraries = hierRes?.data || [];

@@ -27,6 +27,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { taskApi } from '../../services/api/taskApi';
 import './taskworkspace.css';
+import LoadMoreOnScroll from '../../components/common/LoadMoreOnScroll';
 
 export default function TaskWorkspace() {
     const { user } = useAuth();
@@ -34,6 +35,9 @@ export default function TaskWorkspace() {
     // ── DATA STATE ────────────────────────────────────────────────────────
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [taskPage, setTaskPage] = useState(1);
+    const [tasksHasMore, setTasksHasMore] = useState(false);
+    const [loadingMoreTasks, setLoadingMoreTasks] = useState(false);
     const [assignableUsers, setAssignableUsers] = useState([]);
     const [groups, setGroups] = useState([]);
 
@@ -87,16 +91,20 @@ export default function TaskWorkspace() {
     const [commentInputs, setCommentInputs] = useState({});
 
     // ── FETCH TASKS, USERS & GROUPS ON MOUNT ──────────────────────────────
-    const fetchTasks = async () => {
+    const fetchTasks = async (page = 1, append = false) => {
         try {
-            setLoading(true);
-            const res = await taskApi.getTasks({ search: '', limit: 100 });
+            if (append) setLoadingMoreTasks(true); else setLoading(true);
+            const res = await taskApi.getTasks({ search: '', page, limit: 30 });
             const list = res?.data || res || [];
-            setTasks(Array.isArray(list) ? list : []);
+            const batch = Array.isArray(list) ? list : [];
+            setTasks(current => append ? [...current, ...batch] : batch);
+            setTaskPage(page);
+            setTasksHasMore(page < (res?.pagination?.totalPages || 1));
         } catch (err) {
             console.error('Failed to fetch tasks:', err);
         } finally {
             setLoading(false);
+            setLoadingMoreTasks(false);
         }
     };
 
@@ -896,6 +904,7 @@ export default function TaskWorkspace() {
                             )}
                         </tbody>
                     </table>
+                    <LoadMoreOnScroll hasMore={tasksHasMore} loading={loadingMoreTasks} onLoadMore={() => fetchTasks(taskPage + 1, true)} label="Load more tasks" />
                 </div>
             </div>
 
@@ -1166,7 +1175,7 @@ export default function TaskWorkspace() {
                                                                         <div className="task-search-avatar self">@</div>
                                                                         <div className="task-search-item-info">
                                                                             <span className="task-search-item-name">@self</span>
-                                                                            <span className="task-search-item-email">Self Reminder — no assignee</span>
+                                                                            <span className="task-search-item-email">Self Reminder</span>
                                                                         </div>
                                                                         {selectedAssignees.some(a => a.isSelf) && <Check size={13} style={{ color: '#0057B8', flexShrink: 0 }} />}
                                                                     </div>

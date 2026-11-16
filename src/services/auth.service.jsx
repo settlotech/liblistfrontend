@@ -1,5 +1,4 @@
-﻿const rawApiUrl = ((import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1').trim()).replace(/\/v\d+$/, '');
-const API_URL = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl.replace(/\/+$/, '')}/api`;
+import { API_BASE as API_URL } from '../config/apiConfig';
 
 let accessToken = null;
 let refreshPromise = null;
@@ -115,17 +114,11 @@ export const refreshSession = async () => {
 
     refreshPromise = (async () => {
         try {
-            const storedRefreshToken = typeof localStorage !== 'undefined' ? localStorage.getItem('libtrak_refresh_token') : null;
-            const headers = { 'Content-Type': 'application/json' };
-            if (storedRefreshToken) {
-                headers['x-refresh-token'] = storedRefreshToken;
-            }
-
             const response = await fetch(`${API_URL}/auth/refresh`, {
                 method: 'POST',
-                headers,
+                headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
-                body: JSON.stringify({ refreshToken: storedRefreshToken })
+                body: JSON.stringify({})
             });
 
             if (response.status === 401 || !response.ok) {
@@ -135,18 +128,10 @@ export const refreshSession = async () => {
 
             const data = await response.json();
             const token = data?.data?.accessToken || data?.accessToken;
-        const refreshToken = data?.data?.refreshToken || data?.refreshToken;
-        if (refreshToken && typeof localStorage !== 'undefined') {
-            localStorage.setItem('libtrak_refresh_token', refreshToken);
-        }
-            const newRefreshToken = data?.data?.refreshToken || data?.refreshToken;
             const user = data?.data?.user || data?.user;
 
             if (token) {
                 setAccessToken(token);
-            }
-            if (newRefreshToken && typeof localStorage !== 'undefined') {
-                localStorage.setItem('libtrak_refresh_token', newRefreshToken);
             }
 
             if (user) {

@@ -1,4 +1,4 @@
-const API_URL = 'http://localhost:5000/api';
+import { API_BASE as API_URL } from '../config/apiConfig';
 
 
 export const requestOtpApi = async ({ user_email, user_name }) => {

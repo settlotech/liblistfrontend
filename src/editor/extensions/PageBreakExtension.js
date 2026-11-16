@@ -30,29 +30,7 @@ export const PageBreak = Node.create({
         'data-type': 'page-break',
         class: 'document-page-break',
       }),
-      ['div', { class: 'page-break-line-bar' }],
-      ['div', { class: 'page-break-badge' }, 'PAGE BREAK'],
     ];
-  },
-
-  addCommands() {
-    return {
-      setPageBreak:
-        () =>
-        ({ chain }) => {
-          return chain()
-            .insertContent({
-              type: this.name,
-            })
-            .run();
-        },
-    };
-  },
-
-  addKeyboardShortcuts() {
-    return {
-      'Mod-Enter': () => this.editor.commands.setPageBreak(),
-    };
   },
 });
 

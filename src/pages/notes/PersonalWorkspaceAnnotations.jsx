@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { documentManagementApi } from '../../services/api/documentManagementApi';
 import './personalWorkspaceAnnotations.css';
+import LoadMoreOnScroll from '../../components/common/LoadMoreOnScroll';
 
 /**
  * PersonalWorkspaceAnnotations
@@ -29,19 +30,28 @@ export default function PersonalWorkspaceAnnotations({ mode = 'notes' }) {
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedLibrary, setSelectedLibrary] = useState('ALL');
     const [toastMsg, setToastMsg] = useState(null);
+    const [page, setPage] = useState(1);
+    const [hasMore, setHasMore] = useState(false);
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
 
-    const loadData = useCallback(async () => {
-        setIsLoading(true);
+    const loadData = useCallback(async (nextPage = 1, append = false) => {
+        if (append) setIsLoadingMore(true); else setIsLoading(true);
         try {
             const annotation_type = isNotesMode ? 'TEXT' : 'IMAGE';
             const res = await documentManagementApi.getMyAnnotations({
                 annotation_type,
+                page: nextPage,
+                limit: 20,
             });
-            setItems(res?.data || []);
+            const batch = Array.isArray(res?.data) ? res.data : [];
+            setItems(current => append ? [...current, ...batch] : batch);
+            setPage(nextPage);
+            setHasMore(nextPage < (res?.pagination?.totalPages || 1));
         } catch (err) {
             console.error('Failed to load user annotations/notes:', err);
         } finally {
             setIsLoading(false);
+            setIsLoadingMore(false);
         }
     }, [isNotesMode]);
 
@@ -98,6 +108,7 @@ export default function PersonalWorkspaceAnnotations({ mode = 'notes' }) {
                     <span>{toastMsg}</span>
                 </div>
             )}
+            <LoadMoreOnScroll hasMore={hasMore} loading={isLoadingMore} onLoadMore={() => loadData(page + 1, true)} label={`Load more ${isNotesMode ? 'notes' : 'annotations'}`} />
 
             {/* Header */}
             <div className="pw-annot-header">
