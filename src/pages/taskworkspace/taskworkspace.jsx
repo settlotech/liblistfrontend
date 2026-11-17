@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
     ListTodo,
     Plus,
@@ -31,6 +32,7 @@ import LoadMoreOnScroll from '../../components/common/LoadMoreOnScroll';
 
 export default function TaskWorkspace() {
     const { user } = useAuth();
+    const navigate = useNavigate();
 
     // ── DATA STATE ────────────────────────────────────────────────────────
     const [tasks, setTasks] = useState([]);
@@ -130,6 +132,12 @@ export default function TaskWorkspace() {
         fetchTasks();
         fetchUsers();
         fetchGroups();
+    }, []);
+
+    useEffect(() => {
+        const handleTaskCreated = () => fetchTasks();
+        window.addEventListener('liblist:task_created', handleTaskCreated);
+        return () => window.removeEventListener('liblist:task_created', handleTaskCreated);
     }, []);
 
     // ── CLOSE CONTEXT MENU & DROPDOWNS ON CLICK OUTSIDE OR ESCAPE ─────────
@@ -327,8 +335,9 @@ export default function TaskWorkspace() {
                 const matchDesc = (t.description || '').toLowerCase().includes(q);
                 const matchSeq = (t.task_seq || '').toLowerCase().includes(q);
                 const matchAssigned = (t.assigned_name || '').toLowerCase().includes(q);
+                const matchPolicy = (t.policy_title || '').toLowerCase().includes(q);
                 const matchAssignees = (t.assignees || []).some(a => (a.name || '').toLowerCase().includes(q));
-                if (!matchTitle && !matchDesc && !matchSeq && !matchAssigned && !matchAssignees) return false;
+                if (!matchTitle && !matchDesc && !matchSeq && !matchAssigned && !matchPolicy && !matchAssignees) return false;
             }
 
             return true;
@@ -767,6 +776,19 @@ export default function TaskWorkspace() {
                                                         <span className="task-context-ref">
                                                             <FileText size={10} /> Ref: {t.section_id}
                                                         </span>
+                                                    )}
+                                                    {t.policy_title && t.library_id && (
+                                                        <button
+                                                            type="button"
+                                                            className="task-context-policy"
+                                                            title={`Open policy: ${t.policy_title}`}
+                                                            onClick={(event) => {
+                                                                event.stopPropagation();
+                                                                navigate(`/documents/${encodeURIComponent(t.library_id)}`);
+                                                            }}
+                                                        >
+                                                            <FileText size={10} /> Policy: {t.policy_title}
+                                                        </button>
                                                     )}
                                                 </td>
 
