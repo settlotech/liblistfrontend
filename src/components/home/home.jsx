@@ -104,6 +104,7 @@ export default function Home({ initialView = 'policy' }) {
   const [isMakerCheckerOpen, setIsMakerCheckerOpen] = useState(false);
   const [isConfigureModalOpen, setIsConfigureModalOpen] = useState(false);
   const [isAddPolicyModalOpen, setIsAddPolicyModalOpen] = useState(false);
+  const [addPolicyInitialMode, setAddPolicyInitialMode] = useState('direct');
   const [editingPolicy, setEditingPolicy] = useState(null);
   const [selectedDraft, setSelectedDraft] = useState(null);
   const [viewingDraft, setViewingDraft] = useState(null);
@@ -244,9 +245,10 @@ export default function Home({ initialView = 'policy' }) {
     const handlePolicyCreatedEvent = (e) => {
       loadHierarchy();
       loadPolicies();
+      loadMakerChecker();
       if (e.detail?.id) {
         setSelectedPolicyId(e.detail.id);
-        if (e.detail?.status !== 'draft') {
+        if (e.detail?.status !== 'draft' && e.detail?.status !== 'pending_approval') {
           setActiveWorkspaceView('policy');
         } else {
           setActiveWorkspaceView('change_management');
@@ -254,14 +256,21 @@ export default function Home({ initialView = 'policy' }) {
       }
     };
 
+    const handleMakerCheckerUpdatedEvent = () => {
+      loadMakerChecker();
+      loadPolicies();
+    };
+
     window.addEventListener('liblist:select-policy', handleSelectPolicyEvent);
     window.addEventListener('liblist:policy-created', handlePolicyCreatedEvent);
+    window.addEventListener('liblist:maker-checker-updated', handleMakerCheckerUpdatedEvent);
 
     return () => {
       window.removeEventListener('liblist:select-policy', handleSelectPolicyEvent);
       window.removeEventListener('liblist:policy-created', handlePolicyCreatedEvent);
+      window.removeEventListener('liblist:maker-checker-updated', handleMakerCheckerUpdatedEvent);
     };
-  }, [loadHierarchy, loadPolicies]);
+  }, [loadHierarchy, loadPolicies, loadMakerChecker]);
 
   // Pane resizer for right Copilot feed
   useEffect(() => {
@@ -314,7 +323,8 @@ export default function Home({ initialView = 'policy' }) {
     }
   };
 
-  const handleOpenAddPolicyModal = (deptId = null, deptName = '') => {
+  const handleOpenAddPolicyModal = (deptId = null, deptName = '', initialMode = 'direct') => {
+    setAddPolicyInitialMode(initialMode);
     setPreselectedDept({ id: deptId, name: deptName });
     setIsAddPolicyModalOpen(true);
   };
@@ -336,17 +346,41 @@ export default function Home({ initialView = 'policy' }) {
 
   // When clicking Configure on an active policy, take a copy and create a draft clone for the user to edit
   const handleConfigurePolicyCopy = async (targetDoc) => {
-    const policyToCopy = targetDoc || activePolicy || DEFAULT_POLICIES[0];
-    if (!policyToCopy) return;
+    const basePolicy = targetDoc || activePolicy || DEFAULT_POLICIES[0];
+    if (!basePolicy) return;
+
+    let policyToCopy = basePolicy;
+    let fetchedParentVersions = Array.isArray(basePolicy.versions) ? basePolicy.versions : [];
+    if (basePolicy.id && !String(basePolicy.id).startsWith('draft-clone-')) {
+      try {
+        const [fullRes, versRes] = await Promise.allSettled([
+          !basePolicy.content || fetchedParentVersions.length === 0
+            ? apiService.getPolicyDetails(basePolicy.id, currentUser?.roleType || 'employee')
+            : Promise.resolve(null),
+          fetchedParentVersions.length === 0
+            ? apiService.getPolicyVersions(basePolicy.id)
+            : Promise.resolve(null),
+        ]);
+        if (fullRes.status === 'fulfilled' && fullRes.value) {
+          policyToCopy = { ...basePolicy, ...fullRes.value };
+          if (Array.isArray(fullRes.value.versions) && fullRes.value.versions.length > 0) {
+            fetchedParentVersions = fullRes.value.versions;
+          }
+        }
+        if (versRes.status === 'fulfilled' && Array.isArray(versRes.value) && versRes.value.length > 0) {
+          fetchedParentVersions = versRes.value;
+        }
+      } catch (_) {}
+    }
 
     const params = typeof policyToCopy.parameters === 'string'
       ? JSON.parse(policyToCopy.parameters || '{}')
       : (policyToCopy.parameters || {});
 
-    // Calculate incremental draft revision: v1.0 -> v1.1 or 1.2 -> v1.3
-    const curVer = policyToCopy.version || params.version || 'v1.0';
+    // Calculate incremental draft revision: 1.0 -> 1.1 or 1.2 -> 1.3
+    const curVer = policyToCopy.version || params.version || '1.0';
     const num = parseFloat(String(curVer).replace(/[^0-9.]/g, '')) || 1.0;
-    const nextVer = `v${(num + 0.1).toFixed(1)}`;
+    const nextVer = `${(num + 0.1).toFixed(1)}`;
 
     // Prepare sections
     let initialSections = params.sections;
@@ -371,6 +405,77 @@ export default function Home({ initialView = 'policy' }) {
       }
     }
 
+    const parentHistorySource = [
+      ...(Array.isArray(fetchedParentVersions) ? fetchedParentVersions : []),
+      ...(Array.isArray(params.versions) ? params.versions : []),
+    ];
+    const normalizedParentHistory = parentHistorySource.map((v, idx) => {
+      const verNum = String(v.version_number || v.version || curVer || '1.0').replace(/^v/i, '');
+      const verTs = v.created_at || v.timestamp || policyToCopy.updated_at || policyToCopy.created_at || new Date().toISOString();
+      return {
+        ...v,
+        id: v.id || `parent-${policyToCopy.id}-${verNum}-${idx}`,
+        policy_id: v.policy_id || policyToCopy.id,
+        version: verNum,
+        version_number: verNum,
+        title: v.title || policyToCopy.title,
+        summary: v.summary || policyToCopy.summary || '',
+        content: v.content || policyToCopy.content || '',
+        sections: Array.isArray(v.sections) && v.sections.length > 0 ? v.sections : initialSections,
+        timestamp: verTs,
+        created_at: verTs,
+        author: v.changed_by || v.author || policyToCopy.created_by || 'Policy Owner',
+        changed_by: v.changed_by || v.author || policyToCopy.created_by || 'Policy Owner',
+        notes: v.change_summary || v.notes || v.summary || `Parent policy v${verNum}`,
+        change_summary: v.change_summary || v.notes || v.summary || `Parent policy v${verNum}`,
+        source: v.source || 'parent_policy',
+        status_tag: v.status_tag || 'parent',
+      };
+    });
+
+    const parentBaselineEntry = {
+      id: `parent-base-${policyToCopy.id}`,
+      policy_id: policyToCopy.id,
+      version: String(curVer).replace(/^v/i, ''),
+      version_number: String(curVer).replace(/^v/i, ''),
+      title: policyToCopy.title,
+      summary: policyToCopy.summary || '',
+      content: policyToCopy.content || '',
+      sections: initialSections,
+      timestamp: policyToCopy.updated_at || policyToCopy.created_at || new Date().toISOString(),
+      created_at: policyToCopy.updated_at || policyToCopy.created_at || new Date().toISOString(),
+      author: policyToCopy.created_by || 'Policy Owner',
+      changed_by: policyToCopy.created_by || 'Policy Owner',
+      notes: `Parent baseline (${policyToCopy.title})`,
+      change_summary: `Parent baseline (${policyToCopy.title})`,
+      source: 'parent_policy',
+      status_tag: 'parent',
+    };
+
+    const cloneTimestamp = new Date().toISOString();
+    const draftCloneEntry = {
+      id: `draft-clone-rev-${nextVer}-${Date.now()}`,
+      version: nextVer,
+      version_number: nextVer,
+      title: policyToCopy.title ? `${policyToCopy.title} (Draft Revision)` : 'Operational Policy (Draft Revision)',
+      summary: policyToCopy.summary || '',
+      content: policyToCopy.content || '',
+      sections: initialSections,
+      timestamp: cloneTimestamp,
+      created_at: cloneTimestamp,
+      author: currentUser?.name || 'Marcus Vance',
+      changed_by: currentUser?.name || 'Marcus Vance',
+      notes: `Cloned active policy '${policyToCopy.title}' for direct user draft configuration`,
+      change_summary: `Cloned active policy '${policyToCopy.title}' for direct user draft configuration`,
+      source: 'draft_revision',
+      status_tag: 'draft',
+    };
+
+    const mergedVersions = [
+      draftCloneEntry,
+      ...(normalizedParentHistory.length > 0 ? normalizedParentHistory : [parentBaselineEntry]),
+    ];
+
     const draftClone = {
       department_id: policyToCopy.department_id || policyToCopy.deptId || 'credit-cards',
       title: policyToCopy.title ? `${policyToCopy.title} (Draft Revision)` : 'Operational Policy (Draft Revision)',
@@ -384,15 +489,7 @@ export default function Home({ initialView = 'policy' }) {
         turnaround_sla: params.turnaround_sla || '4 Hours',
         daily_limit: params.daily_limit || '$25,000 AUD',
         approval_limits: params.approval_limits || { officer_cap: '$100,000 AUD' },
-        versions: [
-          ...(params.versions || []),
-          {
-            version: nextVer,
-            timestamp: new Date().toISOString(),
-            author: currentUser?.name || 'Marcus Vance',
-            summary: `Cloned active policy '${policyToCopy.title}' for direct user draft configuration`
-          }
-        ]
+        versions: mergedVersions
       },
       created_by: currentUser?.name || 'Marcus Vance',
       creation_mode: 'direct',
@@ -447,9 +544,20 @@ export default function Home({ initialView = 'policy' }) {
             onBackToPolicy={null}
             onOpenAddPolicyModal={handleOpenAddPolicyModal}
                         onEditDraft={(draft) => {
-              const fullPolicy = allPolicies.find(p => String(p.id) === String(draft.id)) || draft;
-              setViewingDraft(fullPolicy);
-              setSelectedPolicyId(fullPolicy.id);
+              const basePolicy = allPolicies.find(p => String(p.id) === String(draft.id)) || {};
+              const baseParams = typeof basePolicy.parameters === 'string'
+                ? (() => { try { return JSON.parse(basePolicy.parameters || '{}'); } catch { return {}; } })()
+                : (basePolicy.parameters || {});
+              const draftParams = typeof draft.parameters === 'string'
+                ? (() => { try { return JSON.parse(draft.parameters || '{}'); } catch { return {}; } })()
+                : (draft.parameters || {});
+              const mergedDraft = {
+                ...basePolicy,
+                ...draft,
+                parameters: { ...baseParams, ...draftParams }
+              };
+              setViewingDraft(mergedDraft);
+              setSelectedPolicyId(mergedDraft.id);
               setActiveWorkspaceView('policy');
               setIsDraftEditing(true);
             }}
@@ -529,9 +637,147 @@ export default function Home({ initialView = 'policy' }) {
               location.state?.noteNavTarget ||
               (urlNoteNav ? getUserNoteById(authUser || currentUser, urlNoteNav) : null)
             }
-            onDraftSaved={() => setIsDraftEditing(false)}
+            onDraftSaved={(savedDoc) => {
+              setIsDraftEditing(false);
+              if (savedDoc && savedDoc.id) {
+                setViewingDraft((prev) => (prev && String(prev.id) === String(savedDoc.id) ? savedDoc : prev));
+                setAllPolicies((prev) =>
+                  Array.isArray(prev)
+                    ? prev.map((p) => (String(p.id) === String(savedDoc.id) ? { ...p, ...savedDoc } : p))
+                    : prev
+                );
+                setRefreshTrigger((prev) => prev + 1);
+              }
+            }}
+            onOpenCopyTemplate={async (doc) => {
+              const baseDoc = doc || activePolicy || DEFAULT_POLICIES[0];
+              if (!baseDoc) return;
+
+              let resolvedDoc = baseDoc;
+              let parentVers = Array.isArray(baseDoc.versions) ? baseDoc.versions : [];
+              if (baseDoc.id && !String(baseDoc.id).startsWith('draft-clone-')) {
+                try {
+                  const [fullRes, versRes] = await Promise.allSettled([
+                    !baseDoc.content || !(baseDoc.parameters?.sections?.length)
+                      ? apiService.getPolicyDetails(baseDoc.id, currentUser?.roleType || 'employee')
+                      : Promise.resolve(null),
+                    parentVers.length === 0
+                      ? apiService.getPolicyVersions(baseDoc.id)
+                      : Promise.resolve(null),
+                  ]);
+                  if (fullRes.status === 'fulfilled' && fullRes.value) {
+                    resolvedDoc = { ...baseDoc, ...fullRes.value };
+                    if (Array.isArray(fullRes.value.versions) && fullRes.value.versions.length > 0) {
+                      parentVers = fullRes.value.versions;
+                    }
+                  }
+                  if (versRes.status === 'fulfilled' && Array.isArray(versRes.value) && versRes.value.length > 0) {
+                    parentVers = versRes.value;
+                  }
+                } catch (_) {}
+              }
+
+              const srcParams = typeof resolvedDoc.parameters === 'string'
+                ? (() => { try { return JSON.parse(resolvedDoc.parameters || '{}'); } catch { return {}; } })()
+                : (resolvedDoc.parameters || {});
+
+              let copySections = Array.isArray(srcParams.sections) ? srcParams.sections : [];
+              if (copySections.length === 0 && resolvedDoc.content) {
+                const raw = String(resolvedDoc.content);
+                const parts = raw.split(/(?=###\s+)/).filter((p) => p.trim());
+                if (parts.length > 0) {
+                  copySections = parts.map((part, idx) => {
+                    const match = part.match(/^###\s*(?:\d+\.?\s*)?(.*?)\n([\s\S]*)$/);
+                    return {
+                      id: `tpl-copy-sec-${idx + 1}-${Date.now()}`,
+                      title: match ? match[1].trim() : `Section ${idx + 1}`,
+                      content: match ? match[2].trim() : part.trim(),
+                      type: 'section',
+                    };
+                  });
+                }
+              }
+
+              const curVer = String(resolvedDoc.version || srcParams.version || '1.0').replace(/^v/i, '');
+              const normalizedParentHistory = [
+                ...(Array.isArray(parentVers) ? parentVers : []),
+                ...(Array.isArray(srcParams.versions) ? srcParams.versions : []),
+              ].map((v, idx) => {
+                const verNum = String(v.version_number || v.version || curVer).replace(/^v/i, '');
+                const verTs = v.created_at || v.timestamp || resolvedDoc.updated_at || resolvedDoc.created_at || new Date().toISOString();
+                return {
+                  ...v,
+                  id: v.id || `parent-${resolvedDoc.id}-${verNum}-${idx}`,
+                  policy_id: v.policy_id || resolvedDoc.id,
+                  version: verNum,
+                  version_number: verNum,
+                  title: v.title || resolvedDoc.title,
+                  summary: v.summary || resolvedDoc.summary || '',
+                  content: v.content || resolvedDoc.content || '',
+                  sections: Array.isArray(v.sections) && v.sections.length > 0 ? v.sections : copySections,
+                  timestamp: verTs,
+                  created_at: verTs,
+                  author: v.changed_by || v.author || resolvedDoc.created_by || 'Policy Owner',
+                  changed_by: v.changed_by || v.author || resolvedDoc.created_by || 'Policy Owner',
+                  notes: v.change_summary || v.notes || `Parent baseline (${resolvedDoc.title})`,
+                  change_summary: v.change_summary || v.notes || `Parent baseline (${resolvedDoc.title})`,
+                  source: v.source || 'parent_policy',
+                  status_tag: v.status_tag || 'parent',
+                };
+              });
+
+              const fallbackParentBaseline = {
+                id: `parent-base-${resolvedDoc.id}`,
+                policy_id: resolvedDoc.id,
+                version: curVer,
+                version_number: curVer,
+                title: resolvedDoc.title,
+                summary: resolvedDoc.summary || '',
+                content: resolvedDoc.content || '',
+                sections: copySections,
+                timestamp: resolvedDoc.updated_at || resolvedDoc.created_at || new Date().toISOString(),
+                created_at: resolvedDoc.updated_at || resolvedDoc.created_at || new Date().toISOString(),
+                author: resolvedDoc.created_by || 'Policy Owner',
+                changed_by: resolvedDoc.created_by || 'Policy Owner',
+                notes: `Parent baseline (${resolvedDoc.title})`,
+                change_summary: `Parent baseline (${resolvedDoc.title})`,
+                source: 'parent_policy',
+                status_tag: 'parent',
+              };
+
+              const draftTemplateCopy = {
+                isTemplateCopy: true,
+                department_id: resolvedDoc.department_id || resolvedDoc.deptId || 'company-policies',
+                department_name: resolvedDoc.department_name || '',
+                title: resolvedDoc.title ? `${resolvedDoc.title} (Copy)` : 'Copied Operational Policy',
+                summary: resolvedDoc.summary || '',
+                content: resolvedDoc.content || '',
+                status: 'draft',
+                version: '1.0',
+                parameters: {
+                  ...srcParams,
+                  version: '1.0',
+                  copied_from: resolvedDoc.id,
+                  sections: copySections.map((s, idx) => ({
+                    ...s,
+                    id: `tpl-copy-sec-${idx + 1}-${Date.now()}`,
+                  })),
+                  versions: normalizedParentHistory.length > 0 ? normalizedParentHistory : [fallbackParentBaseline],
+                },
+                versions: normalizedParentHistory.length > 0 ? normalizedParentHistory : [fallbackParentBaseline],
+              };
+
+              setEditingPolicy(draftTemplateCopy);
+              setIsDraftEditing(false);
+              setPreselectedDept({
+                id: draftTemplateCopy.department_id,
+                name: draftTemplateCopy.department_name || ''
+              });
+              setAddPolicyInitialMode('direct');
+              setIsAddPolicyModalOpen(true);
+            }}
             onOpenConfigureModal={(doc) => {
-              const isDraft = Boolean(viewingDraft || doc?.status === 'draft');
+              const isDraft = Boolean(viewingDraft || doc?.status === 'draft' || doc?.status === 'pending_approval');
               if (isDraft) {
                 const target =
                   doc && (!viewingDraft || String(doc.id) === String(viewingDraft.id))
@@ -551,9 +797,9 @@ export default function Home({ initialView = 'policy' }) {
             onToggleMasking={handleTogglePolicyMasking}
             onOpenExportModal={() => setIsExportModalOpen(true)}
             refreshTrigger={refreshTrigger}
-            isDraftView={Boolean(viewingDraft || activePolicy?.status === 'draft')}
+            isDraftView={Boolean(viewingDraft || activePolicy?.status === 'draft' || activePolicy?.status === 'pending_approval')}
             onBackToChangeManagement={
-              (viewingDraft || activePolicy?.status === 'draft')
+              (viewingDraft || activePolicy?.status === 'draft' || activePolicy?.status === 'pending_approval')
                 ? () => {
                     setViewingDraft(null);
                     setIsDraftEditing(false);
@@ -586,11 +832,6 @@ export default function Home({ initialView = 'policy' }) {
               isCollapsed={!isRightOpen}
               width={rightWidth}
               refreshTrigger={refreshTrigger}
-              onOpenDraft={(draft) => {
-                setSelectedDraft(draft);
-                setEditingPolicy(draft);
-                setIsAddPolicyModalOpen(true);
-              }}
               onOpenMakerChecker={() => {
                 setActiveWorkspaceView('change_management');
                 setFocusedReviewItemId(null);
@@ -608,6 +849,7 @@ export default function Home({ initialView = 'policy' }) {
               activeWorkspaceView={activeWorkspaceView}
               onOpenDraft={(draft) => {
                 const fullPolicy = safeAllPolicies.find(p => p.id === draft.id) || draft;
+                setSelectedDraft(fullPolicy);
                 setEditingPolicy(fullPolicy);
                 setPreselectedDept({
                   id: fullPolicy.department_id || fullPolicy.deptId || null,
@@ -651,7 +893,8 @@ export default function Home({ initialView = 'policy' }) {
         isOpen={isAddPolicyModalOpen}
         onClose={() => {
           setIsAddPolicyModalOpen(false);
-          const wasDraft = editingPolicy?.status === 'draft';
+          setAddPolicyInitialMode('direct');
+          const wasDraft = editingPolicy?.status === 'draft' || editingPolicy?.status === 'pending_approval';
           setEditingPolicy(null);
           setIsDraftEditing(false);
           if (wasDraft) {
@@ -659,6 +902,8 @@ export default function Home({ initialView = 'policy' }) {
             setActiveWorkspaceView('change_management');
           }
         }}
+        initialCreationMode={addPolicyInitialMode}
+        masterPolicies={allPolicies}
         editingPolicy={editingPolicy}
         preselectedDepartmentId={preselectedDept.id}
         preselectedDepartmentName={preselectedDept.name}
@@ -666,13 +911,14 @@ export default function Home({ initialView = 'policy' }) {
         departments={departments}
         onPolicyCreated={(newPolicy) => {
           setEditingPolicy(null);
+          setAddPolicyInitialMode('direct');
           setIsDraftEditing(false);
           setRefreshTrigger(prev => prev + 1);
           setIsAddPolicyModalOpen(false);
           const pId = typeof newPolicy === 'string' ? newPolicy : (newPolicy && newPolicy.id);
           if (pId) {
             setSelectedPolicyId(pId);
-            if (newPolicy?.status !== 'draft') {
+            if (newPolicy?.status !== 'draft' && newPolicy?.status !== 'pending_approval') {
               setViewingDraft(null);
               setActiveWorkspaceView('policy');
             } else {

@@ -26,7 +26,12 @@ import {
   X,
   Check,
   Send,
-  BookmarkPlus
+  BookmarkPlus,
+  Eye,
+  Sliders,
+  RotateCcw,
+  MoreVertical,
+  Copy
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { apiService } from '../../services/apiService';
@@ -46,6 +51,8 @@ import FormattedPolicyContent from './FormattedPolicyContent';
 import RichSectionAccordion from './RichSectionAccordion';
 import CreateTaskDialog from '../task/CreateTaskDialog';
 import PolicyRightClickNotesOverlay from './PolicyRightClickNotesOverlay';
+import PolicyVersionHistoryModal from '../governance/PolicyVersionHistoryModal';
+import { combineAndDeduplicateVersions } from '../../utils/policyVersionHistory';
 export default function PolicyWorkspacePane({
   policy,
   currentUser,
@@ -61,6 +68,7 @@ export default function PolicyWorkspacePane({
   initialEditMode = false,
   onDraftSaved = null,
   noteNavTarget = null,
+  onOpenCopyTemplate = null,
 }) {
   const navigate = useNavigate();
   const { user: authUser } = useAuth();
@@ -82,6 +90,29 @@ export default function PolicyWorkspacePane({
   const [savedUserNoteToast, setSavedUserNoteToast] = useState(null);
   const [spotlightBanner, setSpotlightBanner] = useState(null);
   const [userPolicyNotes, setUserPolicyNotes] = useState([]);
+  const [localRefreshTick, setRefreshTrigger] = useState(0);
+  const [fetchedVersions, setFetchedVersions] = useState([]);
+  const [historyModalState, setHistoryModalState] = useState(null);
+  const [isCornerMenuOpen, setIsCornerMenuOpen] = useState(false);
+  const cornerMenuRef = useRef(null);
+
+  useEffect(() => {
+    if (!isCornerMenuOpen) return undefined;
+    const handleOutside = (event) => {
+      if (cornerMenuRef.current && !cornerMenuRef.current.contains(event.target)) {
+        setIsCornerMenuOpen(false);
+      }
+    };
+    const handleKey = (event) => {
+      if (event.key === 'Escape') setIsCornerMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [isCornerMenuOpen]);
 
   useEffect(() => {
     const syncNotes = (list) => {
@@ -264,7 +295,7 @@ export default function PolicyWorkspacePane({
         .map((s, idx) => `### ${s.title || `Section ${idx + 1}`}\n${s.content || ''}`)
         .join('\n\n');
 
-      await apiService.updatePolicy(activeDoc.id, {
+      const updateRes = await apiService.updatePolicy(activeDoc.id, {
         title: activeDoc.title,
         summary: activeDoc.summary,
         content: textContent,
@@ -274,18 +305,25 @@ export default function PolicyWorkspacePane({
         updated_by: currentUser?.name || 'Staff User'
       });
 
+      const savedDoc = updateRes?.policy?.id ? updateRes.policy : null;
+      const mergedUpdatedDoc = {
+        ...activeDoc,
+        ...(savedDoc || {}),
+        content: savedDoc?.content || textContent,
+        parameters: savedDoc?.parameters || updatedParams
+      };
+
       setDetailedPolicy(prev => ({
         ...prev,
-        content: textContent,
-        parameters: updatedParams
+        ...mergedUpdatedDoc
       }));
+      if (Array.isArray(savedDoc?.versions)) {
+        setFetchedVersions(savedDoc.versions);
+      }
+      setRefreshTrigger(t => t + 1);
 
       if (onDraftSaved) {
-        onDraftSaved({
-          ...activeDoc,
-          content: textContent,
-          parameters: updatedParams
-        });
+        onDraftSaved(mergedUpdatedDoc);
       }
     } catch (err) {
       console.error('Failed to save draft sections:', err);
@@ -295,8 +333,12 @@ export default function PolicyWorkspacePane({
     }
   };
 
-  const isBankOwner = currentUser?.roleType === 'manager' || currentUser?.roleType === 'admin';
-  const isEmployee = currentUser?.roleType === 'employee';
+  const isBankOwner =
+    currentUser?.roleType === 'manager' ||
+    currentUser?.roleType === 'admin' ||
+    currentUser?.roleType === 'owner' ||
+    /approver|administrator|owner|manager/i.test(currentUser?.role || '');
+  const isEmployee = !isBankOwner;
 
   // Immediately sync prop when available (lightweight data from sidebar click)
   useEffect(() => {
@@ -313,9 +355,19 @@ export default function PolicyWorkspacePane({
     const fetchDetails = async () => {
       setIsLoading(true);
       try {
-        const full = await apiService.getPolicyDetails(policy.id, currentUser?.roleType || 'employee');
-        if (!cancelled && full) {
-          setDetailedPolicy(full);
+        const [detailsRes, versionsRes] = await Promise.allSettled([
+          apiService.getPolicyDetails(policy.id, currentUser?.roleType || 'employee'),
+          apiService.getPolicyVersions(policy.id),
+        ]);
+        if (!cancelled) {
+          if (detailsRes.status === 'fulfilled' && detailsRes.value) {
+            setDetailedPolicy(detailsRes.value);
+          }
+          if (versionsRes.status === 'fulfilled' && Array.isArray(versionsRes.value)) {
+            setFetchedVersions(versionsRes.value);
+          } else {
+            setFetchedVersions([]);
+          }
         }
       } catch (err) {
         console.error('Failed to load policy details:', err);
@@ -326,7 +378,12 @@ export default function PolicyWorkspacePane({
     };
     fetchDetails();
     return () => { cancelled = true; };
-  }, [policy?.id, currentUser?.roleType, refreshTrigger]);
+  }, [policy?.id, currentUser?.roleType, refreshTrigger, localRefreshTick]);
+
+  const combinedVersions = useMemo(
+    () => combineAndDeduplicateVersions(activeDoc, fetchedVersions),
+    [activeDoc, fetchedVersions]
+  );
 
   // Handle incoming "Navigate" jump from Notes & Annotations to exact line / section / graph / image
   useEffect(() => {
@@ -666,7 +723,20 @@ export default function PolicyWorkspacePane({
           </div>
 
           {/* Direct Lifecycle Action Buttons */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Simple Copy Template Button: Opens Master Library & Template Choosing Library */}
+            {onOpenCopyTemplate && (
+              <button
+                type="button"
+                onClick={() => onOpenCopyTemplate(activeDoc)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-medium bg-white hover:bg-blue-50/70 text-[#0057B8] border border-slate-300 hover:border-[#0057B8] shadow-2xs transition cursor-pointer"
+                title="Open Master Library & choose a template to copy into a new draft"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>Copy Template</span>
+              </button>
+            )}
+
             {/* Configure Button (Controlled by canEditPolicy) */}
             {canEditPolicy ? (
               <button
@@ -675,7 +745,11 @@ export default function PolicyWorkspacePane({
                 title={isEmployee ? "Submit Proposed Amendments (Bank Employee)" : "Configure Clauses & Thresholds directly"}
               >
                 <FileEdit className="w-3.5 h-3.5" />
-                <span>{activeDoc.status === 'draft' || isDraftView ? "Edit Draft" : "Configure"}</span>
+                <span>
+                  {activeDoc.status === 'pending_approval'
+                    ? 'Edit Submission'
+                    : (activeDoc.status === 'draft' || isDraftView ? 'Edit Draft' : 'Configure')}
+                </span>
               </button>
             ) : (
               <div 
@@ -687,16 +761,28 @@ export default function PolicyWorkspacePane({
               </div>
             )}
 
-            {/* Draft Status Badge or [Active / Inactive] Toggle Button (Approver Only) */}
-            {activeDoc.status === 'draft' ? (
-              <div className="flex items-center gap-2">
-                {/* Draft badge */}
+            {/* Draft / Pending Approval Status Badge or [Active / Inactive] Toggle Button (Approver Only) */}
+            {(activeDoc.status === 'draft' || activeDoc.status === 'pending_approval') ? (
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Draft / Pending Approval badge */}
                 <div 
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-bold bg-amber-50 text-amber-800 border border-amber-300 shadow-2xs"
-                  title="Saved Draft - Not yet published as active policy"
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-bold border shadow-2xs ${
+                    activeDoc.status === 'pending_approval'
+                      ? 'bg-blue-50 text-[#0057B8] border-blue-300'
+                      : 'bg-amber-50 text-amber-800 border-amber-300'
+                  }`}
+                  title={
+                    activeDoc.status === 'pending_approval'
+                      ? 'Pending Manager / Approver Sign-off in In Review Queue'
+                      : 'Saved Draft - Not yet published as active policy'
+                  }
                 >
-                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-                  <span>Draft Policy</span>
+                  <span
+                    className={`w-2 h-2 rounded-full animate-pulse ${
+                      activeDoc.status === 'pending_approval' ? 'bg-[#0057B8]' : 'bg-amber-500'
+                    }`}
+                  ></span>
+                  <span>{activeDoc.status === 'pending_approval' ? 'Pending Approval' : 'Draft Policy'}</span>
                 </div>
                 {/* Publish button — Bank Administrator only (Blue) */}
                 {isBankOwner && (
@@ -705,6 +791,7 @@ export default function PolicyWorkspacePane({
                       try {
                         await apiService.publishDraft(activeDoc.id, currentUser?.name || 'Marcus Vance (Bank Administrator)');
                         setRefreshTrigger(t => t + 1);
+                        window.dispatchEvent(new CustomEvent('liblist:policy-created', { detail: { id: activeDoc.id, status: 'active' } }));
                         if (onToggleStatus) onToggleStatus(activeDoc.id, 'active');
                       } catch (err) {
                         console.error('Publish draft failed:', err);
@@ -719,7 +806,7 @@ export default function PolicyWorkspacePane({
                   </button>
                 )}
 
-                {/* Submit for Review button — Bank Employee (Blue) */}
+                {/* Submit / Update Review Submission button — Bank Employee (Blue) */}
                 {isEmployee && (
                   <button
                     onClick={async () => {
@@ -741,18 +828,19 @@ export default function PolicyWorkspacePane({
                             parameters: activeDoc.parameters
                           }
                         });
-                        alert(`Draft "${activeDoc.title}" submitted for review! It now appears in Maker-Checker queue.`);
+                        alert(`"${activeDoc.title}" submitted for review! It now appears in In Review Queue.`);
                         setRefreshTrigger(t => t + 1);
+                        window.dispatchEvent(new CustomEvent('liblist:maker-checker-updated'));
                       } catch (err) {
                         console.error('Failed to submit draft for review:', err);
                         alert('Failed to submit draft: ' + err.message);
                       }
                     }}
                     className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[13px] font-semibold bg-[#0057B8] hover:bg-[#004EA6] text-white shadow-2xs transition cursor-pointer"
-                    title="Submit this draft to Marcus Vance for approval"
+                    title="Submit or update this submission in In Review Queue"
                   >
                     <Send className="w-3.5 h-3.5" />
-                    <span>Submit for Review</span>
+                    <span>{activeDoc.status === 'pending_approval' ? 'Update Review' : 'Submit for Review'}</span>
                   </button>
                 )}
               </div>
@@ -783,6 +871,135 @@ export default function PolicyWorkspacePane({
                 </div>
               )
             )}
+
+            {/* Corner 3-Dot Menu for Checking Previous Versions */}
+            <div className="relative" ref={cornerMenuRef}>
+              <button
+                type="button"
+                onClick={() => setIsCornerMenuOpen((prev) => !prev)}
+                className={`p-2 rounded-lg border transition cursor-pointer flex items-center justify-center ${
+                  isCornerMenuOpen
+                    ? 'bg-blue-50 text-[#0057B8] border-[#0057B8] shadow-2xs'
+                    : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-300 shadow-2xs'
+                }`}
+                title="Previous versions & options"
+                aria-label="More options and previous versions"
+                aria-expanded={isCornerMenuOpen}
+              >
+                <MoreVertical className="w-4 h-4" />
+              </button>
+
+              {isCornerMenuOpen && (
+                <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl border border-slate-200 shadow-xl z-50 overflow-hidden animate-in fade-in duration-100">
+                  <div className="px-3.5 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <HistoryIcon className="w-3.5 h-3.5 text-[#0057B8]" />
+                      <span className="text-xs font-bold text-slate-800">Previous Versions</span>
+                      <span className="text-[10.5px] font-bold px-1.5 py-0.2 rounded-full bg-blue-100 text-[#0057B8]">
+                        {combinedVersions.length}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCornerMenuOpen(false);
+                        setHistoryModalState({
+                          policy: { ...activeDoc, versions: combinedVersions },
+                          initialMode: 'compare',
+                          initialSelectedVersion: null
+                        });
+                      }}
+                      className="text-[11px] font-bold text-[#0057B8] hover:underline cursor-pointer"
+                    >
+                      Compare
+                    </button>
+                  </div>
+
+                  <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 custom-scrollbar">
+                    {combinedVersions.length === 0 ? (
+                      <div className="px-3.5 py-4 text-xs text-slate-500 text-center">
+                        Only initial baseline version v{activeDoc.version || '1.0'} recorded.
+                      </div>
+                    ) : (
+                      combinedVersions.map((ver, vIdx) => {
+                        const isParentOrigin = ver.source === 'parent_policy' || ver.status_tag === 'parent';
+                        const isDraftOrigin = ver.source === 'draft_revision' || ver.status_tag === 'draft' || ver.source === 'draft';
+                        const originText = isParentOrigin
+                          ? 'Parent'
+                          : isDraftOrigin
+                            ? 'Draft'
+                            : 'Active';
+                        const originCls = isParentOrigin
+                          ? 'bg-slate-100 text-slate-700'
+                          : isDraftOrigin
+                            ? 'bg-amber-50 text-amber-800'
+                            : 'bg-emerald-50 text-emerald-700';
+
+                        return (
+                          <button
+                            key={ver.id || `${ver.version_number}-${vIdx}`}
+                            type="button"
+                            onClick={() => {
+                              setIsCornerMenuOpen(false);
+                              setHistoryModalState({
+                                policy: { ...activeDoc, versions: combinedVersions },
+                                initialMode: 'view',
+                                initialSelectedVersion: ver
+                              });
+                            }}
+                            className="w-full px-3.5 py-2.5 text-left hover:bg-blue-50/60 transition flex items-start justify-between gap-2 cursor-pointer"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-mono text-[11px] font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-800 border border-slate-200">
+                                  v{String(ver.version_number || ver.version || '1.0').replace(/^v/i, '')}
+                                </span>
+                                <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${originCls}`}>
+                                  {originText}
+                                </span>
+                                {vIdx === 0 && (
+                                  <span className="text-[10px] font-bold text-[#0057B8]">
+                                    • Current
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11.5px] font-medium text-slate-800 truncate mt-1">
+                                {ver.change_summary || ver.title || 'Policy snapshot'}
+                              </p>
+                              <p className="text-[10.5px] text-slate-400 mt-0.5 truncate">
+                                {ver.changed_by || 'Staff User'}
+                                {ver.created_at || ver.timestamp
+                                  ? ` • ${new Date(ver.created_at || ver.timestamp).toLocaleString()}`
+                                  : ''}
+                              </p>
+                            </div>
+                            <Eye className="w-3.5 h-3.5 text-slate-400 flex-shrink-0 mt-1" />
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  <div className="px-3.5 py-2 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCornerMenuOpen(false);
+                        setHistoryModalState({
+                          policy: { ...activeDoc, versions: combinedVersions },
+                          initialMode: 'timeline',
+                          initialSelectedVersion: null
+                        });
+                      }}
+                      className="w-full py-1.5 rounded-lg bg-[#0057B8] hover:bg-[#004EA6] text-white text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <HistoryIcon className="w-3.5 h-3.5" />
+                      <span>Open All Version History</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1726,38 +1943,161 @@ export default function PolicyWorkspacePane({
         <div
           data-note-anchor="version-timeline"
           data-section-title="Version Control Timeline"
-          className="p-5 rounded-xl border border-[#e5e7eb] bg-white space-y-2.5"
+          className="p-5 rounded-xl border border-[#e5e7eb] bg-white space-y-3"
         >
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h4 className="text-[12px] font-bold text-slate-700 flex items-center gap-1.5 uppercase tracking-wider">
               <HistoryIcon className="w-3.5 h-3.5 text-slate-500" />
               Version Control Timeline
             </h4>
-            <span className="text-[11.5px] text-slate-400">
-              {(activeDoc.versions || []).length} Recorded Revisions
-            </span>
+            <div className="flex items-center gap-2.5">
+              <span className="text-[11.5px] text-slate-400">
+                {combinedVersions.length} Recorded Revisions
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  setHistoryModalState({
+                    policy: { ...activeDoc, versions: combinedVersions },
+                    initialMode: 'compare',
+                    initialSelectedVersion: null
+                  })
+                }
+                className="px-2.5 py-1 rounded-lg border border-blue-200 bg-blue-50/60 hover:bg-blue-100/70 text-[#0057B8] text-[11.5px] font-bold transition flex items-center gap-1 cursor-pointer"
+                title="Compare revisions side-by-side and inspect full history"
+              >
+                <Sliders className="w-3 h-3" />
+                <span>Compare & Full History</span>
+              </button>
+            </div>
           </div>
 
           <div className="divide-y divide-slate-100 text-[12.5px]">
-            {(activeDoc.versions || []).length === 0 ? (
-              <p className="py-2 text-slate-400 text-xs">Initial baseline version 1.0 active.</p>
+            {combinedVersions.length === 0 ? (
+              <p className="py-2 text-slate-400 text-xs">
+                Initial baseline version {activeDoc.version || '1.0'} active.
+              </p>
             ) : (
-              (activeDoc.versions || []).map((ver) => (
-                <div key={ver.id || ver.version_number} className="py-2.5 flex items-start justify-between gap-4">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-bold text-slate-800 bg-slate-100 px-1.5 py-0.2 rounded border border-slate-200 text-[11px]">
-                        v{ver.version_number}
+              combinedVersions.map((ver, vIdx) => {
+                const isParentOrigin = ver.source === 'parent_policy' || ver.status_tag === 'parent';
+                const isDraftOrigin = ver.source === 'draft_revision' || ver.status_tag === 'draft' || ver.source === 'draft';
+                const originText = isParentOrigin
+                  ? 'Parent Policy'
+                  : isDraftOrigin
+                    ? 'Draft Revision'
+                    : 'Active Policy';
+                const originBadgeCls = isParentOrigin
+                  ? 'bg-slate-100 text-slate-700 border-slate-300'
+                  : isDraftOrigin
+                    ? 'bg-amber-50 text-amber-800 border-amber-200'
+                    : 'bg-emerald-50 text-emerald-800 border-emerald-200';
+                const isCurrentDraft = activeDoc.status === 'draft' || isDraftView;
+                const canRestoreRevision = isCurrentDraft || isBankOwner;
+
+                return (
+                  <div key={ver.id || `${ver.version_number}-${vIdx}`} className="py-3 flex flex-wrap items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono font-bold text-slate-800 bg-slate-100 px-1.5 py-0.2 rounded border border-slate-200 text-[11px]">
+                          v{String(ver.version_number || ver.version || '1.0').replace(/^v/i, '')}
+                        </span>
+                        <span className="font-semibold text-slate-800">{ver.changed_by || 'Staff User'}</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${originBadgeCls}`}>
+                          {originText}
+                        </span>
+                        {vIdx === 0 && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-[#0057B8] border border-blue-200">
+                            Latest
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-slate-600 mt-1 text-[12px]">{ver.change_summary || 'Policy revision snapshot'}</p>
+                      <span className="text-[11px] text-slate-400 mt-0.5 inline-block">
+                        {ver.created_at || ver.timestamp
+                          ? new Date(ver.created_at || ver.timestamp).toLocaleString()
+                          : ''}
                       </span>
-                      <span className="font-semibold text-slate-800">{ver.changed_by}</span>
                     </div>
-                    <p className="text-slate-600 mt-0.5 text-[12px]">{ver.change_summary}</p>
+
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setHistoryModalState({
+                            policy: { ...activeDoc, versions: combinedVersions },
+                            initialMode: 'view',
+                            initialSelectedVersion: ver
+                          })
+                        }
+                        className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
+                        title="View exact rendered snapshot for this revision"
+                      >
+                        <Eye className="w-3 h-3" />
+                        <span>View</span>
+                      </button>
+
+                      {canRestoreRevision && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (isCurrentDraft && onOpenConfigureModal) {
+                              const currentParams =
+                                typeof activeDoc.parameters === 'string'
+                                  ? (() => { try { return JSON.parse(activeDoc.parameters || '{}'); } catch { return {}; } })()
+                                  : (activeDoc.parameters || {});
+                              const restoredDraft = {
+                                ...activeDoc,
+                                title: ver.title || activeDoc.title,
+                                summary: ver.summary || activeDoc.summary,
+                                version: ver.version_number || ver.version,
+                                content: ver.content || activeDoc.content,
+                                parameters: {
+                                  ...currentParams,
+                                  version: ver.version_number || ver.version,
+                                  sections: ver.sections || currentParams.sections || []
+                                }
+                              };
+                              apiService
+                                .restorePolicyVersion(activeDoc.id, ver.id || ver.version_number, currentUser?.name)
+                                .catch(() => {});
+                              setDetailedPolicy(restoredDraft);
+                              setRefreshTrigger(t => t + 1);
+                              onOpenConfigureModal(restoredDraft);
+                              return;
+                            }
+
+                            if (!window.confirm(`Restore "${activeDoc.title}" to version v${ver.version_number}?`)) {
+                              return;
+                            }
+                            try {
+                              const res = await apiService.restorePolicyVersion(
+                                activeDoc.id,
+                                ver.id || ver.version_number,
+                                currentUser?.name || 'Authorized Officer'
+                              );
+                              const restoredDoc = res?.policy || res;
+                              if (restoredDoc?.id) {
+                                setDetailedPolicy(restoredDoc);
+                                if (Array.isArray(restoredDoc.versions)) {
+                                  setFetchedVersions(restoredDoc.versions);
+                                }
+                              }
+                              setRefreshTrigger(t => t + 1);
+                            } catch (err) {
+                              alert('Failed to restore version: ' + (err.message || 'Unknown error'));
+                            }
+                          }}
+                          className="px-2.5 py-1 rounded-lg border border-blue-200 bg-blue-50/60 hover:bg-blue-100 text-[#0057B8] text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
+                          title={isCurrentDraft ? 'Restore this revision and open editor' : 'Restore policy to this version'}
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span>{isCurrentDraft ? 'Restore & Edit' : 'Restore'}</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <span className="text-[11px] text-slate-400 whitespace-nowrap">
-                    {new Date(ver.created_at || Date.now()).toLocaleDateString()}
-                  </span>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
@@ -1930,6 +2270,37 @@ export default function PolicyWorkspacePane({
         onOpenNotesWorkspace={(saved) => navigate(`/notes/${encodeURIComponent(saved.id)}`)}
         spotlightBanner={spotlightBanner}
         onDismissSpotlight={() => setSpotlightBanner(null)}
+      />
+      {/* Version History Inspector Modal (for both Drafts & Policies) */}
+      <PolicyVersionHistoryModal
+        isOpen={Boolean(historyModalState?.policy)}
+        onClose={() => setHistoryModalState(null)}
+        policy={historyModalState?.policy}
+        currentUser={currentUser}
+        initialMode={historyModalState?.initialMode || 'timeline'}
+        initialSelectedVersion={historyModalState?.initialSelectedVersion || null}
+        onRestoreAndEdit={
+          onOpenConfigureModal
+            ? (restoredDraft) => {
+                setHistoryModalState(null);
+                setDetailedPolicy(restoredDraft);
+                setRefreshTrigger(t => t + 1);
+                onOpenConfigureModal(restoredDraft);
+              }
+            : null
+        }
+        onPolicyRestored={(restoredPolicy) => {
+          if (restoredPolicy?.id) {
+            setDetailedPolicy(restoredPolicy);
+            if (Array.isArray(restoredPolicy.versions)) {
+              setFetchedVersions(restoredPolicy.versions);
+            }
+          }
+          setRefreshTrigger(t => t + 1);
+          if (onDraftSaved && restoredPolicy?.id) {
+            onDraftSaved(restoredPolicy);
+          }
+        }}
       />
     </main>
   );

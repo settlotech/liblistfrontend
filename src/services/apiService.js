@@ -11,7 +11,9 @@ import {
   tasksApi,
   taskApi,
   authApi,
-  aiApi
+  aiApi,
+  policyChatApi,
+  privateChatApi
 } from './api/index';
 
 /**
@@ -91,7 +93,11 @@ export const apiService = {
   // 10. AI Document Ingestion & RAG
   ingestDocuments: aiApi.ingestDocuments,
   queryRag: aiApi.queryRag,
-  getVectors: aiApi.getVectors
+  getVectors: aiApi.getVectors,
+
+  // 11. Policy Chat, Commands & Private User/AI Chats
+  policyChatApi,
+  privateChatApi
 };
 
 export default apiService;

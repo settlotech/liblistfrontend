@@ -186,14 +186,24 @@ export default function Sidebar() {
             }
         };
 
+        const handleOpenMasterLibraryEvent = (e) => {
+            setCollapsed(false);
+            const targetDeptId = e?.detail?.departmentId;
+            if (targetDeptId) {
+                setExpandedDeptIds(prev => prev.includes(targetDeptId) ? prev : [...prev, targetDeptId]);
+            }
+        };
+
         window.addEventListener('liblist:select-policy', handleSelectPolicyEvent);
         window.addEventListener('liblist:policy-created', handlePolicyCreatedEvent);
         window.addEventListener('liblist:pinned-updated', handlePinnedUpdatedEvent);
+        window.addEventListener('liblist:open-master-library', handleOpenMasterLibraryEvent);
 
         return () => {
             window.removeEventListener('liblist:select-policy', handleSelectPolicyEvent);
             window.removeEventListener('liblist:policy-created', handlePolicyCreatedEvent);
             window.removeEventListener('liblist:pinned-updated', handlePinnedUpdatedEvent);
+            window.removeEventListener('liblist:open-master-library', handleOpenMasterLibraryEvent);
         };
     }, [loadData]);
 
@@ -562,6 +572,7 @@ export default function Sidebar() {
                     preselectedDepartmentId={preselectedDept.id}
                     preselectedDepartmentName={preselectedDept.name}
                     departments={departments}
+                    masterPolicies={masterPolicies}
                     currentUser={user}
                     onPolicyCreated={(newPolicy) => {
                         setIsAddPolicyModalOpen(false);

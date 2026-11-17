@@ -137,6 +137,12 @@ export const taskApi = {
         return apiFetch(`/tasks/${taskId}/logs`);
     },
 
+    async updateTaskStatus(taskId, payload = {}) {
+        const status = typeof payload === 'string' ? payload : payload?.status;
+        const comment = typeof payload === 'object' ? (payload?.comment || null) : null;
+        return this.updateStatus(taskId, status, comment);
+    },
+
     async addComment(taskId, comment) {
         return apiFetch(`/tasks/${taskId}/comments`, {
             method: 'POST',

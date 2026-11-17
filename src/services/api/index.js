@@ -11,6 +11,8 @@ import { taskApi } from './taskApi';
 import { authApi } from './authApi';
 import { aiApi } from './aiApi';
 import { documentManagementApi } from './documentManagementApi';
+import { policyChatApi } from './policyChatApi';
+import { privateChatApi } from './privateChatApi';
 
 export {
   API_BASE,
@@ -26,7 +28,9 @@ export {
   taskApi,
   authApi,
   aiApi,
-  documentManagementApi
+  documentManagementApi,
+  policyChatApi,
+  privateChatApi
 };
 
 export const api = {
@@ -40,7 +44,9 @@ export const api = {
   ...tasksApi,
   ...authApi,
   ...aiApi,
-  ...documentManagementApi
+  ...documentManagementApi,
+  policyChatApi,
+  privateChatApi
 };
 
 export default api;

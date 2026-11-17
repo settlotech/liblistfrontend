@@ -363,19 +363,17 @@ function cssFromPara(paraStyle) {
   return css.join(';');
 }
 
-export async function renderDocxToViewerHtml(arrayBuffer, fileName = 'Document.docx') {
+async function parseDocxPackage(arrayBuffer) {
   const entries = await extractZipEntries(arrayBuffer);
   const docXml = parseXml(entries['word/document.xml']);
-  if (!docXml) {
-    return null;
-  }
+  if (!docXml) return null;
 
   const stylesMap = parseStylesMap(parseXml(entries['word/styles.xml']));
   const numberingMap = parseNumberingMap(parseXml(entries['word/numbering.xml']));
   const relsMap = parseRelsMap(parseXml(entries['word/_rels/document.xml.rels']));
 
-  // Build media DataURLs
   const mediaDataUrls = {};
+  const mediaList = [];
   for (const [entryName, bytes] of Object.entries(entries)) {
     if (entryName.startsWith('word/media/')) {
       const ext = (entryName.split('.').pop() || '').toLowerCase();
@@ -387,7 +385,15 @@ export async function renderDocxToViewerHtml(arrayBuffer, fileName = 'Document.d
         ext === 'svg' ? 'image/svg+xml' :
         ext === 'bmp' ? 'image/bmp' :
         'application/octet-stream';
-      mediaDataUrls[entryName] = `data:${mime};base64,${uint8ToBase64(bytes)}`;
+      const dataUrl = `data:${mime};base64,${uint8ToBase64(bytes)}`;
+      mediaDataUrls[entryName] = dataUrl;
+      mediaList.push({
+        entryName,
+        name: entryName.replace('word/media/', ''),
+        mimeType: mime,
+        dataUrl,
+        size: bytes.length,
+      });
     }
   }
 
@@ -399,6 +405,297 @@ export async function renderDocxToViewerHtml(arrayBuffer, fileName = 'Document.d
     const key = norm.startsWith('word/') ? norm : `word/${norm}`;
     return mediaDataUrls[key] || '';
   };
+
+  const resolveRelKey = (rId) => {
+    const rel = relsMap[rId];
+    if (!rel) return '';
+    const norm = rel.target.replace(/^\/+/, '').replace(/^\.\.\//, '');
+    return norm.startsWith('word/') ? norm : `word/${norm}`;
+  };
+
+  return { entries, docXml, stylesMap, numberingMap, relsMap, mediaDataUrls, mediaList, resolveRelImage, resolveRelKey };
+}
+
+/**
+ * Extracts ordered paragraphs, headings, TipTap-compatible HTML tables, and placed images
+ * from a DOCX buffer so the right-side editor receives full tables & embedded images.
+ */
+export async function extractDocxStructuredContent(arrayBuffer) {
+  const pkg = await parseDocxPackage(arrayBuffer);
+  if (!pkg) return null;
+  const { docXml, stylesMap, numberingMap, mediaList, resolveRelImage, resolveRelKey } = pkg;
+  const body = findDescendant(docXml.documentElement, 'body');
+  if (!body) return null;
+
+  const listCounters = {};
+  const tables = [];
+  const images = [];
+  const placedMediaKeys = new Set();
+  const tokenizedBlocks = [];
+  const plainTextBlocks = [];
+
+  const registerImage = (src, altName = '', relKey = '') => {
+    if (!src) return null;
+    if (relKey) placedMediaKeys.add(relKey);
+    const index = images.length;
+    const token = `[[DOC_IMG_${index}]]`;
+    const name = altName || relKey.replace('word/media/', '') || `image-${index + 1}.png`;
+    const html = `<img src="${src}" data-alignment="center" data-width="75%" alt="${escapeHtml(name)}" />`;
+    images.push({
+      index,
+      name,
+      mimeType: (src.match(/^data:([^;]+);/) || [])[1] || 'image/png',
+      dataUrl: src,
+      token,
+      html,
+    });
+    return { index, token, html };
+  };
+
+  const collectParaPieces = (pNode, insideTable = false) => {
+    const pPr = firstChild(pNode, 'pPr');
+    const ownPara = parseParaProps(pPr);
+    const resolved = resolveStyleChain(ownPara.styleId, stylesMap);
+    const mergedPara = { ...resolved.para, ...ownPara };
+    const inheritedRun = { ...resolved.run };
+
+    const parts = [];
+    const plainParts = [];
+    const tokensOnly = [];
+
+    const walkRun = (rNode) => {
+      const ownRPr = parseRunProps(firstChild(rNode, 'rPr'));
+      const rStyleNode = findDescendant(firstChild(rNode, 'rPr'), 'rStyle');
+      const charInherited = rStyleNode ? resolveStyleChain(getAttr(rStyleNode, 'val'), stylesMap).run : {};
+      const mergedRun = { ...inheritedRun, ...charInherited, ...ownRPr };
+
+      let textHtml = '';
+      let rawText = '';
+
+      const flushRunText = () => {
+        if (!textHtml) return;
+        let formatted = textHtml;
+        if (mergedRun.bold) formatted = `<strong>${formatted}</strong>`;
+        if (mergedRun.italic) formatted = `<em>${formatted}</em>`;
+        if (mergedRun.underline) formatted = `<u>${formatted}</u>`;
+        if (mergedRun.strike) formatted = `<s>${formatted}</s>`;
+        parts.push(formatted);
+        plainParts.push(rawText);
+        textHtml = '';
+        rawText = '';
+      };
+
+      for (const child of rNode.children) {
+        const name = child.localName;
+        if (name === 't' || name === 'delText') {
+          const val = child.textContent || '';
+          textHtml += escapeHtml(val);
+          rawText += val;
+        } else if (name === 'tab') {
+          textHtml += ' ';
+          rawText += ' ';
+        } else if (name === 'br' || name === 'cr') {
+          textHtml += '<br />';
+          rawText += '\n';
+        } else if (name === 'drawing' || name === 'pict' || name === 'AlternateContent') {
+          const searchRoot = name === 'AlternateContent' ? (firstChild(child, 'Choice') || child) : child;
+          const blip = findDescendant(searchRoot, 'blip');
+          const imgData = findDescendant(searchRoot, 'imagedata');
+          const rId = blip ? getAttr(blip, 'embed') : imgData ? getAttr(imgData, 'id') : '';
+          const src = resolveRelImage(rId);
+          if (src) {
+            flushRunText();
+            const relKey = resolveRelKey(rId);
+            const docPr = findDescendant(searchRoot, 'docPr');
+            const altName = docPr ? (docPr.getAttribute('descr') || docPr.getAttribute('name') || '') : '';
+            const reg = registerImage(src, altName, relKey);
+            if (reg) {
+              parts.push({ isImage: true, html: reg.html, token: reg.token });
+              tokensOnly.push(reg.token);
+            }
+          }
+        }
+      }
+      flushRunText();
+    };
+
+    for (const child of pNode.children) {
+      if (child.localName === 'r') {
+        walkRun(child);
+      } else if (child.localName === 'hyperlink') {
+        for (const hr of child.children) {
+          if (hr.localName === 'r') walkRun(hr);
+        }
+      } else if (child.localName === 'sdt') {
+        const sdtContent = firstChild(child, 'sdtContent');
+        if (sdtContent) {
+          for (const sub of sdtContent.children) {
+            if (sub.localName === 'r') walkRun(sub);
+          }
+        }
+      }
+    }
+
+    const styleLower = String(resolved.name || ownPara.styleId || '').toLowerCase();
+    let tag = 'p';
+    if (!insideTable) {
+      if (styleLower.includes('heading 1') || styleLower === 'heading1' || styleLower === 'title') tag = 'h1';
+      else if (styleLower.includes('heading 2') || styleLower === 'heading2' || styleLower === 'subtitle') tag = 'h2';
+      else if (styleLower.includes('heading 3') || styleLower === 'heading3') tag = 'h3';
+      else if (styleLower.includes('heading 4') || styleLower === 'heading4') tag = 'h4';
+    }
+
+    let prefixText = '';
+    if (!insideTable && mergedPara.numId) {
+      const numDef = numberingMap[mergedPara.numId];
+      const ilvl = mergedPara.ilvl || 0;
+      const lvlCfg = numDef?.[ilvl] || { fmt: 'bullet' };
+      const counterKey = `${mergedPara.numId}:${ilvl}`;
+      listCounters[counterKey] = (listCounters[counterKey] || 0) + 1;
+      prefixText = lvlCfg.fmt === 'bullet' ? '- ' : `${listCounters[counterKey]}. `;
+    }
+
+    const alignStyle = mergedPara.align ? ` style="text-align:${mergedPara.align}"` : '';
+    const htmlBlocks = [];
+    let inlineBuf = '';
+
+    for (const piece of parts) {
+      if (typeof piece === 'string') {
+        inlineBuf += piece;
+      } else if (piece?.isImage) {
+        if (inlineBuf.trim()) {
+          htmlBlocks.push(`<${tag}${alignStyle}>${prefixText ? `${escapeHtml(prefixText)}` : ''}${inlineBuf.trim()}</${tag}>`);
+          inlineBuf = '';
+        }
+        htmlBlocks.push(piece.html);
+      }
+    }
+    if (inlineBuf.trim()) {
+      htmlBlocks.push(`<${tag}${alignStyle}>${prefixText ? `${escapeHtml(prefixText)}` : ''}${inlineBuf.trim()}</${tag}>`);
+    }
+
+    const plainText = `${prefixText}${plainParts.join('')}`.replace(/\s+/g, ' ').trim();
+    const tokenString = [plainText, ...tokensOnly].filter(Boolean).join('\n\n');
+
+    return {
+      tag,
+      plainText,
+      tokenString,
+      editorHtml: htmlBlocks.join('\n'),
+    };
+  };
+
+  const collectTable = (tblNode) => {
+    const trNodes = Array.from(tblNode.children).filter((c) => c.localName === 'tr');
+    const previewLines = [];
+    let rowsHtml = '';
+
+    trNodes.forEach((tr, rIdx) => {
+      const trPr = firstChild(tr, 'trPr');
+      const isHeaderRow = rIdx === 0 || Boolean(trPr && firstChild(trPr, 'tblHeader'));
+      const tcNodes = Array.from(tr.children).filter((c) => c.localName === 'tc');
+      let rowHtml = '';
+      const rowCellsText = [];
+
+      tcNodes.forEach((tc) => {
+        const tcPr = firstChild(tc, 'tcPr');
+        const gridSpan = tcPr ? firstChild(tcPr, 'gridSpan') : null;
+        const colspan = gridSpan ? Math.max(1, Number(getAttr(gridSpan, 'val')) || 1) : 1;
+        const shd = tcPr ? firstChild(tcPr, 'shd') : null;
+        const fill = shd ? getAttr(shd, 'fill') : '';
+        const bgAttr = fill && fill.toLowerCase() !== 'auto' && /^[0-9a-f]{6}$/i.test(fill)
+          ? ` data-bg-color="#${fill}"`
+          : '';
+
+        const cellTag = isHeaderRow ? 'th' : 'td';
+        const cellInnerParts = [];
+        const cellTextParts = [];
+
+        for (const sub of tc.children) {
+          if (sub.localName === 'p') {
+            const pRes = collectParaPieces(sub, true);
+            if (pRes.editorHtml) {
+              cellInnerParts.push(pRes.editorHtml.replace(/\n+/g, ''));
+            }
+            if (pRes.plainText) cellTextParts.push(pRes.plainText);
+          } else if (sub.localName === 'tbl') {
+            const nestedText = (sub.textContent || '').replace(/\s+/g, ' ').trim();
+            if (nestedText) {
+              cellInnerParts.push(`<p>${escapeHtml(nestedText)}</p>`);
+              cellTextParts.push(nestedText);
+            }
+          }
+        }
+
+        const innerHtml = cellInnerParts.length > 0 ? cellInnerParts.join('') : '<p></p>';
+        rowHtml += `<${cellTag}${colspan > 1 ? ` colspan="${colspan}"` : ''}${bgAttr}>${innerHtml}</${cellTag}>`;
+        rowCellsText.push(cellTextParts.join(' ').trim());
+      });
+
+      if (rowHtml) {
+        rowsHtml += `<tr>${rowHtml}</tr>`;
+        if (rowCellsText.some(Boolean)) {
+          previewLines.push(`| ${rowCellsText.join(' | ')} |`);
+        }
+      }
+    });
+
+    if (!rowsHtml) return null;
+    const html = `<table><tbody>${rowsHtml}</tbody></table>`;
+    const index = tables.length;
+    const token = `[[DOC_TABLE_${index}]]`;
+    const previewText = previewLines.join('\n');
+    tables.push({ index, token, html, previewText });
+    return { index, token, html, previewText };
+  };
+
+  const processBodyChild = (node) => {
+    if (node.localName === 'p') {
+      const res = collectParaPieces(node, false);
+      if (res.tokenString) {
+        tokenizedBlocks.push(res.tokenString);
+      }
+      if (res.plainText) {
+        plainTextBlocks.push(res.plainText);
+      }
+    } else if (node.localName === 'tbl') {
+      const tbl = collectTable(node);
+      if (tbl) {
+        tokenizedBlocks.push(tbl.token);
+        if (tbl.previewText) plainTextBlocks.push(tbl.previewText);
+      }
+    } else if (node.localName === 'sdt') {
+      const sdtContent = firstChild(node, 'sdtContent');
+      if (sdtContent) {
+        for (const sub of sdtContent.children) processBodyChild(sub);
+      }
+    }
+  };
+
+  for (const child of body.children) {
+    processBodyChild(child);
+  }
+
+  // Append any unreferenced media files extracted from word/media/
+  for (const m of mediaList) {
+    if (!placedMediaKeys.has(m.entryName)) {
+      const reg = registerImage(m.dataUrl, m.name, m.entryName);
+      if (reg) tokenizedBlocks.push(reg.token);
+    }
+  }
+
+  return {
+    tokenizedText: tokenizedBlocks.join('\n\n'),
+    plainText: plainTextBlocks.join('\n\n'),
+    tables,
+    images,
+  };
+}
+
+export async function renderDocxToViewerHtml(arrayBuffer, fileName = 'Document.docx') {
+  const pkg = await parseDocxPackage(arrayBuffer);
+  if (!pkg) return null;
+  const { entries, docXml, stylesMap, numberingMap, relsMap, resolveRelImage } = pkg;
 
   const listCounters = {};
 
@@ -424,13 +721,14 @@ export async function renderDocxToViewerHtml(arrayBuffer, fileName = 'Document.d
         }
       } else if (name === 'cr') {
         out += '<br/>';
-      } else if (name === 'drawing' || name === 'pict') {
-        const blip = findDescendant(child, 'blip');
-        const imgData = findDescendant(child, 'imagedata');
+      } else if (name === 'drawing' || name === 'pict' || name === 'AlternateContent') {
+        const searchRoot = name === 'AlternateContent' ? (firstChild(child, 'Choice') || child) : child;
+        const blip = findDescendant(searchRoot, 'blip');
+        const imgData = findDescendant(searchRoot, 'imagedata');
         const rId = blip ? getAttr(blip, 'embed') : imgData ? getAttr(imgData, 'id') : '';
         const src = resolveRelImage(rId);
         if (src) {
-          const extent = findDescendant(child, 'extent');
+          const extent = findDescendant(searchRoot, 'extent');
           const w = extent ? emuToPx(extent.getAttribute('cx')) : 0;
           const h = extent ? emuToPx(extent.getAttribute('cy')) : 0;
           const dimCss = w > 0
@@ -838,4 +1136,96 @@ export function buildPlainTextPageHtml(text = '', fileName = 'Document.txt') {
   <div class="page">${escapeHtml(text)}</div>
 </body>
 </html>`;
+}
+
+/**
+ * Hydrates [[DOC_TABLE_n]] and [[DOC_IMG_n]] markers in sections and guarantees any
+ * unplaced extracted tables/images appear inside the right-side editor sections without duplication.
+ */
+export function ensureRichAssetsInSections(sections = [], { tables = [], images = [] } = {}) {
+  if (!Array.isArray(sections) || sections.length === 0) return sections;
+  const safeTables = Array.isArray(tables) ? tables : [];
+  const safeImages = Array.isArray(images) ? images : [];
+  if (safeTables.length === 0 && safeImages.length === 0) return sections;
+
+  const placedTables = new Set();
+  const placedImages = new Set();
+
+  const updated = sections.map((sec) => {
+    let body = String(sec.content || '');
+    body = body.replace(/\[\[DOC_TABLE_(\d+)\]\]/g, (_, idxStr) => {
+      const idx = Number(idxStr);
+      const tbl = safeTables[idx];
+      if (tbl?.html) {
+        placedTables.add(idx);
+        return `\n\n${tbl.html}\n\n`;
+      }
+      return '';
+    });
+    body = body.replace(/\[\[DOC_IMG_(\d+)\]\]/g, (_, idxStr) => {
+      const idx = Number(idxStr);
+      const img = safeImages[idx];
+      if (img?.dataUrl) {
+        placedImages.add(idx);
+        const alt = escapeHtml(img.name || `Document Image ${idx + 1}`);
+        return `\n\n<img src="${img.dataUrl}" data-alignment="center" data-width="75%" alt="${alt}" />\n\n`;
+      }
+      return '';
+    });
+    return {
+      ...sec,
+      content: body.replace(/\n{3,}/g, '\n\n').trim(),
+    };
+  });
+
+  const combinedBodyText = updated.map((s) => String(s.content || '')).join('\n');
+  const existingTableCount = (combinedBodyText.match(/<table\b/gi) || []).length;
+
+  const findTargetIndex = (hint = '') => {
+    const lowerHint = String(hint || '').toLowerCase();
+    if (lowerHint) {
+      const hit = updated.findIndex((s) =>
+        String(s.title || '')
+          .toLowerCase()
+          .split(/[^a-z0-9]+/)
+          .filter((w) => w.length > 3)
+          .some((w) => lowerHint.includes(w))
+      );
+      if (hit >= 0) return hit;
+    }
+    const detailsIdx = updated.findIndex((s) => {
+      const t = String(s.title || '').toLowerCase();
+      return t.includes('detail') || t.includes('description') || t.includes('procedure');
+    });
+    if (detailsIdx >= 0) return detailsIdx;
+    const othersIdx = updated.findIndex((s) => String(s.title || '').toLowerCase() === 'others');
+    if (othersIdx >= 0) return othersIdx;
+    return 0;
+  };
+
+  if (existingTableCount < safeTables.length) {
+    safeTables.forEach((tbl, idx) => {
+      if (placedTables.has(idx) || !tbl?.html) return;
+      if (combinedBodyText.includes(tbl.html)) return;
+      const targetIdx = findTargetIndex(tbl.previewText || '');
+      updated[targetIdx] = {
+        ...updated[targetIdx],
+        content: [updated[targetIdx].content, tbl.html].filter(Boolean).join('\n\n').trim(),
+      };
+    });
+  }
+
+  safeImages.forEach((img, idx) => {
+    if (placedImages.has(idx) || !img?.dataUrl) return;
+    if (combinedBodyText.includes(img.dataUrl)) return;
+    const alt = escapeHtml(img.name || `Document Image ${idx + 1}`);
+    const imgHtml = `<img src="${img.dataUrl}" data-alignment="center" data-width="75%" alt="${alt}" />`;
+    const targetIdx = findTargetIndex(img.name || '');
+    updated[targetIdx] = {
+      ...updated[targetIdx],
+      content: [updated[targetIdx].content, imgHtml].filter(Boolean).join('\n\n').trim(),
+    };
+  });
+
+  return updated;
 }

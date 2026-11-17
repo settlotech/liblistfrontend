@@ -33,7 +33,8 @@ import {
   FilePlus2,
   PanelTop,
   ZoomIn,
-  ZoomOut
+  ZoomOut,
+  Copy
 } from 'lucide-react';
 import { apiService } from '../../../services/apiService';
 import MultiPageDocumentEditor from '../../../editor/MultiPageDocumentEditor';
@@ -42,6 +43,10 @@ import { normalizeRichHtml, htmlToPlainText } from '../../../utils/richContentCo
 import DocumentUploadHistorySection from '../../documents/DocumentUploadHistorySection';
 import BrowserDocumentViewer from '../../documents/BrowserDocumentViewer';
 import { uploadDocumentToCloudinary } from '../../../services/cloudinaryService';
+import {
+  extractDocxStructuredContent,
+  ensureRichAssetsInSections,
+} from '../../../utils/docxBrowserRenderer';
 
 import { POLICY_TEMPLATES } from './policyTemplates';
 export default function AddPolicyModal({
@@ -52,7 +57,9 @@ export default function AddPolicyModal({
   departments = [],
   currentUser,
   onPolicyCreated,
-  editingPolicy = null
+  editingPolicy = null,
+  initialCreationMode = 'direct',
+  masterPolicies = []
 }) {
   const navigate = useNavigate();
   // 3 Policy Creation Modes: 'direct' | 'library' | 'upload'
@@ -82,6 +89,8 @@ export default function AddPolicyModal({
   // Form Fields & Editing States
   const [departmentId, setDepartmentId] = useState(preselectedDepartmentId || departments[0]?.id || 'company-policies');
   const [editingDraftId, setEditingDraftId] = useState(null);
+  const [editingDraftVersion, setEditingDraftVersion] = useState('1.0');
+  const [editingDraftVersionsHistory, setEditingDraftVersionsHistory] = useState([]);
   const [title, setTitle] = useState('');
   const [summary, setSummary] = useState('Short description of the policy');
   const [content, setContent] = useState('');
@@ -92,19 +101,21 @@ export default function AddPolicyModal({
   const [uploadedPdfPreviewUrl, setUploadedPdfPreviewUrl] = useState(null);
   const [uploadedDocRawText, setUploadedDocRawText] = useState('');
   const [isTemplateEditorActive, setIsTemplateEditorActive] = useState(false);
-  const [selectedUploadTemplateId, setSelectedUploadTemplateId] = useState('template-standard-policy');
+  const [selectedUploadTemplateId, setSelectedUploadTemplateId] = useState('');
   const [extractedImages, setExtractedImages] = useState([]);
   const [activeSectionId, setActiveSectionId] = useState(null);
   const [complianceTags, setComplianceTags] = useState([]);
   const [newTagInput, setNewTagInput] = useState('');
   const [masterSearchQuery, setMasterSearchQuery] = useState('');
   const [selectedTemplateId, setSelectedTemplateId] = useState('template-standard-policy');
+  const [liveMasterPolicies, setLiveMasterPolicies] = useState([]);
+  const [selectedLibraryTemplateId, setSelectedLibraryTemplateId] = useState('template-standard-policy');
+  const [masterDeptFilter, setMasterDeptFilter] = useState('all');
+  const [copiedFromSourcePolicy, setCopiedFromSourcePolicy] = useState(null);
   const [ingestedDocuments, setIngestedDocuments] = useState([]);
   const [activeIngestedIndex, setActiveIngestedIndex] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const [showTemplatePickPrompt, setShowTemplatePickPrompt] = useState(false);
-  const [pendingFilesToIngest, setPendingFilesToIngest] = useState([]);
   const [showPageHeaderFooter, setShowPageHeaderFooter] = useState(true);
   const [pageMarginPreset, setPageMarginPreset] = useState('normal'); // 'normal' | 'narrow' | 'wide'
   const [editorZoomLevel, setEditorZoomLevel] = useState(100);
@@ -162,7 +173,7 @@ export default function AddPolicyModal({
     }
   ]);
 
-  // Fetch dynamic starter templates from DB whenever modal opens
+  // Fetch dynamic starter templates & active Master Library policies whenever modal opens
   useEffect(() => {
     if (isOpen) {
       apiService.getTemplates()
@@ -186,6 +197,14 @@ export default function AddPolicyModal({
           }
         })
         .catch((err) => console.warn('Could not load dynamic templates from DB:', err));
+
+      apiService.getPolicies({ status: 'active' })
+        .then((pols) => {
+          if (Array.isArray(pols)) {
+            setLiveMasterPolicies(pols.filter((p) => p && p.status === 'active'));
+          }
+        })
+        .catch(() => {});
     }
   }, [isOpen]);
 
@@ -217,6 +236,14 @@ export default function AddPolicyModal({
       const params = typeof pol.parameters === 'string'
         ? JSON.parse(pol.parameters || '{}')
         : (pol.parameters || {});
+      setEditingDraftVersion(String(pol.version || params.version || '1.0').replace(/^v/i, ''));
+      const initialHistory =
+        Array.isArray(pol.versions) && pol.versions.length > 0
+          ? pol.versions
+          : Array.isArray(params.versions)
+            ? params.versions
+            : [];
+      setEditingDraftVersionsHistory(initialHistory);
 
       setTurnaroundSla(params.turnaround_sla || pol.turnaroundSla || '4 Hours');
       setDailyLimit(params.daily_limit || pol.dailyLimit || '$25,000 AUD');
@@ -278,13 +305,28 @@ export default function AddPolicyModal({
           })
           .catch(() => {});
       }
+      if (editingPolicy.id && !String(editingPolicy.id).startsWith('draft-clone-')) {
+        apiService.getPolicyVersions(editingPolicy.id)
+          .then((vers) => {
+            if (!cancelled && Array.isArray(vers) && vers.length > 0) {
+              setEditingDraftVersionsHistory((prev) => (prev.length >= vers.length ? prev : vers));
+            }
+          })
+          .catch(() => {});
+      }
     } else {
       // Fresh policy creation flow - reset transient draft/upload states and initialize to Template 1
       const tpl = POLICY_TEMPLATES[0];
       setEditingDraftId(null);
-      setCreationMode('direct');
+      setEditingDraftVersion('1.0');
+      setEditingDraftVersionsHistory([]);
+      setCopiedFromSourcePolicy(null);
+      setCreationMode(initialCreationMode || 'direct');
+      setMasterDeptFilter('all');
+      setMasterSearchQuery('');
+      setSelectedLibraryTemplateId('template-standard-policy');
       setSelectedDirectTemplateId(tpl.id);
-      setSelectedUploadTemplateId('template-standard-policy');
+      setSelectedUploadTemplateId('');
       setTitle('');
       setContent('');
       setSummary(tpl.summary);
@@ -317,7 +359,7 @@ export default function AddPolicyModal({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, editingPolicy]);
+  }, [isOpen, editingPolicy, initialCreationMode]);
 
   // Keep uploaded document sections synced with any inline/fullscreen edits
   useEffect(() => {
@@ -685,42 +727,74 @@ export default function AddPolicyModal({
       const existingParams = typeof editingPolicy?.parameters === 'string'
         ? JSON.parse(editingPolicy.parameters || '{}')
         : (editingPolicy?.parameters || {});
-      const existingVersions = existingParams.versions || [];
-      const currentVerStr = editingPolicy?.version || existingParams.version || 'v1.0';
+      const paramVersions = Array.isArray(existingParams.versions) ? existingParams.versions : [];
+      const policyVersions = Array.isArray(editingPolicy?.versions) ? editingPolicy.versions : [];
+      const mergedPriorVersions = [];
+      const seenVerKeys = new Set();
+      [...editingDraftVersionsHistory, ...paramVersions, ...policyVersions].forEach((v) => {
+        if (!v) return;
+        const verNum = String(v.version_number || v.version || '').replace(/^v/i, '');
+        const key = `${v.source || ''}|${verNum}|${v.created_at || v.timestamp || ''}`;
+        if (!seenVerKeys.has(key)) {
+          seenVerKeys.add(key);
+          mergedPriorVersions.push(v);
+        }
+      });
+
+      const currentVerStr = editingDraftVersion || editingPolicy?.version || existingParams.version || '1.0';
       const numVer = parseFloat(String(currentVerStr).replace(/[^0-9.]/g, '')) || 1.0;
-      const nextVer = `${(numVer + 0.1).toFixed(1)}`;
+      const nextVer = editingDraftId ? `${(numVer + 0.1).toFixed(1)}` : '1.0';
+      const nowIso = new Date().toISOString();
 
       const newVersionSnapshot = {
+        id: `draft-rev-${nextVer}-${Date.now()}`,
         version: nextVer,
+        version_number: nextVer,
         version_author: currentUser?.name || 'Bank Staff',
         author: currentUser?.name || 'Bank Staff',
+        changed_by: currentUser?.name || 'Bank Staff',
         title: draftTitle,
         summary: summary.trim() || draftTitle,
         content: finalContent,
         sections: currentSections.map(s => ({ ...s })),
         turnaround_sla: turnaroundSla,
         daily_limit: dailyLimit,
-        timestamp: new Date().toISOString(),
-        notes: `Draft revision saved with ${currentSections.length} clauses (${turnaroundSla} SLA, ${dailyLimit} Daily Limit)`
+        timestamp: nowIso,
+        created_at: nowIso,
+        notes: editingDraftId
+          ? `Draft revision saved with ${currentSections.length} clauses (${turnaroundSla} SLA, ${dailyLimit} Daily Limit)`
+          : `Initial draft baseline created with ${currentSections.length} clauses`,
+        change_summary: editingDraftId
+          ? `Draft revision saved with ${currentSections.length} clauses (${turnaroundSla} SLA, ${dailyLimit} Daily Limit)`
+          : `Initial draft baseline created with ${currentSections.length} clauses`,
+        source: 'draft_revision',
+        status_tag: 'draft'
       };
 
       const baselineVersion = {
+        id: `draft-base-${editingDraftId || Date.now()}`,
         version: '1.0',
+        version_number: '1.0',
         version_author: editingPolicy?.created_by || currentUser?.name || 'Bank Staff',
         author: editingPolicy?.created_by || currentUser?.name || 'Bank Staff',
+        changed_by: editingPolicy?.created_by || currentUser?.name || 'Bank Staff',
         title: editingPolicy?.title || draftTitle,
         summary: editingPolicy?.summary || summary.trim() || draftTitle,
         content: editingPolicy?.content || finalContent,
         sections: (existingParams.sections || currentSections).map(s => ({ ...s })),
         turnaround_sla: existingParams.turnaround_sla || turnaroundSla,
         daily_limit: existingParams.daily_limit || dailyLimit,
-        timestamp: editingPolicy?.created_at || new Date().toISOString(),
-        notes: 'Initial draft baseline'
+        timestamp: editingPolicy?.created_at || nowIso,
+        created_at: editingPolicy?.created_at || nowIso,
+        notes: 'Initial draft baseline',
+        change_summary: 'Initial draft baseline',
+        source: 'draft_revision',
+        status_tag: 'draft'
       };
 
-      const allVersions = existingVersions.length > 0
-        ? [newVersionSnapshot, ...existingVersions]
-        : [newVersionSnapshot, baselineVersion];
+      const allVersions = mergedPriorVersions.length > 0
+        ? [newVersionSnapshot, ...mergedPriorVersions]
+        : (editingDraftId ? [newVersionSnapshot, baselineVersion] : [newVersionSnapshot]);
 
       const activeIngested = ingestedDocuments[activeIngestedIndex];
       const persistentSourceUrl =
@@ -734,6 +808,7 @@ export default function AddPolicyModal({
         content: finalContent,
         parameters: {
           ...existingParams,
+          ...(copiedFromSourcePolicy?.id && !existingParams.copied_from ? { copied_from: copiedFromSourcePolicy.id } : {}),
           turnaround_sla: turnaroundSla,
           daily_limit: dailyLimit,
           approval_limits: { officer_cap: officerCap },
@@ -745,9 +820,9 @@ export default function AddPolicyModal({
           version: nextVer,
           versions: allVersions
         },
-        created_by: currentUser?.name || 'Marcus Vance',
+        created_by: editingPolicy?.created_by || currentUser?.name || 'Marcus Vance',
         creation_mode: creationMode,
-        status: 'draft',
+        status: editingPolicy?.status === 'pending_approval' ? 'pending_approval' : 'draft',
         version: nextVer,
         user_role: currentUser?.roleType || 'employee',
         user_name: currentUser?.name || 'Marcus Vance'
@@ -769,6 +844,9 @@ export default function AddPolicyModal({
         savedPolicy = created?.policy || created || payload;
         if (savedPolicy?.id) setEditingDraftId(savedPolicy.id);
       }
+
+      setEditingDraftVersion(nextVer);
+      setEditingDraftVersionsHistory(Array.isArray(savedPolicy?.versions) ? savedPolicy.versions : allVersions);
 
       // Drafts belong exclusively in the policies table (status: 'draft') and are managed in Change Management.
       // They are not maker-checker approval requests until submitted for approval.
@@ -819,7 +897,7 @@ export default function AddPolicyModal({
       uploadedFileName ||
       (sections.length > 0 && sections.some(s => {
         const raw = s.content || '';
-        return Boolean(htmlToPlainText(raw).trim()) || /<img\b/i.test(raw);
+        return Boolean(htmlToPlainText(raw).trim()) || /<img\b/i.test(raw) || /<table\b/i.test(raw);
       }))
     );
 
@@ -1285,22 +1363,154 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
 
   const handleSelectTemplate = (template) => {
     if (!template) return;
+    setCopiedFromSourcePolicy(null);
     setSelectedTemplateId(template.id);
-    setTitle(template.title);
-    setSummary(template.summary);
-    setContent(template.content);
-    setTurnaroundSla(template.sla);
-    setOfficerCap(template.cap);
+    setTitle(template.title || template.name || 'Operational Policy');
+    setSummary(template.summary || '');
+    setContent(template.content || '');
+    setTurnaroundSla(template.sla || '4 Hours');
+    setOfficerCap(template.cap || '$100,000 AUD');
     setDailyLimit(template.daily || '$25,000 AUD');
     if (template.sections && template.sections.length > 0) {
-      setSections(template.sections);
+      setSections(template.sections.map((s, idx) => ({
+        ...s,
+        id: s.id || `tpl-sec-${idx + 1}-${Date.now()}`
+      })));
     }
-    if (template.dept) {
+    if (template.dept && !preselectedDepartmentId) {
       const match = departments.find(d => d.id === template.dept);
       if (match) {
         setDepartmentId(match.id);
       }
     }
+  };
+
+  // Copies a selected Master Library item or repository standard into the chosen Template structure
+  const handleCopyFromMasterLibrary = async (sourceItem, templateChoiceId = selectedLibraryTemplateId) => {
+    if (!sourceItem) return;
+    let resolvedSource = sourceItem;
+    if (sourceItem.id && !sourceItem.isBuiltInStandard && !Array.isArray(sourceItem.parameters?.sections)) {
+      try {
+        const full = await apiService.getPolicyDetails(sourceItem.id, currentUser?.roleType || 'employee');
+        if (full) resolvedSource = { ...sourceItem, ...full };
+      } catch (_) {}
+    }
+
+    const srcParams = typeof resolvedSource.parameters === 'string'
+      ? (() => { try { return JSON.parse(resolvedSource.parameters || '{}'); } catch { return {}; } })()
+      : (resolvedSource.parameters || {});
+
+    let sourceSections = [];
+    if (Array.isArray(resolvedSource.sections) && resolvedSource.sections.length > 0) {
+      sourceSections = resolvedSource.sections;
+    } else if (Array.isArray(srcParams.sections) && srcParams.sections.length > 0) {
+      sourceSections = srcParams.sections;
+    } else if (resolvedSource.content) {
+      const raw = String(resolvedSource.content);
+      const parts = raw.split(/(?=###\s+)/).filter((p) => p.trim());
+      sourceSections = parts.map((part, idx) => {
+        const m = part.match(/^###\s*(?:\d+\.?\s*)?(.*?)\n([\s\S]*)$/);
+        return {
+          id: `src-sec-${idx + 1}-${Date.now()}`,
+          title: m ? m[1].trim() : `Clause ${idx + 1}`,
+          content: m ? m[2].trim() : part.trim(),
+          type: 'section',
+        };
+      });
+    }
+
+    const allTemplateChoices = [
+      ...dynamicTemplates,
+      ...masterTemplates.filter((m) => !dynamicTemplates.some((d) => d.id === m.id)),
+    ];
+    const chosenTpl = templateChoiceId === 'keep-original'
+      ? null
+      : (allTemplateChoices.find((t) => t.id === templateChoiceId) || POLICY_TEMPLATES[0]);
+
+    let finalSections = sourceSections.map((s, idx) => ({
+      ...s,
+      id: `copy-sec-${idx + 1}-${Date.now()}`,
+      type: s.type || 'section',
+    }));
+
+    if (chosenTpl && Array.isArray(chosenTpl.sections) && chosenTpl.sections.length > 0 && sourceSections.length > 0) {
+      const unclaimed = new Set(sourceSections.map((_, i) => i));
+      const tplSections = chosenTpl.sections.map((tSec, tIdx) => {
+        const normT = (tSec.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const matchedIdx = sourceSections.findIndex((sSec, sIdx) => {
+          if (!unclaimed.has(sIdx)) return false;
+          const normS = (sSec.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          return normS === normT || normS.includes(normT) || normT.includes(normS);
+        });
+        if (matchedIdx >= 0) {
+          unclaimed.delete(matchedIdx);
+          return {
+            id: `copy-tpl-${tIdx + 1}-${Date.now()}`,
+            title: tSec.title,
+            content: sourceSections[matchedIdx].content || tSec.content || '',
+            type: 'section',
+            isTemplateSection: true,
+          };
+        }
+        return {
+          id: `copy-tpl-${tIdx + 1}-${Date.now()}`,
+          title: tSec.title,
+          content: tSec.content || '',
+          type: 'section',
+          isTemplateSection: true,
+        };
+      });
+
+      if (unclaimed.size > 0) {
+        const extraBlocks = Array.from(unclaimed).map((i) => {
+          const s = sourceSections[i];
+          return s.title ? `<h4>${s.title}</h4>\n${s.content || ''}` : (s.content || '');
+        }).filter(Boolean).join('\n\n');
+
+        const detailsIdx = tplSections.findIndex((s) => /detail|description|scope/i.test(s.title || ''));
+        if (detailsIdx >= 0) {
+          const isPlaceholder = /^(details of the policy|applicability of the policy)/i.test(tplSections[detailsIdx].content || '');
+          tplSections[detailsIdx] = {
+            ...tplSections[detailsIdx],
+            content: isPlaceholder ? extraBlocks : [tplSections[detailsIdx].content, extraBlocks].filter(Boolean).join('\n\n'),
+          };
+        } else {
+          tplSections.push({
+            id: `copy-extra-${Date.now()}`,
+            title: 'Additional Master Clauses',
+            content: extraBlocks,
+            type: 'section',
+            isCustom: true,
+          });
+        }
+      }
+      finalSections = tplSections;
+    } else if (chosenTpl && finalSections.length === 0) {
+      finalSections = (chosenTpl.sections || []).map((s, idx) => ({
+        ...s,
+        id: `copy-tpl-${idx + 1}-${Date.now()}`,
+      }));
+    }
+
+    setCopiedFromSourcePolicy(resolvedSource.isBuiltInStandard ? null : resolvedSource);
+    setSelectedTemplateId(resolvedSource.id || chosenTpl?.id || 'template-standard-policy');
+    setTitle(`${resolvedSource.title || 'Operational Policy'} (Copy)`);
+    setSummary(resolvedSource.summary || chosenTpl?.summary || '');
+    setContent(resolvedSource.content || '');
+    setTurnaroundSla(srcParams.turnaround_sla || resolvedSource.sla || chosenTpl?.sla || '4 Hours');
+    setDailyLimit(srcParams.daily_limit || resolvedSource.daily || chosenTpl?.daily || '$25,000 AUD');
+    setOfficerCap(srcParams.approval_limits?.officer_cap || resolvedSource.cap || chosenTpl?.cap || '$100,000 AUD');
+    if (Array.isArray(srcParams.extracted_images)) {
+      setExtractedImages(srcParams.extracted_images);
+    }
+    if (finalSections.length > 0) {
+      setSections(finalSections);
+    }
+    const targetDept = resolvedSource.department_id || resolvedSource.dept || preselectedDepartmentId;
+    if (targetDept && departments.some((d) => d.id === targetDept)) {
+      setDepartmentId(targetDept);
+    }
+    setIsTemplateEditorActive(true);
   };
 
   // Quick Load Demo for Option 3
@@ -1429,7 +1639,10 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
 
   // Apply Target Template to Extracted Document
   const handleApplyTemplateToExtractedDocument = (templateId) => {
-    const targetTpl = masterTemplates.find(t => t.id === templateId) || masterTemplates[0];
+    const targetTpl =
+      templateChoosingChoices.find(t => t.id === templateId) ||
+      masterTemplates.find(t => t.id === templateId) ||
+      masterTemplates[0];
     if (!targetTpl) return;
     setSelectedUploadTemplateId(targetTpl.id);
 
@@ -1510,7 +1723,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
       if (!claimed.has(pIdx)) unmapped.push(p);
     });
 
-    const newSections = targetTemplateSections.map((sec, idx) => {
+    const newSectionsRaw = targetTemplateSections.map((sec, idx) => {
       const secKey = sec.id || sec.title;
       const matched = sectionMap[secKey] || [];
       const content = matched.length > 0 ? matched.join('\n\n') : (sec.content || '');
@@ -1526,9 +1739,9 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
     });
 
     if (unmapped.length > 0) {
-      newSections.push({
+      newSectionsRaw.push({
         id: `sec-others-${Date.now()}`,
-        section_number: newSections.length + 1,
+        section_number: newSectionsRaw.length + 1,
         title: 'Others',
         type: 'section',
         content: unmapped.join('\n\n'),
@@ -1536,6 +1749,11 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
         isCustom: true
       });
     }
+
+    const newSections = ensureRichAssetsInSections(newSectionsRaw, {
+      tables: activeDoc?.tables || [],
+      images: (activeDoc?.images && activeDoc.images.length > 0) ? activeDoc.images : extractedImages,
+    });
 
     setSections(newSections);
 
@@ -1576,136 +1794,41 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
     }
 
     let localExtractedText = '';
+    const structuredByFile = [];
+    const collectedDocxImages = [];
 
-    if (files[0]) {
-      try {
-        if (files[0].type && (files[0].type.includes('text') || files[0].name.endsWith('.txt'))) {
-          const txt = await files[0].text();
-          localExtractedText = txt;
-          setUploadedDocRawText(txt);
-        } else if (files[0].name && files[0].name.toLowerCase().endsWith('.docx') && files[0].arrayBuffer) {
-          try {
-            const arrayBuf = await files[0].arrayBuffer();
-            const u8 = new Uint8Array(arrayBuf);
-            const view = new DataView(u8.buffer);
-            const filesInZip = {};
-            const dec = new TextDecoder();
-
-            let eocd = -1;
-            for (let i = u8.length - 22; i >= Math.max(0, u8.length - 65557); i--) {
-              if (view.getUint32(i, true) === 0x06054b50) {
-                eocd = i;
-                break;
+    for (let fIdx = 0; fIdx < files.length; fIdx++) {
+      const f = files[fIdx];
+      let fileStruct = { tokenizedText: '', plainText: '', tables: [], images: [] };
+      if (f) {
+        try {
+          if (f.type && (f.type.includes('text') || f.name?.endsWith('.txt'))) {
+            const txt = await f.text();
+            fileStruct.tokenizedText = txt;
+            fileStruct.plainText = txt;
+          } else if (f.name && f.name.toLowerCase().endsWith('.docx') && f.arrayBuffer) {
+            const arrayBuf = await f.arrayBuffer();
+            const parsedDocx = await extractDocxStructuredContent(arrayBuf);
+            if (parsedDocx) {
+              fileStruct = parsedDocx;
+              if (Array.isArray(parsedDocx.images) && parsedDocx.images.length > 0) {
+                collectedDocxImages.push(...parsedDocx.images);
               }
             }
-
-            if (eocd >= 0) {
-              const cdOffset = view.getUint32(eocd + 16, true);
-              const cdCount = view.getUint16(eocd + 10, true);
-              let cur = cdOffset;
-
-              for (let i = 0; i < cdCount && cur < u8.length - 46; i++) {
-                if (view.getUint32(cur, true) !== 0x02014b50) break;
-                const compMethod = view.getUint16(cur + 10, true);
-                const compSize = view.getUint32(cur + 20, true);
-                const nameLen = view.getUint16(cur + 28, true);
-                const extraLen = view.getUint16(cur + 30, true);
-                const commentLen = view.getUint16(cur + 32, true);
-                const localOffset = view.getUint32(cur + 42, true);
-
-                if (cur + 46 + nameLen <= u8.length) {
-                  const name = dec.decode(u8.subarray(cur + 46, cur + 46 + nameLen));
-
-                  if (localOffset + 30 <= u8.length && view.getUint32(localOffset, true) === 0x04034b50) {
-                    const localNameLen = view.getUint16(localOffset + 26, true);
-                    const localExtraLen = view.getUint16(localOffset + 28, true);
-                    const dataStart = localOffset + 30 + localNameLen + localExtraLen;
-
-                    if (compSize > 0 && dataStart + compSize <= u8.length) {
-                      const compData = u8.subarray(dataStart, dataStart + compSize);
-
-                      if (compMethod === 0) {
-                        filesInZip[name] = compData;
-                      } else if (compMethod === 8 && typeof DecompressionStream !== 'undefined') {
-                        try {
-                          const ds = new DecompressionStream('deflate-raw');
-                          const writer = ds.writable.getWriter();
-                          const reader = ds.readable.getReader();
-                          
-                          const writePromise = writer.write(compData).then(() => writer.close()).catch(() => {});
-                          const chunks = [];
-                          while (true) {
-                            const { done, value } = await reader.read();
-                            if (done) break;
-                            if (value) chunks.push(value);
-                          }
-                          await writePromise;
-
-                          const totalLen = chunks.reduce((acc, c) => acc + c.length, 0);
-                          const decomp = new Uint8Array(totalLen);
-                          let off = 0;
-                          for (const c of chunks) {
-                            decomp.set(c, off);
-                            off += c.length;
-                          }
-                          filesInZip[name] = decomp;
-                        } catch (decompErr) {
-                          console.warn('Decompression notice for ' + name, decompErr);
-                        }
-                      }
-                    }
-                  }
-                }
-                cur += 46 + nameLen + extraLen + commentLen;
-              }
-            }
-
-            if (filesInZip['word/document.xml']) {
-              const xml = dec.decode(filesInZip['word/document.xml']);
-              const decodeXmlEntities = (str) => str
-                .replace(/&amp;/g, '&')
-                .replace(/&lt;/g, '<')
-                .replace(/&gt;/g, '>')
-                .replace(/&quot;/g, '"')
-                .replace(/&apos;/g, "'")
-                .replace(/&#39;/g, "'")
-                .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
-                .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
-              const paras = xml.match(/<w:p[\s>][\s\S]*?<\/w:p>/g) || [];
-              const extractedDocxText = paras.map(p => {
-                const texts = (p.match(/<w:t[\s>][\s\S]*?<\/w:t>/g) || []).map(t => decodeXmlEntities(t.replace(/<[^>]+>/g, '')));
-                return texts.join('');
-              }).filter(t => t.trim().length > 0).join('\n\n');
-              localExtractedText = extractedDocxText;
-              setUploadedDocRawText(extractedDocxText);
-            }
-
-            const docxImages = [];
-            for (const [name, data] of Object.entries(filesInZip)) {
-              if (name.startsWith('word/media/')) {
-                const ext = name.split('.').pop().toLowerCase();
-                const mime = ext === 'png' ? 'image/png' : (ext === 'jpg' || ext === 'jpeg') ? 'image/jpeg' : ext === 'gif' ? 'image/gif' : ext === 'svg' ? 'image/svg+xml' : 'application/octet-stream';
-                let binary = '';
-                for (let b = 0; b < data.length; b++) {
-                  binary += String.fromCharCode(data[b]);
-                }
-                const b64 = btoa(binary);
-                docxImages.push({
-                  name: name.replace('word/media/', ''),
-                  mimeType: mime,
-                  dataUrl: `data:${mime};base64,${b64}`,
-                  size: data.length
-                });
-              }
-            }
-            if (docxImages.length > 0) {
-              setExtractedImages(docxImages);
-            }
-          } catch (docxErr) {
-            console.warn('Non-fatal docx parse notice:', docxErr);
           }
+        } catch (docxErr) {
+          console.warn('Non-fatal docx structured parse notice:', docxErr);
         }
-      } catch (_) {}
+      }
+      structuredByFile.push(fileStruct);
+    }
+
+    if (structuredByFile[0]?.tokenizedText) {
+      localExtractedText = structuredByFile[0].tokenizedText;
+      setUploadedDocRawText(localExtractedText);
+    }
+    if (collectedDocxImages.length > 0) {
+      setExtractedImages(collectedDocxImages);
     }
 
     // Automatically upload each document to Cloudinary CDN and capture stored URL
@@ -1715,7 +1838,10 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
           userId: currentUser?.id || null,
           userName: currentUser?.name || null,
           templateId: templateToUse,
-          templateName: masterTemplates.find(t => t.id === templateToUse)?.name || 'Standard Policy Template'
+          templateName:
+            templateChoosingChoices.find(t => t.id === templateToUse)?.name ||
+            masterTemplates.find(t => t.id === templateToUse)?.name ||
+            'Standard Policy Template'
         })
           .then((cloudRec) => {
             const remoteUrl = cloudRec?.secureUrl || cloudRec?.url || '';
@@ -1733,7 +1859,9 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
     setAiStep(`1/3: Reading ${files.length} document(s)...`);
 
     try {
-      const selectedTplObj = masterTemplates.find(t => t.id === templateToUse);
+      const selectedTplObj =
+        templateChoosingChoices.find(t => t.id === templateToUse) ||
+        masterTemplates.find(t => t.id === templateToUse);
       const formData = new FormData();
       formData.append('department_id', departmentId || preselectedDepartmentId || 'company-policies');
       formData.append('user_role', currentUser?.roleType || 'employee');
@@ -1747,6 +1875,12 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
       } else if (uploadedDocRawText && uploadedDocRawText.trim().length > 20) {
         formData.append('raw_text', uploadedDocRawText.trim());
       }
+      if (structuredByFile[0]?.tables?.length > 0) {
+        formData.append('rich_tables', JSON.stringify(structuredByFile[0].tables));
+      }
+      if (structuredByFile[0]?.images?.length > 0) {
+        formData.append('rich_images', JSON.stringify(structuredByFile[0].images));
+      }
 
       for (const file of files) {
         if (!file.isHistoryDoc) {
@@ -1754,7 +1888,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
         }
       }
 
-      setAiStep(`2/3: Structuring document(s) into template clauses...`);
+      setAiStep(`2/3: Structuring document(s), tables & images into template clauses...`);
 
       const res = await apiService.ingestDocuments(formData);
       const docList = (res && res.documents && Array.isArray(res.documents))
@@ -1765,26 +1899,38 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
         setAiStep(`3/3: Finalizing document sections...`);
 
         const sanitizedDocs = docList.map((doc, dIdx) => {
-          if (doc.images && Array.isArray(doc.images) && doc.images.length > 0) {
+          const localStruct = structuredByFile[dIdx] || { tables: [], images: [] };
+          const resolvedTables = (Array.isArray(doc.tables) && doc.tables.length > 0) ? doc.tables : (localStruct.tables || []);
+          const resolvedImages = (Array.isArray(doc.images) && doc.images.length > 0) ? doc.images : (localStruct.images || []);
+
+          if (resolvedImages.length > 0) {
             setExtractedImages(prev => {
-              const existingNames = new Set(prev.map(p => p.name));
-              const newImgs = doc.images.filter(im => !existingNames.has(im.name));
+              const existingNames = new Set(prev.map(p => p.name || p.dataUrl?.slice(0, 48)));
+              const newImgs = resolvedImages.filter(im => !existingNames.has(im.name || im.dataUrl?.slice(0, 48)));
               return [...prev, ...newImgs];
             });
           }
           const meta = localFilesMeta[dIdx] || {};
+          const rawDocSections = (doc.sections || []).map((s, idx) => ({
+            ...s,
+            id: s.id || `sec-${idx + 1}-${Date.now()}`
+          }));
+          const hydratedSections = ensureRichAssetsInSections(rawDocSections, {
+            tables: resolvedTables,
+            images: resolvedImages,
+          });
+
           return {
             ...doc,
             document_name: doc.document_name || files[dIdx]?.name || `Document ${dIdx + 1}`,
             title: doc.title || files[dIdx]?.name || 'Operational Policy',
-            raw_text: doc.raw_text || (dIdx === 0 ? localExtractedText : '') || '',
+            raw_text: doc.raw_text || localStruct.tokenizedText || (dIdx === 0 ? localExtractedText : '') || '',
             file_obj: meta.fileObj || null,
             local_preview_url: meta.localUrl || '',
             cloud_url: meta.cloudUrl || doc.cloud_url || doc.file_url || '',
-            sections: (doc.sections || []).map((s, idx) => ({
-              ...s,
-              id: s.id || `sec-${idx + 1}-${Date.now()}`
-            }))
+            tables: resolvedTables,
+            images: resolvedImages,
+            sections: hydratedSections
           };
         });
 
@@ -1812,14 +1958,18 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
       }
     } catch (err) {
       console.warn('Backend ingestion notice, applying client template-driven segmentation fallback:', err);
-      const targetTpl = masterTemplates.find(t => t.id === templateToUse) || masterTemplates[0];
+      const targetTpl =
+        templateChoosingChoices.find(t => t.id === templateToUse) ||
+        masterTemplates.find(t => t.id === templateToUse) ||
+        masterTemplates[0];
       const targetSections = targetTpl.sections || POLICY_TEMPLATES[0].sections;
 
       const parsedDocs = [];
       for (let fIdx = 0; fIdx < files.length; fIdx++) {
         const file = files[fIdx];
         const meta = localFilesMeta[fIdx] || {};
-        const textToSplit = localExtractedText || uploadedDocRawText || '';
+        const localStruct = structuredByFile[fIdx] || { tokenizedText: '', tables: [], images: [] };
+        const textToSplit = localStruct.tokenizedText || (fIdx === 0 ? (localExtractedText || uploadedDocRawText) : '') || '';
         const rawParas = textToSplit.split(/\r?\n\r?\n+/).map(p => p.trim()).filter(Boolean);
         const cleanBase = (file.name || 'document').replace(/\.[^/.]+$/, "").replace(/[-_]/g, ' ');
         const docTitle = cleanBase.charAt(0).toUpperCase() + cleanBase.slice(1) + ' Operational Policy';
@@ -1848,7 +1998,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
           if (!claimedIndices.has(pIdx)) unmapped.push(p);
         });
 
-        const finalSecs = targetSections.map((sec, idx) => {
+        const baseSecs = targetSections.map((sec, idx) => {
           const secKey = sec.id || sec.title;
           const list = sectionMap[secKey] || [];
           const content = list.length > 0 ? list.join('\n\n') : (sec.content || `Operational clauses for ${sec.title}.`);
@@ -1864,9 +2014,9 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
         });
 
         if (unmapped.length > 0) {
-          finalSecs.push({
+          baseSecs.push({
             id: `sec-others-${Date.now()}`,
-            section_number: finalSecs.length + 1,
+            section_number: baseSecs.length + 1,
             title: 'Others',
             type: 'section',
             content: unmapped.join('\n\n'),
@@ -1874,6 +2024,11 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
             isCustom: true
           });
         }
+
+        const finalSecs = ensureRichAssetsInSections(baseSecs, {
+          tables: localStruct.tables || [],
+          images: (localStruct.images && localStruct.images.length > 0) ? localStruct.images : collectedDocxImages,
+        });
 
         parsedDocs.push({
           document_name: file.name,
@@ -1902,7 +2057,8 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
             }
           ],
           sections: finalSecs,
-          images: extractedImages || []
+          tables: localStruct.tables || [],
+          images: (localStruct.images && localStruct.images.length > 0) ? localStruct.images : collectedDocxImages
         });
       }
 
@@ -1924,12 +2080,12 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
     }
   };
 
-  // Upload handler asking for template confirmation
+  // Direct upload handler (template is already selected in Step 1 before choosing the file)
   const handleUploadMultipleDocumentsWithAi = (e) => {
     const files = Array.from(e.target.files || []);
     if (!files || files.length === 0) return;
-    setPendingFilesToIngest(files);
-    setShowTemplatePickPrompt(true);
+    const tplId = selectedUploadTemplateId || templateChoosingChoices[0]?.id || 'template-standard-policy';
+    executeDocumentIngestion(files, tplId);
     e.target.value = '';
   };
 
@@ -1955,8 +2111,11 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
       }]);
       setActiveIngestedIndex(0);
     } else {
-      setPendingFilesToIngest([{ name: historyDoc.name, url: historyDoc.url || historyDoc.secureUrl, isHistoryDoc: true }]);
-      setShowTemplatePickPrompt(true);
+      const tplId = historyDoc.templateId || selectedUploadTemplateId || templateChoosingChoices[0]?.id || 'template-standard-policy';
+      executeDocumentIngestion(
+        [{ name: historyDoc.name, url: historyDoc.url || historyDoc.secureUrl, isHistoryDoc: true }],
+        tplId
+      );
     }
   };
 
@@ -1997,6 +2156,9 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
     setComplianceTags(doc.compliance_tags || ['APRA APS 220', 'Independent Valuers', 'LVR Limits']);
     if (doc.sections && doc.sections.length > 0) {
       setSections(doc.sections);
+    }
+    if (Array.isArray(doc.images)) {
+      setExtractedImages(doc.images);
     }
     if (doc.suggested_department && departments.some(d => d.id === doc.suggested_department)) {
       setDepartmentId(doc.suggested_department);
@@ -2241,14 +2403,62 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
     }
   };
 
-  const filteredMasterTemplates = masterTemplates.filter(t => 
-    t.title.toLowerCase().includes(masterSearchQuery.toLowerCase()) ||
-    t.summary.toLowerCase().includes(masterSearchQuery.toLowerCase()) ||
-    (t.deptName && t.deptName.toLowerCase().includes(masterSearchQuery.toLowerCase())) ||
-    t.dept.toLowerCase().includes(masterSearchQuery.toLowerCase())
-  );
+  const templateChoosingChoices = [
+    ...dynamicTemplates,
+    ...masterTemplates.filter(
+      (m) =>
+        !dynamicTemplates.some(
+          (d) =>
+            d.id === m.id ||
+            (m.id === 'template-standard-policy' && d.id === 'template-01-pdf')
+        )
+    ),
+  ];
 
-  const selectedTemplate = masterTemplates.find(t => t.id === selectedTemplateId) || masterTemplates[0];
+  const allMasterLibraryItems = (() => {
+    const items = [];
+    const seenIds = new Set();
+    const mergedLive = [
+      ...(Array.isArray(masterPolicies) ? masterPolicies : []),
+      ...(Array.isArray(liveMasterPolicies) ? liveMasterPolicies : []),
+    ];
+    mergedLive.forEach((p) => {
+      if (!p || p.status !== 'active' || seenIds.has(String(p.id))) return;
+      seenIds.add(String(p.id));
+      const deptObj = departments.find((d) => d.id === p.department_id);
+      items.push({
+        ...p,
+        dept: p.department_id || 'company-policies',
+        deptName: p.department_name || deptObj?.name || p.department_id || 'Master Library',
+        isBuiltInStandard: false,
+      });
+    });
+    masterTemplates.forEach((t) => {
+      if (seenIds.has(String(t.id))) return;
+      seenIds.add(String(t.id));
+      items.push({
+        ...t,
+        isBuiltInStandard: true,
+      });
+    });
+    return items;
+  })();
+
+  const filteredMasterTemplates = allMasterLibraryItems.filter((t) => {
+    const deptKey = t.department_id || t.dept || '';
+    const matchesDept = masterDeptFilter === 'all' || deptKey === masterDeptFilter;
+    const q = masterSearchQuery.toLowerCase().trim();
+    if (!q) return matchesDept;
+    return (
+      matchesDept &&
+      ((t.title || '').toLowerCase().includes(q) ||
+        (t.summary || '').toLowerCase().includes(q) ||
+        (t.deptName && t.deptName.toLowerCase().includes(q)) ||
+        deptKey.toLowerCase().includes(q))
+    );
+  });
+
+  const selectedTemplate = allMasterLibraryItems.find(t => t.id === selectedTemplateId) || masterTemplates[0];
 
   if (!isOpen) return null;
 
@@ -2267,7 +2477,10 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
               <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
                 {editingPolicy ? (
                   <>
-                    <span>Edit Draft: {editingPolicy.title || title || 'Operational Policy'}</span>
+                    <span>
+                      {editingPolicy.isTemplateCopy ? 'Copy Template to Draft:' : 'Edit Draft:'}{' '}
+                      {title || editingPolicy.title || 'Operational Policy'}
+                    </span>
                     <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-blue-100 text-[#0057B8] border border-blue-200">
                       {editingPolicy.version || 'v1.0'}
                     </span>
@@ -2278,7 +2491,13 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
               </h2>
               {editingPolicy && (
                 <p className="text-xs text-slate-500">
-                  Target Department: <span className="font-semibold text-slate-700">{editingPolicy.department_name || preselectedDepartmentName || 'Credit Cards'}</span>
+                  Target Department:{' '}
+                  <span className="font-semibold text-slate-700">
+                    {departments.find((d) => d.id === departmentId)?.name ||
+                      editingPolicy.department_name ||
+                      preselectedDepartmentName ||
+                      'Credit Cards'}
+                  </span>
                 </p>
               )}
             </div>
@@ -2312,8 +2531,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
             type="button"
             onClick={() => {
               setCreationMode('library');
-              const currentTpl = masterTemplates.find(t => t.id === selectedTemplateId) || masterTemplates[0];
-              handleSelectTemplate(currentTpl);
+              setIsTemplateEditorActive(false);
             }}
             className={`py-2 px-3 rounded-lg flex items-center justify-center gap-2 font-medium transition cursor-pointer ${
               creationMode === 'library'
@@ -2353,19 +2571,52 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
           {/* DIRECT DRAFT / CONFIGURED EDITING MODE (Immediate access to modular sections, no mode/template clutter) */}
           {editingPolicy ? (
             <div className="space-y-4 animate-in fade-in duration-150">
-              {/* Document Title */}
-              <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs space-y-1.5">
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                  Policy Document Title
-                </label>
-                <input
-                  type="text"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Credit Assessment & Approval Guidelines"
-                  required
-                  className="w-full p-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-[14px] bg-white font-bold text-slate-900 shadow-2xs"
-                />
+              {/* Document Title & Metadata */}
+              <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Policy Document Title
+                  </label>
+                  <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="e.g. Credit Assessment & Approval Guidelines"
+                    required
+                    className="w-full p-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-[14px] bg-white font-bold text-slate-900 shadow-2xs"
+                  />
+                </div>
+
+                {editingPolicy.isTemplateCopy && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        Target Department Partition
+                      </label>
+                      <select
+                        value={departmentId}
+                        onChange={(e) => setDepartmentId(e.target.value)}
+                        className="w-full p-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-xs bg-white font-medium text-slate-900 shadow-2xs"
+                      >
+                        {departments.map((d) => (
+                          <option key={d.id} value={d.id}>{d.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        Executive Summary
+                      </label>
+                      <input
+                        type="text"
+                        value={summary}
+                        onChange={(e) => setSummary(e.target.value)}
+                        placeholder="Short description of the policy..."
+                        className="w-full p-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-xs bg-white text-slate-800 shadow-2xs"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Directly Render Modular Sections with Word Action Toolbar */}
@@ -2794,65 +3045,149 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
             </div>
           )}
 
-          {/* MODE 2: MASTER LIBRARY */}
+          {/* MODE 2: MASTER LIBRARY & TEMPLATE CHOOSING LIBRARY */}
           {creationMode === 'library' && (
             <div className="space-y-4 animate-in fade-in duration-150">
               {!isTemplateEditorActive ? (
                 <>
-                  {/* Target Department Partition for adopted policy */}
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                      Target Department Partition
-                    </label>
-                    <select
-                      value={departmentId}
-                      onChange={(e) => setDepartmentId(e.target.value)}
-                      className="w-full p-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/15 text-[13px] bg-white font-medium text-slate-900 shadow-2xs"
-                    >
-                      {departments.map(d => (
-                        <option key={d.id} value={d.id}>{d.name}</option>
-                      ))}
-                    </select>
-                    <span className="text-[11px] text-slate-500 mt-1 block">
-                      Select which department library this master standard will be adopted into.
-                    </span>
+                  {/* Step 1: Template Choosing Library */}
+                  <div className="p-3.5 rounded-2xl bg-white border border-blue-200/80 shadow-2xs space-y-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <span className="text-[11px] font-bold text-[#0057B8] uppercase tracking-wider flex items-center gap-1.5">
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>1. Choose Target Template Structure</span>
+                        </span>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Pick a Policy Template to format the copied document, or keep its original layout.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const chosenTpl = templateChoosingChoices.find((t) => t.id === selectedLibraryTemplateId) || templateChoosingChoices[0];
+                          if (chosenTpl) {
+                            handleSelectTemplate(chosenTpl);
+                            setIsTemplateEditorActive(true);
+                          }
+                        }}
+                        className="px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 text-[#0057B8] text-[11px] font-bold transition cursor-pointer"
+                      >
+                        Start from Blank Template →
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedLibraryTemplateId('keep-original')}
+                        className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                          selectedLibraryTemplateId === 'keep-original'
+                            ? 'bg-[#0057B8] text-white border-[#0057B8] shadow-xs'
+                            : 'bg-slate-50 hover:bg-blue-50/60 text-slate-800 border-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-xs font-bold truncate">Keep Master Structure</span>
+                          {selectedLibraryTemplateId === 'keep-original' && <Check className="w-3.5 h-3.5 flex-shrink-0" />}
+                        </div>
+                        <span className={`text-[10.5px] block mt-0.5 truncate ${selectedLibraryTemplateId === 'keep-original' ? 'text-blue-100' : 'text-slate-500'}`}>
+                          Copy original sections as authored
+                        </span>
+                      </button>
+
+                      {templateChoosingChoices.map((tpl) => {
+                        const isTplActive = selectedLibraryTemplateId === tpl.id;
+                        return (
+                          <button
+                            key={tpl.id}
+                            type="button"
+                            onClick={() => setSelectedLibraryTemplateId(tpl.id)}
+                            className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                              isTplActive
+                                ? 'bg-[#0057B8] text-white border-[#0057B8] shadow-xs'
+                                : 'bg-slate-50 hover:bg-blue-50/60 text-slate-800 border-slate-200'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-xs font-bold truncate">{tpl.name || tpl.title}</span>
+                              {isTplActive && <Check className="w-3.5 h-3.5 flex-shrink-0" />}
+                            </div>
+                            <span className={`text-[10.5px] block mt-0.5 truncate ${isTplActive ? 'text-blue-100' : 'text-slate-500'}`}>
+                              {(tpl.sections || []).length} template clauses
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
 
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
+                  {/* Step 2: Master Library Search & Department Partition */}
+                  <div className="space-y-2.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                          Filter Master Library Partition
+                        </label>
+                        <select
+                          value={masterDeptFilter}
+                          onChange={(e) => setMasterDeptFilter(e.target.value)}
+                          className="w-full p-2 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] text-xs bg-white font-medium text-slate-900 shadow-2xs"
+                        >
+                          <option value="all">All Master Library Departments</option>
+                          {departments.map(d => (
+                            <option key={d.id} value={d.id}>{d.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                          Target Department for Copied Draft
+                        </label>
+                        <select
+                          value={departmentId}
+                          onChange={(e) => setDepartmentId(e.target.value)}
+                          className="w-full p-2 rounded-xl border border-slate-300 focus:outline-none focus:border-[#0057B8] text-xs bg-white font-medium text-slate-900 shadow-2xs"
+                        >
+                          {departments.map(d => (
+                            <option key={d.id} value={d.id}>{d.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between">
                       <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
-                        Master Repository Standards ({filteredMasterTemplates.length} Available)
+                        2. Master Library Policies &amp; Standards ({filteredMasterTemplates.length} Available)
                       </span>
                       <span className="text-[11px] text-[#0057B8] font-bold">
-                        Click any blue card to open & edit
+                        Click any item to copy &amp; open editor
                       </span>
                     </div>
-                    
+
                     {/* Search Bar for Master Library */}
-                    <div className="relative mb-2.5">
+                    <div className="relative">
                       <Search className="w-4 h-4 text-[#0057B8] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                       <input
                         type="text"
                         value={masterSearchQuery}
                         onChange={(e) => setMasterSearchQuery(e.target.value)}
-                        placeholder="Search master library templates (credit cards, lending, KYC, security, AML)..."
+                        placeholder="Search Master Library policies or standards..."
                         className="w-full text-xs pl-9 pr-3 py-2.5 rounded-xl border-2 border-blue-200 hover:border-[#0057B8] bg-white focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/20 outline-none transition font-medium shadow-2xs"
                       />
                     </div>
                   </div>
 
-                  {/* Master Templates List - Vibrant Blue Cards */}
-                  <div className="grid grid-cols-1 gap-3 max-h-72 overflow-y-auto custom-scrollbar pr-1">
+                  {/* Master Library Items List */}
+                  <div className="grid grid-cols-1 gap-2.5 max-h-72 overflow-y-auto custom-scrollbar pr-1">
                     {filteredMasterTemplates.map(t => {
                       const isSelected = selectedTemplateId === t.id;
                       return (
                         <div
                           key={t.id}
-                          onClick={() => {
-                            handleSelectTemplate(t);
-                            setIsTemplateEditorActive(true);
-                          }}
-                          className={`p-4 rounded-2xl border-2 transition-all cursor-pointer text-left relative ${
+                          onClick={() => handleCopyFromMasterLibrary(t, selectedLibraryTemplateId)}
+                          className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer text-left relative ${
                             isSelected 
                               ? 'border-[#0057B8] bg-gradient-to-br from-blue-100/90 via-sky-50/70 to-white ring-2 ring-[#0057B8]/30 shadow-md' 
                               : 'border-blue-200/90 bg-gradient-to-br from-white via-blue-50/40 to-sky-50/20 hover:border-[#0057B8] hover:bg-blue-50/70 shadow-2xs'
@@ -2867,20 +3202,25 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                               }`}>
                                 {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                               </div>
-                              <h4 className={`font-bold text-[14px] truncate ${isSelected ? 'text-[#0057B8]' : 'text-slate-900 group-hover:text-[#0057B8]'}`}>
-                                {t.title}
-                              </h4>
+                              <div className="min-w-0">
+                                <h4 className={`font-bold text-[13.5px] truncate ${isSelected ? 'text-[#0057B8]' : 'text-slate-900'}`}>
+                                  {t.title}
+                                </h4>
+                                <span className="text-[10px] font-semibold text-slate-500">
+                                  {t.isBuiltInStandard ? 'Repository Standard' : `Live Master Library • v${t.version || '1.0'}`}
+                                </span>
+                              </div>
                             </div>
                             <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#0057B8] bg-blue-100/90 hover:bg-[#0057B8] hover:text-white px-3 py-1.5 rounded-xl transition shadow-2xs flex-shrink-0">
-                              Click to Open & Edit Template →
+                              Copy with Template →
                             </span>
                           </div>
 
-                          <p className="text-slate-600 text-xs mt-1.5 pl-7.5 leading-relaxed">
+                          <p className="text-slate-600 text-xs mt-1.5 pl-7.5 leading-relaxed line-clamp-2">
                             {t.summary}
                           </p>
 
-                          <div className="flex flex-wrap items-center gap-2 mt-2.5 pl-7.5 text-xs">
+                          <div className="flex flex-wrap items-center gap-2 mt-2 pl-7.5 text-xs">
                             <span className="bg-[#0057B8] text-white px-2.5 py-0.5 rounded-md font-bold text-[10.5px] shadow-2xs">
                               Partition: {t.deptName || t.dept}
                             </span>
@@ -3082,31 +3422,103 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                 </div>
               ) : ingestedDocuments.length === 0 ? (
                 <>
-                <div className="p-8 border-2 border-dashed border-[#0057B8]/30 bg-[#0057B8]/5 rounded-2xl text-center space-y-4">
-                  <div className="w-12 h-12 rounded-2xl bg-[#0057B8]/10 text-[#0057B8] flex items-center justify-center mx-auto">
-                    <Upload className="w-6 h-6" />
+                {/* STEP 1: CHOOSE POLICY TEMPLATE FIRST */}
+                <div className="p-4 bg-white border border-blue-200/90 rounded-2xl shadow-2xs space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-[#0057B8] text-white text-[11px] font-bold flex items-center justify-center">
+                        1
+                      </span>
+                      <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                        Choose Policy Template
+                      </span>
+                    </div>
+                    {selectedUploadTemplateId && (
+                      <span className="text-[11px] font-bold text-[#0057B8] bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full">
+                        {templateChoosingChoices.find(t => t.id === selectedUploadTemplateId)?.name ||
+                          templateChoosingChoices.find(t => t.id === selectedUploadTemplateId)?.title ||
+                          'Selected'}{' '}
+                        ✓
+                      </span>
+                    )}
                   </div>
-                  <div>
-                    <h3 className="text-base font-bold text-slate-900">
-                      Upload Single or Multiple Documents
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-48 overflow-y-auto custom-scrollbar pr-0.5">
+                    {templateChoosingChoices.map((t) => {
+                      const isTplSelected = selectedUploadTemplateId === t.id;
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedUploadTemplateId(t.id);
+                          }}
+                          className={`p-3 rounded-xl border text-left transition cursor-pointer flex items-start justify-between gap-2 ${
+                            isTplSelected
+                              ? 'bg-[#0057B8] text-white border-[#0057B8] shadow-xs ring-2 ring-[#0057B8]/20'
+                              : 'bg-slate-50 hover:bg-blue-50/70 text-slate-800 border-slate-200'
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <span className={`font-bold text-xs block truncate ${isTplSelected ? 'text-white' : 'text-slate-900'}`}>
+                              {t.name || t.title}
+                            </span>
+                            <span className={`text-[10.5px] block mt-0.5 truncate ${isTplSelected ? 'text-blue-100' : 'text-slate-500'}`}>
+                              {t.sections?.length || 7} sections
+                            </span>
+                          </div>
+                          {isTplSelected && <Check className="w-3.5 h-3.5 text-white flex-shrink-0 mt-0.5" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* STEP 2: CHOOSE FILE & UPLOAD IMMEDIATELY */}
+                <div
+                  className={`p-6 border-2 border-dashed rounded-2xl text-center space-y-3.5 transition ${
+                    selectedUploadTemplateId
+                      ? 'border-[#0057B8]/40 bg-[#0057B8]/5'
+                      : 'border-slate-300 bg-slate-100/70 opacity-70'
+                  }`}
+                >
+                  <div className="flex items-center justify-center gap-2">
+                    <span className={`w-5 h-5 rounded-full text-[11px] font-bold flex items-center justify-center ${
+                      selectedUploadTemplateId ? 'bg-[#0057B8] text-white' : 'bg-slate-400 text-white'
+                    }`}>
+                      2
+                    </span>
+                    <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+                      Choose File &amp; Upload
                     </h3>
                   </div>
 
-                  <div className="pt-1 flex flex-col items-center justify-center gap-2.5">
+                  <p className="text-xs text-slate-500">
+                    {selectedUploadTemplateId
+                      ? 'Select single or multiple PDF / DOCX documents — upload and extraction will start automatically.'
+                      : 'Please pick a Policy Template in Step 1 first to enable file upload.'}
+                  </p>
+
+                  <div className="pt-1 flex flex-col items-center justify-center gap-2">
                     <input
                       type="file"
                       multiple
+                      disabled={!selectedUploadTemplateId}
                       accept=".pdf,.docx,.doc,.xlsx,.xls,.csv,.txt,.rtf"
                       onChange={handleUploadMultipleDocumentsWithAi}
                       className="hidden"
                       id="doc-upload-input"
                     />
                     <label
-                      htmlFor="doc-upload-input"
-                      className="inline-flex items-center gap-2 px-6 py-3 bg-[#0057B8] hover:bg-[#004EA6] text-white rounded-xl font-bold text-xs cursor-pointer shadow-md transition active:scale-95"
+                      htmlFor={selectedUploadTemplateId ? 'doc-upload-input' : undefined}
+                      className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-xs shadow-md transition ${
+                        selectedUploadTemplateId
+                          ? 'bg-[#0057B8] hover:bg-[#004EA6] text-white cursor-pointer active:scale-95'
+                          : 'bg-slate-300 text-slate-500 cursor-not-allowed shadow-none'
+                      }`}
                     >
                       <Upload className="w-4 h-4" />
-                      <span>Choose Files to Ingest (Supports Multiple)</span>
+                      <span>Choose Files to Upload</span>
                     </label>
                   </div>
                 </div>
@@ -3114,13 +3526,18 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                 {/* Uploaded Documents History & Viewer (Cloudinary Sync) */}
                 <DocumentUploadHistorySection
                   currentUser={currentUser}
-                  selectedTemplateId={selectedUploadTemplateId}
-                  selectedTemplateName={masterTemplates.find(t => t.id === selectedUploadTemplateId)?.name}
+                  selectedTemplateId={selectedUploadTemplateId || 'template-standard-policy'}
+                  selectedTemplateName={
+                    templateChoosingChoices.find(t => t.id === selectedUploadTemplateId)?.name ||
+                    masterTemplates.find(t => t.id === selectedUploadTemplateId)?.name ||
+                    'Policy Template'
+                  }
                   onSelectDocumentForCorrection={(historyDoc) => {
                     handleLoadHistoryDocForCorrection(historyDoc);
                   }}
                   onDocIngested={(uploadedRecord, rawFile) => {
-                    handleUploadMultipleDocumentsWithAi({ target: { files: [rawFile] } });
+                    const tplId = selectedUploadTemplateId || templateChoosingChoices[0]?.id || 'template-standard-policy';
+                    executeDocumentIngestion([rawFile], tplId);
                   }}
                 />
                 </>
@@ -3405,96 +3822,6 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
         </div>
         </div>
       </div>
-
-      {/* PROMPT: CHOOSE POLICY TEMPLATE MODAL ON UPLOAD */}
-      {showTemplatePickPrompt && (
-        <div className="fixed inset-0 z-[10000] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-blue-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-[#0057B8]/10 text-[#0057B8] flex items-center justify-center font-bold">
-                  <BookOpen className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-sm text-slate-900">Choose Starting Policy Template</h3>
-                  <p className="text-xs text-slate-500">
-                    Select target structure for <strong>{pendingFilesToIngest[0]?.name || 'uploaded document'}</strong>
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowTemplatePickPrompt(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-1.5">
-              <span className="text-[11px] font-bold text-[#0057B8] uppercase tracking-wider block">
-                Available Policy Templates (from Database):
-              </span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[300px] overflow-y-auto p-1">
-                {masterTemplates.map(t => {
-                  const isSelected = selectedUploadTemplateId === t.id;
-                  return (
-                    <div
-                      key={t.id}
-                      onClick={() => {
-                        setSelectedUploadTemplateId(t.id);
-                        handleSelectTemplate(t);
-                      }}
-                      className={`p-3.5 rounded-xl border transition cursor-pointer flex flex-col justify-between ${
-                        isSelected
-                          ? 'bg-blue-50/90 border-[#0057B8] ring-2 ring-[#0057B8]/20 shadow-xs'
-                          : 'bg-slate-50 hover:bg-slate-100 border-slate-200'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-1.5">
-                        <div>
-                          <span className="font-bold text-xs text-slate-900 block">
-                            {t.name || t.title}
-                          </span>
-                          <span className="text-[10.5px] text-slate-500">
-                            {t.deptName || t.dept} &bull; {t.sections?.length || 7} sections
-                          </span>
-                        </div>
-                        <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${
-                          isSelected ? 'bg-[#0057B8] text-white font-bold' : 'border border-slate-300'
-                        }`}>
-                          {isSelected ? '✓' : ''}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setShowTemplatePickPrompt(false)}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowTemplatePickPrompt(false);
-                  executeDocumentIngestion(pendingFilesToIngest, selectedUploadTemplateId);
-                }}
-                className="px-5 py-2 text-xs font-bold text-white bg-[#0057B8] hover:bg-[#004EA6] rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5 active:scale-95"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                <span>Confirm & Ingest Document</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* FULL WORD DOCUMENT CLAUSE EXPANDED EDITOR (CONTINUOUS MULTI-PAGE MS WORD WORKSPACE) */}
       {expandedModalSectionId && typeof document !== 'undefined' && createPortal(

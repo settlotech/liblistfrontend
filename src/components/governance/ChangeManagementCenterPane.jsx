@@ -29,6 +29,16 @@ import {
 } from 'lucide-react';
 import { apiService } from '../../services/apiService';
 import FormattedPolicyContent from '../policy/FormattedPolicyContent';
+import PolicyVersionHistoryModal from './PolicyVersionHistoryModal';
+import { combineAndDeduplicateVersions } from '../../utils/policyVersionHistory';
+
+function safeParseJson(val, fallback = {}) {
+  if (!val) return fallback;
+  if (typeof val === 'string') {
+    try { return JSON.parse(val); } catch { return fallback; }
+  }
+  return typeof val === 'object' ? val : fallback;
+}
 
 export function ChangeManagementCenterPane({
   currentUser,
@@ -46,7 +56,11 @@ export function ChangeManagementCenterPane({
   selectedDraftId = null,
   onViewDraft = null
 }) {
-  const isBankOwner = currentUser?.roleType === 'manager' || currentUser?.roleType === 'admin' || currentUser?.roleType === 'owner';
+  const isBankOwner =
+    currentUser?.roleType === 'manager' ||
+    currentUser?.roleType === 'admin' ||
+    currentUser?.roleType === 'owner' ||
+    /approver|administrator|owner|manager/i.test(currentUser?.role || '');
   const isEmployee = !isBankOwner;
 
   const [activeTab, setActiveTab] = useState(initialTab || (isBankOwner ? 'in_review' : 'drafts'));
@@ -58,6 +72,7 @@ export function ChangeManagementCenterPane({
   const [comparingDraftId, setComparingDraftId] = useState(null);
   const [compareV1, setCompareV1] = useState(null);
   const [compareV2, setCompareV2] = useState(null);
+  const [historyModalState, setHistoryModalState] = useState(null);
 
   const handleToggleVersionHistory = async (draftId) => {
     if (expandedVersionDraftId === draftId) {
@@ -65,17 +80,18 @@ export function ChangeManagementCenterPane({
       return;
     }
     setExpandedVersionDraftId(draftId);
-    if (!draftVersionsCache[draftId]) {
-      try {
-        const res = await apiService.getPolicyVersions(draftId);
-        if (Array.isArray(res) && res.length > 0) {
-          setDraftVersionsCache(prev => ({ ...prev, [draftId]: res }));
-        }
-      } catch (_) {}
-    }
+    try {
+      const res = await apiService.getPolicyVersions(draftId);
+      if (Array.isArray(res) && res.length > 0) {
+        setDraftVersionsCache(prev => ({ ...prev, [draftId]: res }));
+      }
+    } catch (_) {}
   };
   const [selectedReviewItemId, setSelectedReviewItemId] = useState(focusedItemId || null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [reviewPaneTab, setReviewPaneTab] = useState('proposed'); // 'proposed' | 'diff'
+  const [reviewPolicyCache, setReviewPolicyCache] = useState({});
+  const [reviewToast, setReviewToast] = useState(null);
 
   // Approver decision note
   const [approverComments, setApproverComments] = useState('');
@@ -261,17 +277,88 @@ export function ChangeManagementCenterPane({
         currentUser?.name || 'Marcus Vance (Bank Administrator)',
         decisionNote
       );
-      alert(`Request CR-#${item.id} ${action === 'approve' ? 'APPROVED & DEPLOYED' : 'REJECTED'} successfully!`);
       setApproverComments('');
-      setSelectedReviewItem(null);
+      setSelectedReviewItemId(null);
+      setReviewToast({
+        type: action === 'approve' ? 'success' : 'info',
+        message: action === 'approve'
+          ? `Request CR-#${item.id} approved and published to Master Library.`
+          : `Request CR-#${item.id} rejected with feedback and returned to Saved Drafts.`
+      });
+      setTimeout(() => setReviewToast(null), 5000);
+      if (item.policy_id) {
+        window.dispatchEvent(new CustomEvent('liblist:policy-created', {
+          detail: { id: item.policy_id, status: action === 'approve' ? 'active' : 'draft' }
+        }));
+      }
       if (onRefresh) onRefresh();
     } catch (err) {
       console.error('Failed to action request:', err);
-      alert('Failed to action request: ' + err.message);
+      setReviewToast({
+        type: 'error',
+        message: 'Failed to action request: ' + (err.message || 'Unknown error')
+      });
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  // 5. Withdraw pending submission back to Saved Drafts
+  const handleWithdrawReviewItem = async (item) => {
+    if (!item?.id) return;
+    if (!window.confirm(`Withdraw "${item.policy_title || item.title}" from In-Review back to Saved Drafts?`)) return;
+    setIsSubmitting(true);
+    try {
+      await apiService.closeMakerCheckerItem(item.id);
+      setSelectedReviewItemId(null);
+      setReviewToast({
+        type: 'info',
+        message: `Submission CR-#${item.id} returned to Saved Drafts.`
+      });
+      setTimeout(() => setReviewToast(null), 5000);
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      console.error('Failed to withdraw submission:', err);
+      setReviewToast({
+        type: 'error',
+        message: 'Failed to withdraw submission: ' + (err.message || 'Unknown error')
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Lazy-load full details & parent baseline for the currently inspected In-Review item
+  const activeReviewItemForEffect = useMemo(() => {
+    if (activeTab !== 'in_review' || !filteredInReview.length) return null;
+    return filteredInReview.find(i => String(i.id) === String(selectedReviewItemId)) || filteredInReview[0];
+  }, [activeTab, filteredInReview, selectedReviewItemId]);
+
+  useEffect(() => {
+    const pid = activeReviewItemForEffect?.policy_id;
+    if (!pid || reviewPolicyCache[pid]) return;
+    let cancelled = false;
+
+    const loadDetailsAndParent = async () => {
+      try {
+        const full = await apiService.getPolicyDetails(pid, currentUser?.roleType || 'manager');
+        if (cancelled || !full) return;
+        const fParams = safeParseJson(full.parameters, {});
+        let parentDoc = null;
+        if (fParams.copied_from && String(fParams.copied_from) !== String(pid)) {
+          parentDoc = await apiService.getPolicyDetails(fParams.copied_from, currentUser?.roleType || 'manager').catch(() => null);
+        }
+        if (!cancelled) {
+          setReviewPolicyCache(prev => ({
+            ...prev,
+            [pid]: { policy: full, parentPolicy: parentDoc }
+          }));
+        }
+      } catch (_) {}
+    };
+    loadDetailsAndParent();
+    return () => { cancelled = true; };
+  }, [activeReviewItemForEffect?.policy_id, currentUser?.roleType, reviewPolicyCache]);
 
   // Helper to extract clauses safely
   const getDraftClauses = (draft) => {
@@ -443,11 +530,11 @@ export function ChangeManagementCenterPane({
               <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
                 {/* Table Header */}
                 <div className="grid grid-cols-12 gap-3 px-5 py-3 bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                  <div className="col-span-12 sm:col-span-5">Draft Document</div>
+                  <div className="col-span-12 sm:col-span-4">Draft Document</div>
                   <div className="col-span-6 sm:col-span-3">Department</div>
                   <div className="col-span-6 sm:col-span-2">Author & Date</div>
 
-                  <div className="col-span-12 sm:col-span-2 text-right">Actions</div>
+                  <div className="col-span-12 sm:col-span-3 text-right">Actions</div>
                 </div>
 
                 {/* Table Rows */}
@@ -474,7 +561,7 @@ export function ChangeManagementCenterPane({
                         <div className="grid grid-cols-12 gap-3 px-5 py-4 items-center">
                           
                           {/* Col 1: Draft Title & Summary */}
-                          <div className="col-span-12 sm:col-span-5 min-w-0 pr-2">
+                          <div className="col-span-12 sm:col-span-4 min-w-0 pr-2">
                             <div className="flex items-center gap-2">
                               <span className="w-2 h-2 rounded-full bg-amber-500 flex-shrink-0"></span>
                               <h3 className="font-bold text-slate-900 text-[13.5px] truncate">
@@ -511,8 +598,8 @@ export function ChangeManagementCenterPane({
                             </p>
                           </div>
 
-                          {/* Col 4: Actions Toolbar - Only Edit and Delete options per user instruction */}
-                          <div className="col-span-12 sm:col-span-2 flex items-center justify-end gap-2 flex-wrap">
+                          {/* Col 4: Actions Toolbar */}
+                          <div className="col-span-12 sm:col-span-3 flex items-center justify-end gap-2 flex-wrap">
                             {/* 1. View Draft Document - Commented out per user request
                             <button
                               type="button"
@@ -564,21 +651,23 @@ export function ChangeManagementCenterPane({
                               </button>
                             )}
 
-                            {/* 2.5. Version History - Commented out per user request
+                            {/* 2.5. Version History */}
                             <button
                               type="button"
-                              onClick={() => handleToggleVersionHistory(draft.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleToggleVersionHistory(draft.id);
+                              }}
                               className={`px-2.5 py-1.5 rounded-lg border text-[11px] font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs ${
                                 expandedVersionDraftId === draft.id
                                   ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
                                   : 'border-slate-300 hover:border-[#0057B8] bg-white hover:bg-blue-50/50 text-[#0057B8]'
                               }`}
-                              title="Inspect Version History and Commit Snapshots for this Draft"
+                              title="Inspect Version History and Snapshots for this Draft"
                             >
                               <HistoryIcon className="w-3.5 h-3.5" />
                               <span>History</span>
                             </button>
-                            */}
 
                             {/* 3. Submit for Approval - Commented out per user request
                             {isEmployee ? (
@@ -624,42 +713,60 @@ export function ChangeManagementCenterPane({
 
                         {/* Expandable Version History Accordion */}
                         {expandedVersionDraftId === draft.id && (() => {
-                          const localList = (params.versions && params.versions.length > 0) ? params.versions : [];
-                          const dbList = draftVersionsCache[draft.id] || [];
-                          const seen = new Set();
-                          const verList = [];
-                          for (const v of [...localList, ...dbList]) {
-                            const key = String(v.version || v.version_number || '').trim();
-                            if (key && !seen.has(key)) {
-                              seen.add(key);
-                              verList.push(v);
-                            }
-                          }
-                          const finalVerList = verList.length > 0 ? verList : [
+                          const combinedList = combineAndDeduplicateVersions(draft, draftVersionsCache[draft.id] || []);
+                          const finalVerList = combinedList.length > 0 ? combinedList : [
                             {
+                              id: `ver-initial-${draft.id}`,
                               version: draft.version || '1.0',
+                              version_number: draft.version || '1.0',
+                              title: draft.title,
+                              summary: draft.summary,
+                              content: draft.content,
+                              created_at: draft.updated_at || draft.created_at || new Date().toISOString(),
                               timestamp: draft.updated_at || draft.created_at || new Date().toISOString(),
                               sections: clauses,
-                              notes: 'Initial version draft'
+                              change_summary: 'Initial version draft',
+                              changed_by: draft.created_by || 'Staff User',
+                              source: 'draft'
                             }
                           ];
 
                           return (
-                            <div className="px-5 py-3.5 bg-blue-50/40 border-t border-blue-100 text-xs space-y-2">
-                              <div className="flex items-center justify-between">
+                            <div
+                              onClick={(e) => e.stopPropagation()}
+                              className="px-5 py-3.5 bg-blue-50/40 border-t border-blue-100 text-xs space-y-2 cursor-default"
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-2">
                                 <h4 className="font-bold text-blue-900 text-xs flex items-center gap-1.5">
                                   <Layers className="w-3.5 h-3.5 text-blue-600" />
-                                  <span>Version History & User Draft Revisions ({finalVerList.length})</span>
+                                  <span>Combined Policy & Draft Version History ({finalVerList.length})</span>
                                 </h4>
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
                                   <button
                                     type="button"
-                                    onClick={() => {
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setHistoryModalState({
+                                        policy: draft,
+                                        initialMode: 'timeline',
+                                        initialSelectedVersion: null
+                                      });
+                                    }}
+                                    className="px-2.5 py-1 bg-[#0057B8] hover:bg-[#004EA6] text-white rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-2xs cursor-pointer active:scale-95"
+                                    title="Open full Policy & Draft Version History inspector"
+                                  >
+                                    <HistoryIcon className="w-3 h-3" />
+                                    <span>Full History</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
                                       const nextState = comparingDraftId === draft.id ? null : draft.id;
                                       setComparingDraftId(nextState);
                                       if (nextState) {
-                                        setCompareV1(finalVerList[finalVerList.length - 1]?.version || '1.0');
-                                        setCompareV2(finalVerList[0]?.version || draft.version || '1.1');
+                                        setCompareV1(String(finalVerList[finalVerList.length - 1]?.id || ''));
+                                        setCompareV2(String(finalVerList[0]?.id || ''));
                                       }
                                     }}
                                     className="px-2.5 py-1 bg-white hover:bg-blue-50 text-[#0057B8] border border-blue-200 rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-2xs cursor-pointer active:scale-95"
@@ -670,7 +777,11 @@ export function ChangeManagementCenterPane({
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => { setExpandedVersionDraftId(null); setComparingDraftId(null); }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setExpandedVersionDraftId(null);
+                                      setComparingDraftId(null);
+                                    }}
                                     className="text-slate-400 hover:text-slate-600 text-[11px] cursor-pointer"
                                   >
                                     Close
@@ -678,54 +789,96 @@ export function ChangeManagementCenterPane({
                                 </div>
                               </div>
                               <div className="space-y-1.5">
-                                {finalVerList.map((ver, vIdx) => (
-                                  <div key={vIdx} className="p-2.5 rounded-xl bg-white border border-blue-200/80 flex items-center justify-between gap-3 shadow-2xs">
-                                    <div className="flex items-center gap-2.5 min-w-0">
-                                      <span className="font-mono font-bold text-xs bg-blue-100 text-blue-800 px-2.5 py-1 rounded-md">
-                                        {ver.version || `v1.${vIdx}`}
-                                      </span>
-                                      <div className="min-w-0">
-                                        <p className="font-bold text-slate-800 text-xs truncate">
-                                          {ver.title || draft.title}
-                                        </p>
-                                        <p className="text-[10.5px] text-slate-400 mt-0.5">
-                                          {new Date(ver.timestamp || Date.now()).toLocaleString()} • {(ver.sections || []).length} Sections • {ver.notes || 'User draft'}
-                                        </p>
+                                {finalVerList.map((ver, vIdx) => {
+                                  const isParentSource = ver.source === 'parent_policy' || ver.status_tag === 'parent';
+                                  const isDraftSource = ver.source === 'draft_revision' || ver.status_tag === 'draft' || ver.source === 'draft';
+                                  const originLabel = isParentSource
+                                    ? 'Parent Policy'
+                                    : isDraftSource
+                                      ? 'Draft Revision'
+                                      : 'Active Policy';
+                                  const originCls = isParentSource
+                                    ? 'bg-slate-100 text-slate-700 border-slate-300'
+                                    : isDraftSource
+                                      ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                      : 'bg-emerald-50 text-emerald-800 border-emerald-200';
+                                  const displayDate = ver.created_at || ver.timestamp
+                                    ? new Date(ver.created_at || ver.timestamp).toLocaleString()
+                                    : 'Timestamp unavailable';
+
+                                  return (
+                                    <div key={ver.id || vIdx} className="p-2.5 rounded-xl bg-white border border-blue-200/80 flex flex-wrap items-center justify-between gap-3 shadow-2xs">
+                                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                        <span className="font-mono font-bold text-xs bg-blue-100 text-blue-800 px-2.5 py-1 rounded-md flex-shrink-0">
+                                          v{String(ver.version_number || ver.version || `1.${vIdx}`).replace(/^v/i, '')}
+                                        </span>
+                                        <div className="min-w-0 flex-1">
+                                          <div className="flex items-center gap-2 flex-wrap">
+                                            <p className="font-bold text-slate-800 text-xs truncate">
+                                              {ver.title || draft.title}
+                                            </p>
+                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${originCls}`}>
+                                              {originLabel}
+                                            </span>
+                                          </div>
+                                          <p className="text-[10.5px] text-slate-400 mt-0.5">
+                                            {displayDate} • {ver.changed_by || 'Staff User'} • {(ver.sections || []).length} Sections • {ver.change_summary || ver.notes || 'User draft'}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setHistoryModalState({
+                                              policy: draft,
+                                              initialMode: 'view',
+                                              initialSelectedVersion: ver
+                                            });
+                                          }}
+                                          className="px-2.5 py-1 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-2xs cursor-pointer"
+                                          title="Preview this exact revision snapshot"
+                                        >
+                                          <Eye className="w-3 h-3" />
+                                          <span>View</span>
+                                        </button>
+                                        {onEditDraft && (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              onEditDraft({
+                                                ...draft,
+                                                title: ver.title || draft.title,
+                                                summary: ver.summary || draft.summary,
+                                                version: ver.version_number || ver.version,
+                                                content: ver.content || draft.content,
+                                                parameters: {
+                                                  ...params,
+                                                  version: ver.version_number || ver.version,
+                                                  sections: ver.sections || params.sections || []
+                                                }
+                                              });
+                                              apiService.restorePolicyVersion(draft.id, ver.id || ver.version_number || ver.version, currentUser?.name).catch(() => {});
+                                            }}
+                                            className="px-2.5 py-1 bg-white hover:bg-blue-50 text-[#0057B8] border border-blue-300 rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-2xs cursor-pointer flex-shrink-0"
+                                            title="Restore and edit this specific version"
+                                          >
+                                            <FileEdit className="w-3 h-3" />
+                                            <span>Restore & Edit</span>
+                                          </button>
+                                        )}
                                       </div>
                                     </div>
-                                    {onEditDraft && (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          onEditDraft({
-                                            ...draft,
-                                            title: ver.title || draft.title,
-                                            summary: ver.summary || draft.summary,
-                                            version: ver.version || ver.version_number,
-                                            content: ver.content || draft.content,
-                                            parameters: {
-                                              ...params,
-                                              version: ver.version || ver.version_number,
-                                              sections: ver.sections || params.sections || []
-                                            }
-                                          });
-                                          apiService.restorePolicyVersion(draft.id, ver.id || ver.version, currentUser?.name).catch(() => {});
-                                        }}
-                                        className="px-2.5 py-1 bg-white hover:bg-blue-50 text-[#0057B8] border border-blue-300 rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-2xs cursor-pointer flex-shrink-0"
-                                        title="Restore and edit this specific version"
-                                      >
-                                        <FileEdit className="w-3 h-3" />
-                                        <span>Restore & Edit</span>
-                                      </button>
-                                    )}
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
 
                               {/* Compare Versions & Clause Diff Inspector */}
                               {comparingDraftId === draft.id && (() => {
-                                const verAObj = finalVerList.find(v => (v.version || v.version_number) === compareV1) || finalVerList[finalVerList.length - 1] || finalVerList[0];
-                                const verBObj = finalVerList.find(v => (v.version || v.version_number) === compareV2) || finalVerList[0];
+                                const verAObj = finalVerList.find(v => String(v.id) === String(compareV1)) || finalVerList[finalVerList.length - 1] || finalVerList[0];
+                                const verBObj = finalVerList.find(v => String(v.id) === String(compareV2)) || finalVerList[0];
 
                                 const secsA = verAObj.sections || [];
                                 const secsB = verBObj.sections || clauses;
@@ -753,7 +906,9 @@ export function ChangeManagementCenterPane({
                                             className="text-[11px] font-bold p-1 border border-slate-200 rounded-lg bg-slate-50 text-slate-800"
                                           >
                                             {finalVerList.map((v, i) => (
-                                              <option key={i} value={v.version || v.version_number}>{v.version || `v1.${i}`}</option>
+                                              <option key={v.id || i} value={String(v.id)}>
+                                                v{String(v.version_number || v.version || `1.${i}`).replace(/^v/i, '')} ({v.source === 'parent_policy' ? 'Parent' : v.source === 'draft_revision' ? 'Draft' : 'Rev'})
+                                              </option>
                                             ))}
                                           </select>
                                         </div>
@@ -768,7 +923,9 @@ export function ChangeManagementCenterPane({
                                             className="text-[11px] font-bold p-1 border border-blue-300 rounded-lg bg-blue-50/50 text-[#0057B8]"
                                           >
                                             {finalVerList.map((v, i) => (
-                                              <option key={i} value={v.version || v.version_number}>{v.version || `v1.${i}`}</option>
+                                              <option key={v.id || i} value={String(v.id)}>
+                                                v{String(v.version_number || v.version || `1.${i}`).replace(/^v/i, '')} ({v.source === 'parent_policy' ? 'Parent' : v.source === 'draft_revision' ? 'Draft' : 'Rev'})
+                                              </option>
                                             ))}
                                           </select>
                                         </div>
@@ -820,9 +977,9 @@ export function ChangeManagementCenterPane({
                                               </span>
                                             </div>
                                             {snippet && (
-                                              <p className="text-[11px] text-slate-600 mt-1 line-clamp-2 leading-relaxed font-sans">
-                                                {snippet}
-                                              </p>
+                                              <div className="text-[11px] text-slate-600 mt-1.5 leading-relaxed max-h-40 overflow-y-auto rounded-lg bg-white/80 p-2 border border-slate-200/70">
+                                                <FormattedPolicyContent content={snippet} />
+                                              </div>
                                             )}
                                           </div>
                                         );
@@ -883,10 +1040,30 @@ export function ChangeManagementCenterPane({
         {/* ========================================================= */}
         {activeTab === 'in_review' && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-bold text-slate-900">
                 In-Review Queue ({filteredInReview.length})
               </h2>
+              {reviewToast && (
+                <div
+                  className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-2 ${
+                    reviewToast.type === 'success'
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                      : reviewToast.type === 'error'
+                        ? 'bg-rose-50 text-rose-800 border-rose-200'
+                        : 'bg-blue-50 text-[#0057B8] border-blue-200'
+                  }`}
+                >
+                  <span>{reviewToast.message}</span>
+                  <button
+                    type="button"
+                    onClick={() => setReviewToast(null)}
+                    className="opacity-70 hover:opacity-100 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
             </div>
 
             {filteredInReview.length === 0 ? (
@@ -904,10 +1081,10 @@ export function ChangeManagementCenterPane({
                 <div className="lg:col-span-5 space-y-2.5">
                   {filteredInReview.map((item) => {
                     const activeItem = filteredInReview.find(i => String(i.id) === String(selectedReviewItemId)) || filteredInReview[0];
-                    const isSelected = activeItem?.id === item.id;
-                    const changes = typeof item.proposed_changes === 'string'
-                      ? JSON.parse(item.proposed_changes || '{}')
-                      : (item.proposed_changes || {});
+                    const isSelected = String(activeItem?.id) === String(item.id);
+                    const changes = safeParseJson(item.proposed_changes, {});
+                    const itemParams = safeParseJson(changes.parameters, {});
+                    const itemVer = item.policy_version || itemParams.version || '1.0';
 
                     return (
                       <div
@@ -919,18 +1096,23 @@ export function ChangeManagementCenterPane({
                             : 'border-slate-200 hover:border-slate-300 bg-white shadow-2xs'
                         }`}
                       >
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-[10px] font-mono font-bold text-blue-700 bg-blue-100/70 border border-blue-200 px-2 py-0.5 rounded-md">
-                            CR-#{item.id}
-                          </span>
+                        <div className="flex items-center justify-between mb-1.5 gap-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-mono font-bold text-blue-700 bg-blue-100/70 border border-blue-200 px-2 py-0.5 rounded-md">
+                              CR-#{item.id}
+                            </span>
+                            <span className="text-[10px] font-mono font-bold text-slate-700 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded">
+                              v{String(itemVer).replace(/^v/i, '')}
+                            </span>
+                          </div>
                           <span className="text-[11px] text-slate-400 flex items-center gap-1">
                             <Clock className="w-3 h-3" />
-                            {new Date(item.created_at).toLocaleDateString()}
+                            {item.created_at ? new Date(item.created_at).toLocaleDateString() : 'Pending'}
                           </span>
                         </div>
 
                         <h4 className="text-[13px] font-bold text-slate-900 line-clamp-1">
-                          {item.policy_title || item.title}
+                          {item.policy_title || item.current_policy_title || item.title}
                         </h4>
 
                         <div className="flex items-center justify-between text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">
@@ -940,9 +1122,9 @@ export function ChangeManagementCenterPane({
                           </span>
                         </div>
 
-                        {changes.submission_note && (
+                        {(changes.submission_note || changes.details) && (
                           <div className="mt-2 p-2 bg-blue-50/70 border border-blue-100 rounded-lg text-[11px] text-blue-900 italic line-clamp-2">
-                            "{changes.submission_note}"
+                            "{changes.submission_note || changes.details}"
                           </div>
                         )}
                       </div>
@@ -956,36 +1138,153 @@ export function ChangeManagementCenterPane({
                     const item = filteredInReview.find(i => String(i.id) === String(selectedReviewItemId)) || filteredInReview[0];
                     if (!item) return null;
 
-                    let changes = item.proposed_changes;
-                    if (typeof changes === 'string') {
-                      try { changes = JSON.parse(changes); } catch (_) { changes = {}; }
+                    const safeChanges = safeParseJson(item.proposed_changes, {});
+                    const changesParams = safeParseJson(safeChanges.parameters, {});
+                    const linkedPolicy = item.policy_id
+                      ? [...(policies || []), ...allDrafts].find(p => String(p.id) === String(item.policy_id))
+                      : null;
+                    const cachedEntry = item.policy_id ? reviewPolicyCache[item.policy_id] : null;
+                    const cachedPolicy = cachedEntry?.policy || null;
+                    const parentBaselinePolicy = cachedEntry?.parentPolicy || (changesParams.copied_from
+                      ? (policies || []).find(p => String(p.id) === String(changesParams.copied_from))
+                      : null);
+
+                    const itemPolicyParams = safeParseJson(item.policy_parameters, {});
+                    const linkedParams = safeParseJson(linkedPolicy?.parameters, {});
+                    const cachedParams = safeParseJson(cachedPolicy?.parameters, {});
+                    const params = {
+                      ...itemPolicyParams,
+                      ...linkedParams,
+                      ...cachedParams,
+                      ...changesParams,
+                    };
+
+                    const resolvedTitle = safeChanges.title || item.policy_title || item.current_policy_title || item.title;
+                    const resolvedSummary =
+                      safeChanges.summary ||
+                      item.policy_summary ||
+                      cachedPolicy?.summary ||
+                      linkedPolicy?.summary ||
+                      '';
+                    const resolvedContent =
+                      safeChanges.content ||
+                      item.policy_content ||
+                      cachedPolicy?.content ||
+                      linkedPolicy?.content ||
+                      '';
+                    const resolvedVersion =
+                      params.version ||
+                      item.policy_version ||
+                      cachedPolicy?.version ||
+                      linkedPolicy?.version ||
+                      '1.0';
+
+                    let proposedSections = Array.isArray(params.sections) && params.sections.length > 0
+                      ? params.sections
+                      : [];
+                    if (proposedSections.length === 0 && resolvedContent) {
+                      proposedSections = getDraftClauses({
+                        summary: resolvedSummary,
+                        content: resolvedContent,
+                        parameters: params
+                      });
                     }
 
-                    const params = changes.parameters || {};
-                    const proposedSections = params.sections || [];
+                    const baselineParams = safeParseJson(parentBaselinePolicy?.parameters, {});
+                    const baselineSections = Array.isArray(baselineParams.sections) && baselineParams.sections.length > 0
+                      ? baselineParams.sections
+                      : (parentBaselinePolicy?.content
+                          ? getDraftClauses(parentBaselinePolicy)
+                          : []);
+
+                    const historyPolicyTarget = item.policy_id
+                      ? (cachedPolicy || linkedPolicy || {
+                          id: item.policy_id,
+                          title: resolvedTitle,
+                          summary: resolvedSummary,
+                          content: resolvedContent,
+                          status: item.policy_status || 'pending_approval',
+                          version: resolvedVersion,
+                          parameters: params,
+                          created_by: item.maker_name,
+                          created_at: item.created_at
+                        })
+                      : null;
+
+                    const openEditSubmission = () => {
+                      if (!onEditDraft) return;
+                      onEditDraft({
+                        ...(linkedPolicy || {}),
+                        ...(cachedPolicy || {}),
+                        id: item.policy_id || linkedPolicy?.id || item.id,
+                        department_id:
+                          cachedPolicy?.department_id ||
+                          linkedPolicy?.department_id ||
+                          params.department_id ||
+                          undefined,
+                        department_name: item.department_name || cachedPolicy?.department_name || linkedPolicy?.department_name,
+                        title: resolvedTitle,
+                        summary: resolvedSummary,
+                        version: resolvedVersion,
+                        content: resolvedContent,
+                        parameters: {
+                          ...params,
+                          sections: proposedSections
+                        },
+                        status: cachedPolicy?.status || linkedPolicy?.status || item.policy_status || 'pending_approval'
+                      });
+                    };
 
                     return (
                       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-5 space-y-4">
                         
                         {/* Header Details */}
-                        <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-100">
-                          <div>
-                            <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-start justify-between gap-3 pb-3 border-b border-slate-100">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-[10.5px] font-mono font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded">
                                 CR-#{item.id}
+                              </span>
+                              <span className="text-[10.5px] font-mono font-bold text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded">
+                                v{String(resolvedVersion).replace(/^v/i, '')}
                               </span>
                               <span className="text-xs font-semibold text-slate-500">
                                 {item.department_name || 'Retail Banking'}
                               </span>
                             </div>
                             <h3 className="text-base font-bold text-slate-900 mt-1">
-                              {item.policy_title || item.title}
+                              {resolvedTitle}
                             </h3>
+                            {resolvedSummary && (
+                              <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                                {resolvedSummary}
+                              </p>
+                            )}
                           </div>
 
-                          <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300 font-bold text-[10.5px] uppercase tracking-wide">
-                            Pending Approval
-                          </span>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {historyPolicyTarget && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setHistoryModalState({
+                                    policy: historyPolicyTarget,
+                                    initialMode: 'timeline',
+                                    initialSelectedVersion: null
+                                  });
+                                }}
+                                className="px-2.5 py-1 rounded-lg border border-slate-300 hover:border-[#0057B8] bg-white hover:bg-blue-50/60 text-[#0057B8] text-[11px] font-bold transition flex items-center gap-1 shadow-2xs cursor-pointer"
+                                title="View full revision history for this policy / draft"
+                              >
+                                <HistoryIcon className="w-3.5 h-3.5" />
+                                <span>History</span>
+                              </button>
+                            )}
+                            <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300 font-bold text-[10.5px] uppercase tracking-wide">
+                              Pending Approval
+                            </span>
+                          </div>
                         </div>
 
                         {/* Submitter Info and Note Box */}
@@ -995,7 +1294,7 @@ export function ChangeManagementCenterPane({
                               <User className="w-3.5 h-3.5 text-[#0057B8]" />
                               <span>Submitted by: <strong>{item.maker_name}</strong> ({item.maker_role || 'Staff Submitter'})</span>
                             </span>
-                            <span>{new Date(item.created_at).toLocaleString()}</span>
+                            <span>{item.created_at ? new Date(item.created_at).toLocaleString() : ''}</span>
                           </div>
 
                           {/* Submission Note */}
@@ -1004,16 +1303,16 @@ export function ChangeManagementCenterPane({
                               Submitter Operational Context / Note:
                             </span>
                             <p className="text-xs italic bg-white p-2 rounded-lg border border-blue-200 leading-relaxed text-slate-700">
-                              {changes.submission_note || item.change_details || 'Draft policy submitted for review.'}
+                              {safeChanges.submission_note || safeChanges.details || item.change_details || 'Draft policy submitted for review.'}
                             </p>
                           </div>
                         </div>
 
-                        {/* Proposed Operational Thresholds (Highlighted in Blue) */}
+                        {/* Proposed Operational Thresholds */}
                         <div className="space-y-2">
                           <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
                             <Sliders className="w-3.5 h-3.5 text-[#0057B8]" />
-                            <span>Proposed Operational Limits & SLA</span>
+                            <span>Proposed Operational Limits &amp; SLA</span>
                           </h4>
                           <div className="grid grid-cols-3 gap-2.5">
                             <div className="p-2.5 rounded-xl bg-blue-50/70 border border-blue-200 text-xs">
@@ -1031,45 +1330,124 @@ export function ChangeManagementCenterPane({
                           </div>
                         </div>
 
-                        {/* Proposed Clauses */}
+                        {/* Proposed Clauses vs Baseline Comparison Toggle */}
                         <div className="space-y-2">
-                          <div className="flex items-center justify-between">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
                             <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
                               <Layers className="w-3.5 h-3.5 text-[#0057B8]" />
-                              <span>Proposed Clauses Specification ({proposedSections.length || 1})</span>
+                              <span>Proposed Clauses ({proposedSections.length || 1})</span>
                             </h4>
-                            <span className="text-[10.5px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md">
-                              Proposed Clauses
-                            </span>
+                            <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                              <button
+                                type="button"
+                                onClick={() => setReviewPaneTab('proposed')}
+                                className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition cursor-pointer ${
+                                  reviewPaneTab === 'proposed'
+                                    ? 'bg-white text-[#0057B8] shadow-2xs'
+                                    : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                              >
+                                Proposed View
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setReviewPaneTab('diff')}
+                                className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition cursor-pointer ${
+                                  reviewPaneTab === 'diff'
+                                    ? 'bg-white text-[#0057B8] shadow-2xs'
+                                    : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                              >
+                                Compare Diff
+                              </button>
+                            </div>
                           </div>
 
-                          <div className="space-y-2.5 max-h-64 overflow-y-auto custom-scrollbar p-1">
-                            {proposedSections.length > 0 ? (
-                              proposedSections.map((sec, idx) => (
-                                <div 
-                                  key={sec.id || idx} 
-                                  className="p-3 rounded-xl bg-blue-50/40 border border-blue-200/80 text-xs space-y-1"
-                                >
-                                  <div className="flex items-center justify-between">
-                                    <h5 className="font-bold text-slate-900 text-[12px] flex items-center gap-1.5">
-                                      <span className="w-2 h-2 rounded-full bg-[#0057B8]"></span>
-                                      <span>{sec.title || `Clause ${idx + 1}`}</span>
-                                    </h5>
-                                    <span className="text-[10px] font-mono font-bold text-blue-700 bg-blue-100 px-1.5 py-0.2 rounded">
-                                      Clause #{idx + 1}
-                                    </span>
-                                  </div>
-                                  <div className="text-[11.5px] text-slate-800 leading-relaxed pt-1">
-                                    <FormattedPolicyContent content={sec.content || ''} />
-                                  </div>
+                          {reviewPaneTab === 'diff' ? (
+                            <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar p-1">
+                              {baselineSections.length === 0 ? (
+                                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600">
+                                  New standalone policy submission (no prior parent baseline to diff against). All {proposedSections.length} sections are newly proposed.
                                 </div>
-                              ))
-                            ) : (
-                              <div className="p-3 rounded-xl bg-blue-50/40 border border-blue-200/80 text-xs leading-relaxed">
-                                <FormattedPolicyContent content={changes.content || 'No custom clauses attached.'} />
-                              </div>
-                            )}
-                          </div>
+                              ) : (
+                                Array.from(new Set([
+                                  ...baselineSections.map(s => s.title || 'Untitled Section'),
+                                  ...proposedSections.map(s => s.title || 'Untitled Section')
+                                ])).map((cTitle, cIdx) => {
+                                  const sBase = baselineSections.find(s => (s.title || 'Untitled Section') === cTitle);
+                                  const sProp = proposedSections.find(s => (s.title || 'Untitled Section') === cTitle);
+                                  let diffState = 'unchanged';
+                                  let diffLabel = 'No changes';
+                                  let diffBadgeCls = 'bg-slate-100 text-slate-600 border-slate-200';
+                                  if (!sBase && sProp) {
+                                    diffState = 'added';
+                                    diffLabel = '+ Added';
+                                    diffBadgeCls = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                                  } else if (sBase && !sProp) {
+                                    diffState = 'removed';
+                                    diffLabel = '- Removed';
+                                    diffBadgeCls = 'bg-rose-50 text-rose-700 border-rose-200';
+                                  } else if (sBase && sProp && (sBase.content || '').trim() !== (sProp.content || '').trim()) {
+                                    diffState = 'modified';
+                                    diffLabel = '~ Modified';
+                                    diffBadgeCls = 'bg-blue-50 text-[#0057B8] border-blue-200';
+                                  }
+
+                                  return (
+                                    <div
+                                      key={cIdx}
+                                      className={`p-3 rounded-xl border text-xs space-y-1.5 ${
+                                        diffState === 'added' ? 'border-emerald-200 bg-emerald-50/30' :
+                                        diffState === 'removed' ? 'border-rose-200 bg-rose-50/30' :
+                                        diffState === 'modified' ? 'border-blue-200 bg-blue-50/30' :
+                                        'border-slate-200 bg-slate-50/60'
+                                      }`}
+                                    >
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span className="font-bold text-slate-900">{cIdx + 1}. {cTitle}</span>
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${diffBadgeCls}`}>
+                                          {diffLabel}
+                                        </span>
+                                      </div>
+                                      {(sProp?.content || sBase?.content) && (
+                                        <div className="text-[11.5px] text-slate-700 bg-white/80 rounded-lg p-2 border border-slate-200/70">
+                                          <FormattedPolicyContent content={sProp?.content || sBase?.content || ''} />
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })
+                              )}
+                            </div>
+                          ) : (
+                            <div className="space-y-2.5 max-h-72 overflow-y-auto custom-scrollbar p-1">
+                              {proposedSections.length > 0 ? (
+                                proposedSections.map((sec, idx) => (
+                                  <div 
+                                    key={sec.id || idx} 
+                                    className="p-3 rounded-xl bg-blue-50/40 border border-blue-200/80 text-xs space-y-1"
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <h5 className="font-bold text-slate-900 text-[12px] flex items-center gap-1.5">
+                                        <span className="w-2 h-2 rounded-full bg-[#0057B8]"></span>
+                                        <span>{sec.title || `Clause ${idx + 1}`}</span>
+                                      </h5>
+                                      <span className="text-[10px] font-mono font-bold text-blue-700 bg-blue-100 px-1.5 py-0.2 rounded">
+                                        Clause #{idx + 1}
+                                      </span>
+                                    </div>
+                                    <div className="text-[11.5px] text-slate-800 leading-relaxed pt-1">
+                                      <FormattedPolicyContent content={sec.content || ''} />
+                                    </div>
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="p-3 rounded-xl bg-blue-50/40 border border-blue-200/80 text-xs leading-relaxed">
+                                  <FormattedPolicyContent content={resolvedContent || safeChanges.details || 'No custom clauses attached.'} />
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
 
                         {/* Approver Adjudication Action Box (Bank Administrator) */}
@@ -1092,23 +1470,12 @@ export function ChangeManagementCenterPane({
                               {onEditDraft && (
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    const draftToEdit = {
-                                      id: item.policy_id || item.id,
-                                      title: item.policy_title || item.title,
-                                      summary: changes?.summary || item.summary || '',
-                                      department_name: item.department_name,
-                                      content: changes?.content,
-                                      parameters: params,
-                                      status: 'draft'
-                                    };
-                                    onEditDraft(draftToEdit);
-                                  }}
+                                  onClick={openEditSubmission}
                                   className="px-3.5 py-2 text-xs font-bold text-[#0057B8] hover:bg-blue-50 border border-blue-200 rounded-xl transition cursor-pointer flex items-center gap-1.5"
                                   title="Open in editor to correct clauses, thresholds, or wording before sign-off"
                                 >
                                   <FileEdit className="w-3.5 h-3.5" />
-                                  <span>Correct & Adjust</span>
+                                  <span>Correct &amp; Adjust</span>
                                 </button>
                               )}
 
@@ -1116,19 +1483,19 @@ export function ChangeManagementCenterPane({
                                 type="button"
                                 onClick={() => handleActionRequest(item, 'reject')}
                                 disabled={isSubmitting}
-                                className="px-4 py-2 text-xs font-bold text-rose-700 hover:bg-rose-50 border border-rose-200 rounded-xl transition cursor-pointer"
+                                className="px-4 py-2 text-xs font-bold text-rose-700 hover:bg-rose-50 border border-rose-200 rounded-xl transition cursor-pointer disabled:opacity-50"
                               >
-                                Reject & Send Feedback
+                                Reject &amp; Send Feedback
                               </button>
 
                               <button
                                 type="button"
                                 onClick={() => handleActionRequest(item, 'approve')}
                                 disabled={isSubmitting}
-                                className="px-5 py-2 text-xs font-bold text-white bg-[#0057B8] hover:bg-[#004EA6] rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5 active:scale-95"
+                                className="px-5 py-2 text-xs font-bold text-white bg-[#0057B8] hover:bg-[#004EA6] rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
                               >
                                 <Check className="w-4 h-4" />
-                                <span>Approve & Deploy to Active Policy</span>
+                                <span>{isSubmitting ? 'Processing...' : 'Approve & Deploy to Active Policy'}</span>
                               </button>
                             </div>
                           </div>
@@ -1136,32 +1503,30 @@ export function ChangeManagementCenterPane({
                           /* Submitter Employee View */
                           <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 flex flex-wrap items-center justify-between gap-2">
                             <span className="font-semibold">
-                              Pending review by Department Manager / Bank Administrator (Marcus Vance).
+                              Pending review by Department Manager / Bank Administrator.
                             </span>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               {onEditDraft && (
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    const draftToEdit = {
-                                      id: item.policy_id || item.id,
-                                      title: item.policy_title || item.title,
-                                      summary: changes?.summary || item.summary || '',
-                                      department_name: item.department_name,
-                                      content: changes?.content,
-                                      parameters: params,
-                                      status: 'draft'
-                                    };
-                                    onEditDraft(draftToEdit);
-                                  }}
+                                  onClick={openEditSubmission}
                                   className="px-2.5 py-1 text-xs font-bold bg-white text-[#0057B8] border border-blue-300 hover:bg-blue-100 rounded-lg transition cursor-pointer flex items-center gap-1"
                                 >
                                   <FileEdit className="w-3 h-3" />
                                   <span>Edit / Correct</span>
                                 </button>
                               )}
+                              <button
+                                type="button"
+                                onClick={() => handleWithdrawReviewItem(item)}
+                                disabled={isSubmitting}
+                                className="px-2.5 py-1 text-xs font-bold bg-white text-slate-700 border border-slate-300 hover:bg-slate-100 rounded-lg transition cursor-pointer disabled:opacity-50"
+                                title="Withdraw this submission back to Saved Drafts"
+                              >
+                                Withdraw to Draft
+                              </button>
                               <span className="text-[11px] font-mono font-bold bg-blue-200 px-2 py-0.5 rounded text-blue-900">
-                                Locked for Adjudication
+                                Pending Sign-Off
                               </span>
                             </div>
                           </div>
@@ -1230,8 +1595,34 @@ export function ChangeManagementCenterPane({
                           )}
                         </div>
 
-                        <div className="text-right text-slate-400 text-[11px] flex-shrink-0">
+                        <div className="text-right text-slate-400 text-[11px] flex-shrink-0 flex flex-col items-end gap-2">
                           <p>{new Date(item.reviewed_at || item.created_at).toLocaleString()}</p>
+                          {item.policy_id && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const linkedPolicy = [...(policies || []), ...allDrafts].find(p => String(p.id) === String(item.policy_id));
+                                setHistoryModalState({
+                                  policy: linkedPolicy || {
+                                    id: item.policy_id,
+                                    title: item.policy_title || item.title,
+                                    status: item.status === 'approved' ? 'active' : 'draft',
+                                    version: linkedPolicy?.version || '1.0',
+                                    created_by: item.maker_name,
+                                    created_at: item.reviewed_at || item.created_at
+                                  },
+                                  initialMode: 'timeline',
+                                  initialSelectedVersion: null
+                                });
+                              }}
+                              className="px-2.5 py-1 rounded-lg border border-slate-300 hover:border-[#0057B8] bg-white hover:bg-blue-50/60 text-[#0057B8] text-[11px] font-bold transition flex items-center gap-1 shadow-2xs cursor-pointer"
+                              title="Inspect combined policy and draft revision history"
+                            >
+                              <HistoryIcon className="w-3.5 h-3.5" />
+                              <span>History</span>
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -1402,6 +1793,26 @@ export function ChangeManagementCenterPane({
         </div>,
         document.body
       )}
+
+      <PolicyVersionHistoryModal
+        isOpen={Boolean(historyModalState?.policy)}
+        onClose={() => setHistoryModalState(null)}
+        policy={historyModalState?.policy}
+        currentUser={currentUser}
+        initialMode={historyModalState?.initialMode || 'timeline'}
+        initialSelectedVersion={historyModalState?.initialSelectedVersion || null}
+        onRestoreAndEdit={
+          onEditDraft
+            ? (restoredDraft) => {
+                setHistoryModalState(null);
+                onEditDraft(restoredDraft);
+              }
+            : null
+        }
+        onPolicyRestored={() => {
+          if (onRefresh) onRefresh();
+        }}
+      />
 
     </div>
   );

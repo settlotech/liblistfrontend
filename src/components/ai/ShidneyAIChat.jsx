@@ -24,6 +24,8 @@ import {
 import { askShidneyAI } from '../../services/shidneyAiService';
 import { apiService } from '../../services/apiService';
 import { taskApi } from '../../services/api/taskApi';
+import { privateChatApi } from '../../services/api/privateChatApi';
+import { extractPolicyAiContext } from '../../utils/policyAiContext';
 
 const DEFAULT_BANK_MEMBERS = [
   { id: 'u_cba_marcus', name: 'Marcus Vance', role: 'Bank Administrator', department: 'Executive Governance', avatar: 'MV', color: 'bg-indigo-600' },
@@ -36,6 +38,7 @@ const DEFAULT_BANK_MEMBERS = [
 export default function ShidneyAIChat({
   currentUser,
   selectedBank,
+  openedDocument = null,
   activePolicy,
   selectedProduct,
   policies = {},
@@ -47,6 +50,7 @@ export default function ShidneyAIChat({
   onOpenExportModal,
 }) {
   const userName = currentUser?.name?.split(' ')[0] || 'David';
+  const currentDoc = openedDocument || activePolicy || null;
 
   const [messages, setMessages] = useState([]);
   const [inputPrompt, setInputPrompt] = useState('');
@@ -115,6 +119,28 @@ export default function ShidneyAIChat({
   useEffect(() => {
     scrollToBottom();
   }, [messages, isLoading]);
+
+  // Load user's private Shidney AI history scoped to the currently opened document (hidden from other users)
+  useEffect(() => {
+    let cancelled = false;
+    privateChatApi.getAiMessages(currentDoc?.id || null)
+      .then((res) => {
+        if (cancelled) return;
+        const rows = Array.isArray(res?.messages) ? res.messages : [];
+        setMessages(rows.map((m) => ({
+          id: `priv-ai-${m.id}`,
+          sender: m.message_type === 'assistant' ? 'assistant' : 'user',
+          time: m.created_at
+            ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : '',
+          text: String(m.content || '').replace(/^@\s*Shidney\b:?\s*/i, ''),
+        })));
+      })
+      .catch(() => {
+        if (!cancelled) setMessages([]);
+      });
+    return () => { cancelled = true; };
+  }, [currentDoc?.id]);
 
   // Handle typing to detect @mention
   const handleInputChange = (e) => {
@@ -303,10 +329,15 @@ export default function ShidneyAIChat({
     const targetMsg = messages.find(m => m.id === msgId);
     if (targetMsg?.task?.id) {
       try {
-        await apiService.updateTask(targetMsg.task.id, { status: newStatus });
+        await taskApi.updateStatus(targetMsg.task.id, newStatus);
         window.dispatchEvent(new CustomEvent('liblist:task_updated', { detail: { id: targetMsg.task.id, status: newStatus } }));
-      } catch (err) {
-        console.warn('Task status update warning:', err);
+      } catch {
+        try {
+          await apiService.updateTask(targetMsg.task.id, { status: newStatus });
+          window.dispatchEvent(new CustomEvent('liblist:task_updated', { detail: { id: targetMsg.task.id, status: newStatus } }));
+        } catch (err) {
+          console.warn('Task status update warning:', err);
+        }
       }
     }
   };
@@ -326,9 +357,9 @@ export default function ShidneyAIChat({
     if (isTaskAssignment) {
       const cleanTitleText = text.replace(/@([a-zA-Z0-9_\s.-]+?)(?=\s|$|[.,!?])/g, '').trim() || 'Review Policy & Modular Clause Specifications';
       const cleanTaskTitle = `[Task] ${cleanTitleText.length > 60 ? cleanTitleText.slice(0, 60) + '...' : cleanTitleText}`;
-      const originPolicyId = activePolicy?.id || 'credit-card-limits-policy';
-      const originPolicyTitle = activePolicy?.title || 'Operational Policy';
-      const originSection = activePolicy?.version ? `Policy v${activePolicy.version}` : 'Active Policy';
+      const originPolicyId = currentDoc?.id || 'credit-card-limits-policy';
+      const originPolicyTitle = currentDoc?.title || 'Operational Policy';
+      const originSection = currentDoc?.version ? `Policy v${currentDoc.version}` : 'Active Policy';
 
       let createdTaskObj = null;
 
@@ -403,28 +434,7 @@ export default function ShidneyAIChat({
       return;
     }
 
-    // Regular AI Chat Message
-    const lower = text.toLowerCase();
-    let detectedPolicyId = null;
-    let detectedProduct = null;
-
-    if (lower.includes('credit card') || lower.includes('credit-card') || lower.includes('card product') || (lower.includes('card') && !lower.includes('standard'))) {
-      detectedPolicyId = 'credit-card-limits-policy';
-      detectedProduct = 'credit-cards';
-    } else if (lower.includes('personal loan') || (lower.includes('loan') && !lower.includes('credit card')) || lower.includes('overdraft')) {
-      detectedPolicyId = 'personal-loans-assessment-sop';
-      detectedProduct = 'personal-loans';
-    } else if (lower.includes('onboard') || lower.includes('identity verification') || lower.includes('dvs')) {
-      detectedPolicyId = 'customer-onboarding-sop';
-    } else if (lower.includes('commercial') || lower.includes('kyc') || lower.includes('ubo') || lower.includes('business account')) {
-      detectedPolicyId = 'commercial-kyc-sop';
-    } else if (lower.includes('remote access') || lower.includes('security') || lower.includes('infosec') || lower.includes('cps 234') || lower.includes('mfa')) {
-      detectedPolicyId = 'remote-access-security-policy';
-    }
-
-    if (detectedPolicyId && onSelectPolicy) onSelectPolicy(detectedPolicyId);
-    if (detectedProduct && onSelectProduct) onSelectProduct(detectedProduct);
-
+    // Regular Private AI Chat Message grounded in the currently opened document
     const userMsg = {
       id: `u-${Date.now()}`,
       sender: 'user',
@@ -437,37 +447,59 @@ export default function ShidneyAIChat({
     setIsLoading(true);
 
     try {
-      const response = await askShidneyAI({
-        prompt: text,
-        conversationHistory: messages,
-        context: {
-          currentUser,
-          selectedBank,
-          activePolicy,
-          selectedProduct,
-          policies,
-        },
+      const privRes = await privateChatApi.sendAiMessage({
+        content: text,
+        policy_id: currentDoc?.id || null,
+        policy_title: currentDoc?.title || null,
+        policy_context: extractPolicyAiContext(currentDoc),
       });
 
-      const aiMsg = {
-        id: `ai-${Date.now()}`,
-        sender: 'assistant',
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        text: response.text,
-      };
-
-      setMessages(prev => [...prev, aiMsg]);
-    } catch (err) {
-      console.error('Error fetching Shidney response:', err);
+      const replyText = privRes?.assistantMessage?.content || 'No response received from Shidney.';
       setMessages(prev => [
         ...prev,
         {
-          id: `ai-err-${Date.now()}`,
+          id: `ai-${privRes?.assistantMessage?.id || Date.now()}`,
           sender: 'assistant',
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          text: 'I encountered an issue connecting to the banking knowledge engine. You can verify policies or assign tasks directly to team members using @username.',
+          text: replyText,
         }
       ]);
+    } catch (backendErr) {
+      console.warn('Private backend Shidney fallback:', backendErr.message);
+      try {
+        const response = await askShidneyAI({
+          prompt: text,
+          conversationHistory: messages,
+          context: {
+            currentUser,
+            selectedBank,
+            activePolicy: currentDoc || activePolicy,
+            selectedProduct,
+            policies,
+          },
+        });
+
+        setMessages(prev => [
+          ...prev,
+          {
+            id: `ai-${Date.now()}`,
+            sender: 'assistant',
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            text: response.text,
+          }
+        ]);
+      } catch (err) {
+        console.error('Error fetching Shidney response:', err);
+        setMessages(prev => [
+          ...prev,
+          {
+            id: `ai-err-${Date.now()}`,
+            sender: 'assistant',
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            text: 'I encountered an issue connecting to the banking knowledge engine. You can verify policies or assign tasks directly to team members using @username.',
+          }
+        ]);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -588,7 +620,6 @@ export default function ShidneyAIChat({
 
   return (
     <div className="flex flex-col h-full bg-slate-50/40 relative">
-      
       {/* Messages Scroll Area */}
       <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3">
         {messages.length === 0 && (
@@ -596,9 +627,9 @@ export default function ShidneyAIChat({
             <div className="w-10 h-10 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center mb-2.5 shadow-2xs">
               <Sparkles className="w-5 h-5 text-blue-600" />
             </div>
-            <p className="font-bold text-slate-700 text-xs">Group Chat & Copilot</p>
+            <p className="font-bold text-slate-700 text-xs">Shidney AI</p>
             <p className="text-[11px] text-slate-400 mt-1 max-w-[220px] leading-relaxed">
-              Ask policy questions or type <span className="font-bold text-blue-600">@username</span> to assign tasks to bank squad members.
+              Ask about this document or type <span className="font-bold text-blue-600">@name</span> to assign a task.
             </p>
           </div>
         )}
@@ -610,7 +641,7 @@ export default function ShidneyAIChat({
           if (msg.isTask && msg.task) {
             const task = msg.task;
             const isCompleted = task.status === 'completed';
-            const isInProgress = task.status === 'in_progress';
+            const isInProgress = task.status === 'in_progress' || task.status === 'responded';
 
             return (
               <div key={msg.id} className="p-3 rounded-xl bg-gradient-to-r from-blue-50/90 to-indigo-50/90 border border-blue-200/90 shadow-2xs space-y-2 text-xs">
@@ -648,7 +679,7 @@ export default function ShidneyAIChat({
                         {!isInProgress && (
                           <button
                             type="button"
-                            onClick={() => handleUpdateChatTaskStatus(msg.id, 'in_progress')}
+                            onClick={() => handleUpdateChatTaskStatus(msg.id, 'responded')}
                             className="px-2 py-0.5 bg-white hover:bg-amber-50 text-amber-800 border border-amber-300 rounded text-[10.5px] font-bold transition cursor-pointer shadow-2xs"
                           >
                             Acknowledge
