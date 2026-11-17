@@ -556,7 +556,7 @@ export default function PolicyViewerPage() {
                                     <button type="button" className="btn-configure"
                                         onClick={handleOpenEditor}>
                                         <Edit3 size={14} />
-                                        <span>Configure</span>
+                                        <span>Edit</span>
                                     </button>
                                 ) : null
                             ) : isLive ? (
@@ -564,7 +564,7 @@ export default function PolicyViewerPage() {
                                     onClick={handleConfigure}
                                     disabled={isCreatingRevision}>
                                     <Edit3 size={14} />
-                                    <span>{isCreatingRevision ? 'Starting...' : 'Configure'}</span>
+                                    <span>{isCreatingRevision ? 'Starting...' : 'Edit'}</span>
                                 </button>
                             ) : isDraft ? (
                                 <button type="button" className="btn-configure"
