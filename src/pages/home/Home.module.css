@@ -846,6 +846,10 @@
   color: var(--text-primary, #0f172a);
 }
 
+.chatHeaderCopy { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.chatHeaderCopy strong { color: #0f172a; font-size: 0.78rem; }
+.chatHeaderCopy small { overflow: hidden; color: #64748b; font-size: 0.62rem; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+
 .chatContextGrid {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(105px, 0.9fr);

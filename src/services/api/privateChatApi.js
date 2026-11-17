@@ -6,8 +6,9 @@ export const privateChatApi = {
     return response?.data || [];
   },
 
-  async getAiMessages() {
-    const response = await apiFetch('/chats/ai/messages');
+  async getAiMessages(policyId = null) {
+    const query = policyId ? `?policy_id=${encodeURIComponent(policyId)}` : '';
+    const response = await apiFetch(`/chats/ai/messages${query}`);
     return response?.data || { messages: [] };
   },
 

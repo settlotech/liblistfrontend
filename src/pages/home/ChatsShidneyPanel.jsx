@@ -49,6 +49,7 @@ const ChatsShidneyPanel = ({ isOpen }) => {
   const requestIdRef = useRef(0);
 
   const loadMessages = useCallback(async () => {
+    if (documentId && !policy?.id) return;
     const requestId = ++requestIdRef.current;
     setIsMessagesLoading(true);
     setError('');
@@ -57,7 +58,7 @@ const ChatsShidneyPanel = ({ isOpen }) => {
       : Promise.resolve({ messages: [], tasks: [] });
     const [sharedResult, privateResult] = await Promise.allSettled([
       sharedPromise,
-      privateChatApi.getAiMessages(),
+      privateChatApi.getAiMessages(policy?.id || null),
     ]);
     if (requestId !== requestIdRef.current) return;
 
@@ -76,7 +77,7 @@ const ChatsShidneyPanel = ({ isOpen }) => {
       if (sharedResult.status === 'fulfilled') setError(privateResult.reason?.message || 'Could not load your private Shidney messages.');
     }
     setIsMessagesLoading(false);
-  }, [policy?.id]);
+  }, [documentId, policy?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -160,7 +161,7 @@ const ChatsShidneyPanel = ({ isOpen }) => {
     const matchingUsers = assignableUsers.filter((item) => (
       !query || item.displayName.toLowerCase().includes(query) || item.email?.toLowerCase().includes(query)
     )).slice(0, 6);
-    const shidneyMatches = !query || 'shidney'.includes(query) || query.includes('shidney');
+    const shidneyMatches = !query || 'shidney'.includes(query) || query.includes('shidney') || 'sidney'.includes(query) || query.includes('sidney');
     return [
       ...(shidneyMatches ? [{ id: 'private-shidney', displayName: 'Shidney', isAi: true }] : []),
       ...matchingUsers,
@@ -293,7 +294,7 @@ const ChatsShidneyPanel = ({ isOpen }) => {
       />
 
       <div className={styles.chatHeader}>
-        <div className={styles.chatHeaderTitle}><MessageSquare size={17} color="#0f172a" /><span>Chats &amp; Shidney</span></div>
+        <div className={styles.chatHeaderTitle}><MessageSquare size={17} color="#0f172a" /><span className={styles.chatHeaderCopy}><strong>Chats &amp; Shidney</strong><small title={policy?.document_name || ''}>{isPolicyLoading ? 'Loading policy…' : policy?.document_name || 'Private chat'}</small></span></div>
       </div>
 
       {/* <div className={styles.chatContextGrid}>
@@ -313,7 +314,7 @@ const ChatsShidneyPanel = ({ isOpen }) => {
 
       <div className={styles.chatMessages}>
           {isMessagesLoading && messages.length === 0 && <div className={styles.chatLoading}><LoaderCircle size={18} /> Loading chat…</div>}
-          {!isMessagesLoading && messages.length === 0 && <div className={styles.chatWelcome}><span className={styles.chatWelcomeIcon}><Sparkles size={25} /></span><strong>{policy?.id ? 'Chat about this policy' : 'Ask Shidney privately'}</strong><span>{policy?.id ? <>Use <b>@Shidney</b> for a private AI reply, select <b>@person</b> to assign a task, or send a normal shared message.</> : <>Mention <b>@Shidney</b> for a private AI reply. Open a policy to use shared chat and assign tasks.</>}</span></div>}
+          {!isMessagesLoading && messages.length === 0 && <div className={styles.chatWelcome}><span className={styles.chatWelcomeIcon}><Sparkles size={25} /></span><strong>{policy?.id ? 'Chat about this policy' : 'Ask Shidney privately'}</strong><span>{policy?.id ? <>Use <b>@Shidney</b> for a policy-advisor reply, select <b>@person</b> to assign a task, or send a normal shared message.</> : <>Mention <b>@Shidney</b> for a private  reply. Open a policy to start its separate policy chat.</>}</span></div>}
           {messages.map((message) => {
             const isAssistant = message.message_type === 'assistant';
             const isMine = !isAssistant && String(message.sender_id) === String(user?.id);
@@ -340,11 +341,11 @@ const ChatsShidneyPanel = ({ isOpen }) => {
         <div className={styles.chatComposerWrap}>
           {mentionQuery !== null && mentionMatches.length > 0 && (
             <div className={styles.mentionMenu} role="listbox" aria-label="Mention Shidney or assign a teammate">
-              <div className={styles.mentionMenuTitle}>Private AI or assign a task</div>
+              <div className={styles.mentionMenuTitle}>Assign a task</div>
               {mentionMatches.map((mention) => (
                 <button key={mention.id} type="button" className={styles.mentionOption} onMouseDown={(event) => event.preventDefault()} onClick={() => chooseMention(mention)}>
                   <span className={styles.mentionAvatar}>{mention.isAi ? <Sparkles size={13} /> : mention.displayName.slice(0, 1).toUpperCase()}</span>
-                  <span><strong>{mention.isAi ? '@Shidney · Private AI' : mention.displayName}</strong><small>{mention.isAi ? 'Only visible in your private chat' : mention.email || 'Creates a policy task'}</small></span>
+                  <span><strong>{mention.isAi ? '@Shidney' : mention.displayName}</strong><small>{mention.isAi ? 'Only visible in your chat' : mention.email || 'Creates a policy task'}</small></span>
                 </button>
               ))}
             </div>

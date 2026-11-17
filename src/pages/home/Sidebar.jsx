@@ -123,7 +123,7 @@ const Sidebar = ({ isOpen, onToggle }) => {
         <div className={styles.sidebarScrollContent}>
           {/* ── Section: PERSONAL WORKSPACE ── */}
           <div className={styles.navSection}>
-            <div className={styles.sectionHeader}>PERSONAL WORKSPACE</div>
+            <div className={styles.sectionHeader}>UserList</div>
             {workspaceLinks.map((item) => {
               const isActive = activePath === item.path || (item.path === '/home' && activePath === '/');
               return (
@@ -149,7 +149,7 @@ const Sidebar = ({ isOpen, onToggle }) => {
             <div className={styles.sectionHeader}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Pin size={14} strokeWidth={2.5} color="var(--btn-primary-bg, #0060df)" />
-                <span style={{ color: 'var(--btn-primary-bg, #0060df)' }}>PINNED LIBRARIES</span>
+                <span style={{ color: 'var(--btn-primary-bg, #0060df)' }}>PinList</span>
               </div>
               {pinnedPolicies.length > 0 && (
                 <span style={{ fontSize: '10.5px', background: '#eff6ff', color: '#1d4ed8', padding: '1px 6px', borderRadius: '99px', fontWeight: 600 }}>
@@ -201,7 +201,7 @@ const Sidebar = ({ isOpen, onToggle }) => {
             <div className={styles.sectionHeader}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Layers size={15} strokeWidth={2.2} color="var(--btn-primary-bg, #0060df)" />
-                <span style={{ color: 'var(--btn-primary-bg, #0060df)' }}>MASTER LIBRARY</span>
+                <span style={{ color: 'var(--btn-primary-bg, #0060df)' }}>LibList</span>
               </div>
               {canCreateLibrary && (
                 <button

@@ -182,7 +182,7 @@ const LoginPage = () => {
             className="btn-outline-pill"
             onClick={() => navigate('/request')}
           >
-            Request for Access
+            Request for LibList Access
           </button>
         </div>
 

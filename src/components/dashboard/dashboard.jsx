@@ -26,6 +26,7 @@ function SimpleDashboardContent() {
     const {
         metrics,
         changeManagement,
+        recentActivity,
         loading,
         isRefreshing,
         refreshDashboard,
@@ -74,6 +75,15 @@ function SimpleDashboardContent() {
         } catch {
             return '';
         }
+    };
+
+    const formatActivityDetails = (details) => {
+        if (typeof details === 'string') return details;
+        if (details && typeof details === 'object') {
+            if (typeof details.description === 'string') return details.description;
+            try { return JSON.stringify(details); } catch { return 'Updated item'; }
+        }
+        return '';
     };
 
     return (
@@ -300,10 +310,11 @@ function SimpleDashboardContent() {
                 )}
             </div>
 
+            <div className="dashboard-panels-grid">
             {/* ── Content Grid: Recent Policies & Tasks ── */}
             <div className="simple-content-grid">
-                {/* Panel 1: Recent Policies */}
-                <div className="simple-panel">
+                {/* Panel 1: Recent Policies (regular users only) */}
+                {!isSuperAdmin && <div className="simple-panel">
                     <div className="simple-panel-header">
                         <h2>{isSuperAdmin ? 'Recent System Policies' : 'Recent Policies'}</h2>
                         <button
@@ -344,7 +355,7 @@ function SimpleDashboardContent() {
                             ))
                         )}
                     </div>
-                </div>
+                </div>}
 
                 {/* Panel 2: Recent Tasks */}
                 <div className="simple-panel">
@@ -407,6 +418,30 @@ function SimpleDashboardContent() {
                 </div>
             </div>
 
+            {isSuperAdmin && Array.isArray(metrics?.policiesByDepartment) && (
+                <div className="simple-panel">
+                    <div className="simple-panel-header"><h2>Policies by Department</h2><button type="button" className="text-link-btn" onClick={() => navigate('/home')}>Open Library <ArrowRight size={13} /></button></div>
+                    <div className="simple-list">
+                        {metrics.policiesByDepartment.map((item) => {
+                            const max = Math.max(1, ...metrics.policiesByDepartment.map(row => row.policy_count || 0));
+                            return <div key={item.department} style={{ padding: '8px 10px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: 5 }}><strong>{item.department}</strong><span>{item.active_count} / {item.policy_count} policies</span></div>
+                                <div style={{ height: 4, background: '#eaf0f6', borderRadius: 4 }}><div style={{ width: `${Math.round((item.policy_count / max) * 100)}%`, height: '100%', background: '#0084d6', borderRadius: 4 }} /></div>
+                            </div>;
+                        })}
+                    </div>
+                </div>
+            )}
+
+            <div className="simple-panel dashboard-activity-panel">
+                <div className="simple-panel-header"><h2>My Recent Activity · Last 7 Days</h2></div>
+                <div className="simple-list dashboard-activity-list">
+                    {loading ? <div className="empty-message">Loading activity…</div> : recentActivity.length === 0 ? <div className="empty-message">No activity in the last 7 days</div> : recentActivity.map((activity) => <div className="simple-list-row" key={activity.id}>
+                        <div className="row-main"><span className="row-title">{activity.event_type || 'Activity'} · {formatActivityDetails(activity.details) || activity.entity_type || 'Updated item'}</span><span className="row-meta">{formatDate(activity.created_at)}</span></div>
+                    </div>)}
+                </div>
+            </div>
+
             {/* ── Change Management Widget ── */}
             {(() => {
                 const cmData = changeManagement;
@@ -417,7 +452,7 @@ function SimpleDashboardContent() {
                 const cmItems = cmTab === 'draft' ? savedDrafts : inReviewList;
 
                 return (
-                    <div className="simple-panel" style={{ marginTop: '24px' }}>
+                    <div className="simple-panel">
                         {/* Panel Header */}
                         <div className="simple-panel-header">
                             <h2>Change Management</h2>
@@ -528,6 +563,7 @@ function SimpleDashboardContent() {
                     </div>
                 );
             })()}
+            </div>
         </div>
     );
 }

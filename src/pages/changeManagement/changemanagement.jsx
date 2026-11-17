@@ -985,8 +985,8 @@ export default function ChangeManagementPage() {
                             {reviewAction === 'approve' ? (
                                 <p style={{ margin: 0, fontSize: '13px', color: '#334155', lineHeight: '1.5' }}>
                                     {reviewingDoc.has_pending_revision
-                                        ? `Approving will promote Revision v${reviewingDoc.pending_revision_version || ''} to live version and update the Master Library across all CBA institutions.`
-                                        : 'Approving will immediately transition this operational policy from draft to active. It will be published into Master Library and made visible across CBA institutions.'}
+                                        ? `Approving will promote Revision v${reviewingDoc.pending_revision_version || ''} to live version and update the Master Library across all  institutions.`
+                                        : 'Approving will immediately transition this operational policy from draft to active. It will be published into Master Library and made visible across  institutions.'}
                                 </p>
                             ) : (
                                 <div>

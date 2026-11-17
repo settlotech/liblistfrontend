@@ -864,7 +864,7 @@ export default function CreateOperationalPolicyPage() {
                         </div>
 
                         {/* 5. 6 Standard Sections Structure Guide */}
-                        <div className="template-info-box" style={{ marginTop: 'auto' }}>
+                        {/* <div className="template-info-box" style={{ marginTop: 'auto' }}>
                             <div className="template-info-title">
                                 <Layers size={14} /> 6 Standard Sections Structure
                             </div>
@@ -876,7 +876,7 @@ export default function CreateOperationalPolicyPage() {
                                 <li>5. Dependencies (System integration)</li>
                                 <li>6. Controls (Verification checkpoints)</li>
                             </ul>
-                        </div>
+                        </div> */}
                     </div>
 
                     {/* ── Right Panel (62%): Rich Text Editor Component ── */}

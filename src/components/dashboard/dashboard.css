@@ -103,6 +103,7 @@
 .simple-cards-row {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    align-items: stretch;
     gap: 16px;
 }
 
@@ -222,9 +223,27 @@
 
 /* ── Content Grid ── */
 .simple-content-grid {
+    display: contents;
+}
+
+.dashboard-panels-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
     gap: 16px;
+}
+
+.dashboard-panels-grid > .simple-panel {
+    min-width: 0;
+    height: 100%;
+    box-sizing: border-box;
+}
+
+.dashboard-activity-list {
+    max-height: 280px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 4px;
 }
 
 .simple-panel {
@@ -417,7 +436,10 @@
         padding: 16px;
     }
     .simple-content-grid {
-        grid-template-columns: 1fr;
+        display: contents;
+    }
+    .dashboard-panels-grid {
+        grid-template-columns: minmax(0, 1fr);
     }
     .dashboard-topbar {
         flex-direction: column;

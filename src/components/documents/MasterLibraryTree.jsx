@@ -15,6 +15,23 @@ import {
 } from 'lucide-react';
 import { documentManagementApi } from '../../services/api/documentManagementApi';
 
+const flattenLibraries = (libraries = []) => libraries.flatMap((library) => [
+    library,
+    ...flattenLibraries(library.children || [])
+]);
+
+const nestLibraries = (libraries = []) => {
+    const byId = new Map(libraries.map((library) => [String(library.id), { ...library, children: [] }]));
+    const roots = [];
+    libraries.forEach((library) => {
+        const node = byId.get(String(library.id));
+        const parent = library.parent_library_id && byId.get(String(library.parent_library_id));
+        if (parent && parent.id !== node.id) parent.children.push(node);
+        else roots.push(node);
+    });
+    return roots;
+};
+
 export default function MasterLibraryTree({
     searchQuery = '',
     selectedDocId = null,
@@ -126,8 +143,9 @@ export default function MasterLibraryTree({
                 ...lib,
                 documents: docsByLib.get(lib.id) || []
             }));
+            const nestedLibraries = nestLibraries(combined);
 
-            setTreeData(combined);
+            setTreeData(nestedLibraries);
 
             // Maintain existing open libraries or auto-expand all
             setExpandedNodeIds((prev) => {
@@ -160,8 +178,19 @@ export default function MasterLibraryTree({
     useEffect(() => {
         const handleSilentRefresh = (e) => {
             loadHierarchy(false);
-            if (e?.detail?.library_id) {
-                setExpandedNodeIds((prev) => new Set([...prev, e.detail.library_id]));
+            const libraryId = e?.detail?.library_id || e?.detail?.id;
+            if (libraryId) setExpandedNodeIds((prev) => new Set([...prev, libraryId]));
+            if (e?.detail?.parent_library_id) {
+                const allLibraries = flattenLibraries(treeData);
+                const idsToExpand = [e.detail.parent_library_id];
+                let ancestorId = e.detail.parent_library_id;
+                while (ancestorId) {
+                    const ancestor = allLibraries.find((lib) => String(lib.id) === String(ancestorId));
+                    if (!ancestor) break;
+                    if (!idsToExpand.some((id) => String(id) === String(ancestor.id))) idsToExpand.push(ancestor.id);
+                    ancestorId = ancestor.parent_library_id;
+                }
+                setExpandedNodeIds((prev) => new Set([...prev, ...idsToExpand]));
             }
         };
 
@@ -190,16 +219,25 @@ export default function MasterLibraryTree({
             window.removeEventListener('liblist:version-restored', handleSilentRefresh);
             window.removeEventListener('liblist:refresh-nav', handleSilentRefresh);
         };
-    }, [loadHierarchy]);
+    }, [loadHierarchy, treeData]);
 
     // Ensure the library containing active document is expanded
     useEffect(() => {
         if (selectedDocId && treeData.length > 0) {
-            const parentLib = treeData.find((lib) =>
+            const allLibraries = flattenLibraries(treeData);
+            const parentLib = allLibraries.find((lib) =>
                 lib.documents?.some((d) => d.id === selectedDocId)
             );
             if (parentLib) {
-                setExpandedNodeIds((prev) => new Set([...prev, parentLib.id]));
+                const idsToExpand = [parentLib.id];
+                let ancestorId = parentLib.parent_library_id;
+                while (ancestorId) {
+                    const ancestor = allLibraries.find((lib) => String(lib.id) === String(ancestorId));
+                    if (!ancestor || idsToExpand.some((id) => String(id) === String(ancestor.id))) break;
+                    idsToExpand.push(ancestor.id);
+                    ancestorId = ancestor.parent_library_id;
+                }
+                setExpandedNodeIds((prev) => new Set([...prev, ...idsToExpand]));
             }
         }
     }, [selectedDocId, treeData]);
@@ -243,20 +281,23 @@ export default function MasterLibraryTree({
         if (!searchQuery.trim()) return treeData;
         const q = searchQuery.toLowerCase().trim();
 
-        return treeData.map((lib) => {
+        const filterLibrary = (lib) => {
             const libMatches = lib.library_name?.toLowerCase().includes(q);
             const matchingDocs = (lib.documents || []).filter(
                 (d) => d.document_name?.toLowerCase().includes(q)
             );
+            const matchingChildren = (lib.children || []).map(filterLibrary).filter(Boolean);
 
-            if (libMatches || matchingDocs.length > 0) {
+            if (libMatches || matchingDocs.length > 0 || matchingChildren.length > 0) {
                 return {
                     ...lib,
-                    documents: libMatches ? lib.documents : matchingDocs
+                    documents: libMatches ? lib.documents : matchingDocs,
+                    children: matchingChildren
                 };
             }
             return null;
-        }).filter(Boolean);
+        };
+        return treeData.map(filterLibrary).filter(Boolean);
     }, [treeData, searchQuery]);
 
     if (isLoading) {
@@ -280,7 +321,8 @@ export default function MasterLibraryTree({
 
     return (
         <div className="dms-master-tree-container">
-            {filteredTree.map((lib) => {
+            {filteredTree.map((rootLib) => {
+                const renderNode = (lib) => {
                 const isLibExpanded = expandedNodeIds.has(lib.id);
                 const docCount = lib.documents ? lib.documents.length : 0;
 
@@ -347,6 +389,12 @@ export default function MasterLibraryTree({
                             </div>
                         </div>
 
+                        {isLibExpanded && lib.children?.length > 0 && (
+                            <div className="sidebar-library-children">
+                                {lib.children.map(renderNode)}
+                            </div>
+                        )}
+
                         {/* Documents Hierarchy under Library */}
                         {isLibExpanded && lib.documents && (
                             <div className="sidebar-child-policies">
@@ -395,6 +443,8 @@ export default function MasterLibraryTree({
                         )}
                     </div>
                 );
+                };
+                return renderNode(rootLib);
             })}
             {/* Library Removal Request Modal */}
             {removalTargetLib && (

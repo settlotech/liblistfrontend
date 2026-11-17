@@ -335,6 +335,12 @@
     gap: 2px;
 }
 
+.sidebar-library-children {
+    margin-left: 14px;
+    padding-left: 8px;
+    border-left: 1px solid var(--border-color);
+}
+
 .sidebar-policy-row {
     display: flex;
     align-items: center;

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { fetchDashboardOverview, fetchDashboardChangeManagement } from '../services/dashboard.service';
+import { fetchDashboardOverview, fetchDashboardChangeManagement, fetchActivityTimeline } from '../services/dashboard.service';
 import { useAuth } from './AuthContext';
 
 const DashboardContext = createContext(null);
@@ -8,6 +8,7 @@ export const DashboardProvider = ({ children }) => {
     const { user } = useAuth();
     const [metrics, setMetrics] = useState(null);
     const [changeManagement, setChangeManagement] = useState(null);
+    const [recentActivity, setRecentActivity] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [error, setError] = useState(null);
@@ -19,6 +20,7 @@ export const DashboardProvider = ({ children }) => {
     useEffect(() => {
         setMetrics(null);
         setChangeManagement(null);
+        setRecentActivity([]);
         setError(null);
         setLastUpdated(null);
     }, [user?.id]);
@@ -32,12 +34,14 @@ export const DashboardProvider = ({ children }) => {
         setError(null);
 
         try {
-            const [overviewData, cmData] = await Promise.all([
+            const [overviewData, cmData, activityData] = await Promise.all([
                 fetchDashboardOverview({ department_id: departmentId, time_range: timeRange }),
                 fetchDashboardChangeManagement().catch(() => null),
+                fetchActivityTimeline(7).catch(() => []),
             ]);
             setMetrics(overviewData);
             setChangeManagement(cmData);
+            setRecentActivity(activityData || []);
             setLastUpdated(new Date());
         } catch (err) {
             console.error('Failed to load dashboard metrics:', err);
@@ -59,6 +63,7 @@ export const DashboardProvider = ({ children }) => {
             value={{
                 metrics,
                 changeManagement,
+                recentActivity,
                 loading,
                 isRefreshing,
                 error,

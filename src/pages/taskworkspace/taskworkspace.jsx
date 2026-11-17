@@ -23,7 +23,8 @@ import {
     Bookmark,
     CheckSquare,
     HelpCircle,
-    Calendar
+    Calendar,
+    LayoutGrid
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { taskApi } from '../../services/api/taskApi';
@@ -48,6 +49,7 @@ export default function TaskWorkspace() {
     const [activeTab, setActiveTab] = useState('all'); // 'all' | 'common' | 'pinned' | 'general'
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
+    const [layout, setLayout] = useState('table');
 
     // ── CONTEXT MENU STATE (Trigger Type 1) ───────────────────────────────
     const [contextMenu, setContextMenu] = useState(null); // { x, y, task }
@@ -589,6 +591,10 @@ export default function TaskWorkspace() {
                 </div>
 
                 <div className="task-filter-group">
+                    <div className="task-layout-toggle" role="group" aria-label="Task layout">
+                        <button type="button" className={layout === 'card' ? 'active' : ''} onClick={() => setLayout('card')} title="Card layout"><LayoutGrid size={14} /> Cards</button>
+                        <button type="button" className={layout === 'table' ? 'active' : ''} onClick={() => setLayout('table')} title="Table layout"><ListTodo size={14} /> Table</button>
+                    </div>
                     <div className="task-search-input-wrap">
                         <Search size={14} />
                         <input
@@ -616,19 +622,35 @@ export default function TaskWorkspace() {
             </div>
 
             {/* ── RESPONSIVE TASK TABLE ── */}
-            <div className="task-table-wrapper">
+            {layout === 'card' ? (
+                <div className="task-card-grid">
+                    {loading ? <div className="task-empty-state">Loading tasks…</div> : filteredTasks.length === 0 ? <div className="task-empty-state">No tasks found</div> : filteredTasks.map(t => <article className="task-detail-card" key={t.id} onContextMenu={(e) => handleContextMenu(e, t)}>
+                        <header><span className="task-id-badge">{t.task_seq || `#${t.id}`}</span><span className={`task-status-badge ${(t.status || 'responded').toLowerCase()}`}>{t.status || 'Responded'}</span></header>
+                        <h3>{t.title || 'Untitled task'}</h3>
+                        <p>{t.description || 'No task details provided.'}</p>
+                        <dl>
+                            <div><dt>Created</dt><dd>{t.created_at ? new Date(t.created_at).toLocaleDateString() : '—'}</dd></div>
+                            <div><dt>Created by</dt><dd>{t.creator_name || '—'}</dd></div>
+                            <div><dt>Type</dt><dd>{t.category || 'general'}</dd></div>
+                            <div><dt>Action date</dt><dd>{t.updated_at ? new Date(t.updated_at).toLocaleDateString() : '—'}</dd></div>
+                        </dl>
+                        <footer><button type="button" className={`task-icon-btn ${t.is_pinned ? 'pinned' : ''}`} onClick={(e) => handleTogglePin(t, e)} title={t.is_pinned ? 'Unpin Task' : 'Pin Task'}><Pin size={14} /></button>{canDeleteTask(t) && <button type="button" className="task-icon-btn danger" onClick={(e) => handleDeleteTask(t, e)} title="Delete Task"><Trash2 size={14} /></button>}</footer>
+                    </article>)}
+                    <LoadMoreOnScroll hasMore={tasksHasMore} loading={loadingMoreTasks} onLoadMore={() => fetchTasks(taskPage + 1, true)} label="Load more tasks" />
+                </div>
+            ) : <div className="task-table-wrapper">
                 <div className="task-table-scroll">
                     <table className="task-table">
                         <thead>
                             <tr>
                                 <th style={{ width: '40px' }}></th>
                                 <th style={{ width: '90px' }}>Task ID</th>
-                                <th style={{ width: '115px' }}>Date Log</th>
-                                <th style={{ width: '125px' }}>Due Date</th>
-                                <th style={{ width: '160px' }}>Assigned To</th>
+                                <th style={{ width: '115px' }}>Created Date</th>
+                                <th style={{ width: '125px' }}>Action Date</th>
+                                <th style={{ width: '160px' }}>Created By</th>
                                 <th style={{ width: '120px' }}>Status</th>
-                                <th>Task Description</th>
-                                <th style={{ width: '90px' }}>Category</th>
+                                <th>Task Details</th>
+                                <th style={{ width: '90px' }}>Type</th>
                                 <th style={{ width: '110px', textAlign: 'center' }}>Actions</th>
                             </tr>
                         </thead>
@@ -701,37 +723,16 @@ export default function TaskWorkspace() {
                                                     </div>
                                                 </td>
 
-                                                {/* Due Date */}
+                                                {/* Action Date */}
                                                 <td className="task-date-cell">
-                                                    {t.due_date ? (
-                                                        (() => {
-                                                            const dueDateObj = new Date(t.due_date);
-                                                            const isOverdue = dueDateObj < new Date() && !['completed', 'approved', 'cancelled'].includes((t.status || '').toLowerCase());
-                                                            const dueDateStr = dueDateObj.toLocaleDateString('en-US', {
-                                                                month: '2-digit',
-                                                                day: '2-digit',
-                                                                year: 'numeric'
-                                                            });
-                                                            return (
-                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: isOverdue ? '#dc2626' : '#475569', fontWeight: isOverdue ? 600 : 500 }}>
-                                                                    <Calendar size={12} style={{ color: isOverdue ? '#dc2626' : '#64748b' }} />
-                                                                    <span>{dueDateStr}</span>
-                                                                    {isOverdue && (
-                                                                        <span style={{ fontSize: '10px', background: '#fee2e2', color: '#dc2626', padding: '1px 5px', borderRadius: '4px' }}>
-                                                                            Overdue
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                            );
-                                                        })()
-                                                    ) : (
-                                                        <span style={{ color: '#94a3b8', fontSize: '12px' }}>—</span>
-                                                    )}
+                                                    {t.updated_at ? new Date(t.updated_at).toLocaleDateString('en-US') : '—'}
                                                 </td>
 
-                                                {/* Assigned to / Owner — multi-assignee support */}
+                                                {/* Task creator */}
                                                 <td>
-                                                    {t.assignees && t.assignees.length > 0 ? (
+                                                    {t.creator_name || '—'}
+                                                    {/* Assigned user details remain available on the task card/history. */}
+                                                    {/* {t.assignees && t.assignees.length > 0 ? (
                                                         <div className="task-owner-multi">
                                                             {t.assignees.slice(0, 2).map(a => (
                                                                 <span key={a.id} className={`task-owner-pill ${a.id === user?.id ? 'self' : ''}`}>
@@ -755,7 +756,7 @@ export default function TaskWorkspace() {
                                                             <User size={11} />
                                                             <span>@self</span>
                                                         </span>
-                                                    )}
+                                                    )} */}
                                                 </td>
 
                                                 {/* Status (Image 4) */}
@@ -928,7 +929,7 @@ export default function TaskWorkspace() {
                     </table>
                     <LoadMoreOnScroll hasMore={tasksHasMore} loading={loadingMoreTasks} onLoadMore={() => fetchTasks(taskPage + 1, true)} label="Load more tasks" />
                 </div>
-            </div>
+            </div>}
 
             {/* ── FLOATING RIGHT-CLICK CONTEXT MENU (TRIGGER TYPE 1) ── */}
             {contextMenu && (

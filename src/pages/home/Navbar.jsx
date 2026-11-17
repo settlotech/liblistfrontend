@@ -97,7 +97,7 @@ const Navbar = ({ onToggleSidebar, onToggleChatPanel, chatPanelOpen }) => {
           <div className={styles.brandIcon}>
             <Building2 size={18} strokeWidth={2.4} />
           </div>
-          <span className={styles.brandTitle}>LibList Banking</span>
+          <span className={styles.brandTitle}>LibList</span>
         </div>
 
         <button type="button" className={styles.bankSelector}>
@@ -113,7 +113,7 @@ const Navbar = ({ onToggleSidebar, onToggleChatPanel, chatPanelOpen }) => {
         <input
           type="text"
           className={styles.searchInput}
-          placeholder="Search policies, operational clauses, SLAs..."
+          placeholder="Ask LibList"
         />
         <span className={styles.searchShortcut}>Ctrl+K</span>
       </div>

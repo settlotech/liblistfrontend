@@ -211,13 +211,19 @@ export default function TemplatesPage() {
     }, [toastMsg]);
 
     // Role checks
-    const isSuperAdmin = user?.isSuperAdmin || (user?.roles || []).some(r => {
+    const isSuperAdmin = user?.isSuperAdmin === true || (user?.roles || []).some(r => {
         const name = typeof r === 'string' ? r : r.role_name;
-        return name?.toLowerCase() === 'super admin' || name?.toLowerCase() === 'admin';
+        return ['super admin', 'super_admin'].includes(name?.toLowerCase());
     });
     const hasCreatePermission   = isSuperAdmin || (user?.permissionStrings || user?.permissions || []).includes('templates:create');
     const hasUpdatePermission   = isSuperAdmin || (user?.permissionStrings || user?.permissions || []).includes('templates:update');
     const hasApprovalPermission = isSuperAdmin || (user?.permissionStrings || user?.permissions || []).includes('templates:approval');
+
+    useEffect(() => {
+        if (!hasApprovalPermission && activeTab === 'approved') {
+            setActiveTab('all');
+        }
+    }, [hasApprovalPermission, activeTab]);
 
     const loadTemplates = useCallback(async (page = 1, append = false) => {
         if (append) setLoadingMoreTemplates(true); else setIsLoading(true);
@@ -529,15 +535,17 @@ export default function TemplatesPage() {
 
             {/* Sub-tabs: Approved Catalog / Pending Approvals / All */}
             <div className="templates-tabs-bar">
-                <button
-                    type="button"
-                    className={`templates-tab-item ${activeTab === 'approved' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('approved')}
-                >
-                    <CheckCircle2 size={15} />
-                    <span>Approved Templates</span>
-                    <span className="templates-tab-badge">{approvedCount}</span>
-                </button>
+                {hasApprovalPermission && (
+                    <button
+                        type="button"
+                        className={`templates-tab-item ${activeTab === 'approved' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('approved')}
+                    >
+                        <CheckCircle2 size={15} />
+                        <span>Approved Templates</span>
+                        <span className="templates-tab-badge">{approvedCount}</span>
+                    </button>
+                )}
 
                 {hasApprovalPermission && (
                     <button
@@ -1000,7 +1008,7 @@ export default function TemplatesPage() {
                                 )}
 
                                 {/* Banking Standards Checklist */}
-                                <div className="template-info-box" style={{ marginTop: 'auto' }}>
+                                {/* <div className="template-info-box" style={{ marginTop: 'auto' }}>
                                     <div className="template-info-title">
                                         <Layers size={13} /> 6 Standard Sections Structure
                                     </div>
@@ -1012,7 +1020,7 @@ export default function TemplatesPage() {
                                         <li>5. Dependencies (System integration)</li>
                                         <li>6. Controls (Verification metrics)</li>
                                     </ul>
-                                </div>
+                                </div> */}
                             </div>
 
                             {/* Right Panel: Rich Text Editor */}
