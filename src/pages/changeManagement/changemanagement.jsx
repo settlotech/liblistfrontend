@@ -816,7 +816,7 @@ export default function ChangeManagementPage() {
                                             {/* Pending revision commit message */}
                                             <td>
                                                 <div style={{ fontSize: '12px', color: doc.pending_revision_commit_message ? '#334155' : '#94a3b8', lineHeight: 1.4, whiteSpace: 'pre-wrap' }}>
-                                                    {doc.pending_revision_commit_message || (doc.has_pending_revision ? 'No commit message provided' : '—')}
+                                                    {doc.pending_revision_commit_message || doc.live_version_commit_message || (doc.has_pending_revision ? 'No commit message provided' : '—')}
                                                 </div>
                                             </td>
 
@@ -857,16 +857,17 @@ export default function ChangeManagementPage() {
 
                                             {/* Parent Version Policy */}
                                             <td>
-                                                {(doc.has_pending_revision || doc.parent_version_number || doc.live_version_id) ? (
+                                                {doc.parent_version_id ? (
                                                     <button
                                                         type="button"
                                                         className="policy-parent-link-btn"
                                                         onClick={(e) => handleOpenParentDocument(e, doc)}
                                                         title={`Open parent version v${doc.parent_version_number || doc.live_version_number || '1.0'}`}
                                                     >
-                                                        <GitBranch size={13} style={{ color: '#0057B8', flexShrink: 0 }} />
+                                                        {/* v${doc.parent_version_number} · */}
+                                                        {/* <GitBranch size={13} style={{ color: '#0057B8', flexShrink: 0 }} /> */}
                                                         <span className="policy-parent-text">
-                                                            {`v${doc.parent_version_number || doc.live_version_number || '1.0'} · ${doc.document_name}`}
+                                                            {`${doc.root_policy_name || doc.document_name}`}
                                                         </span>
                                                     </button>
                                                 ) : (
