@@ -81,7 +81,7 @@ const Navbar = ({ onToggleSidebar, onToggleChatPanel, chatPanelOpen }) => {
 
   return (
     <header className={styles.navbar}>
-      {/* ── Left Side: Hamburger (collapse menu) + Brand Logo + Bank Selector ── */}
+      {/* ── Left Side: Hamburger (collapse menu) + Brand Logo ── */}
       <div className={styles.navLeft}>
         <button
           type="button"
@@ -99,12 +99,6 @@ const Navbar = ({ onToggleSidebar, onToggleChatPanel, chatPanelOpen }) => {
           </div>
           <span className={styles.brandTitle}>LibList</span>
         </div>
-
-        {/* <button type="button" className={styles.bankSelector}>
-          <span>Commonwealth Bank of Australia (CBA)</span>
-          <span className={styles.bankBadge}>CBA</span>
-          <ChevronDown size={13} strokeWidth={2.5} color="#94a3b8" />
-        </button> */}
       </div>
 
       {/* ── Center: Search Bar ── */}

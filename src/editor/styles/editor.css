@@ -1243,6 +1243,18 @@
   margin: 0.6em 0;
 }
 
+.tiptap ul {
+  list-style-type: disc;
+}
+
+.tiptap ol {
+  list-style-type: decimal;
+}
+
+.tiptap ul ul {
+  list-style-type: circle;
+}
+
 .tiptap li {
   margin-bottom: 0.3em;
 }

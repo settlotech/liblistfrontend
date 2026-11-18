@@ -263,7 +263,11 @@ export default function TemplatesPage() {
         setEditName(tmpl.template_name || '');
         setEditCategory(tmpl.category || 'Information Security');
         setEditDescription(tmpl.description || '');
-        const detailsSec = tmpl.structure?.sections?.find(s => s.order === 2 || s.title?.includes('Details')) || tmpl.structure?.sections?.[2];
+        const detailsSec =
+            tmpl.structure?.sections?.find(s => (s.title || '').toLowerCase().includes('details')) ||
+            tmpl.structure?.sections?.find(s => s.order === 2) ||
+            tmpl.structure?.sections?.[1] ||
+            tmpl.structure?.sections?.[0];
         setEditEditorContent(detailsSec?.content || null);
         setRejectionReason('');
         setReviewFeedbackMsg('');
@@ -277,7 +281,11 @@ export default function TemplatesPage() {
         setEditName(tmpl.template_name || '');
         setEditCategory(tmpl.category || 'Information Security');
         setEditDescription(tmpl.description || '');
-        const detailsSec = tmpl.structure?.sections?.find(s => s.order === 2 || s.title?.includes('Details')) || tmpl.structure?.sections?.[2];
+        const detailsSec =
+            tmpl.structure?.sections?.find(s => (s.title || '').toLowerCase().includes('details')) ||
+            tmpl.structure?.sections?.find(s => s.order === 2) ||
+            tmpl.structure?.sections?.[1] ||
+            tmpl.structure?.sections?.[0];
         setEditEditorContent(detailsSec?.content || null);
         setRejectionReason('');
         setReviewFeedbackMsg('');
@@ -326,10 +334,10 @@ export default function TemplatesPage() {
             ];
 
             const updatedSections = currentSections.map(s => {
-                if (s.order === 2 || s.title?.includes('Details')) {
+                if ((s.title || '').toLowerCase().includes('details')) {
                     return { ...s, content: cleanContent };
                 }
-                if (s.order === 1 || s.title?.includes('Summary')) {
+                if ((s.title || '').toLowerCase().includes('summary')) {
                     return { ...s, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: editDescription || 'Executive summary.' }] }] } };
                 }
                 return s;
