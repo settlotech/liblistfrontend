@@ -30,26 +30,162 @@ import {
     Loader2,
     Copy
 } from 'lucide-react';
-import { useAuth } from '../../context/AuthContext';
 import { documentManagementApi } from '../../services/api/documentManagementApi';
 import RichTextEditor from '../../editor/RichTextEditor';
 import FullscreenEditorModal from '../../components/common/FullscreenEditorModal';
 import './createOperationalPolicy.css';
 
+const escapeHtmlText = (str = '') =>
+    String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+
+const parseMaybeJsonContent = (val) => {
+    if (!val) return null;
+    if (typeof val === 'string') {
+        const trimmed = val.trim();
+        if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+            try {
+                const parsed = JSON.parse(trimmed);
+                if (parsed && typeof parsed === 'object') return parsed;
+            } catch (_) {
+                return val;
+            }
+        }
+    }
+    return val;
+};
+
+const tipTapNodeToHtml = (rawInput) => {
+    const node = parseMaybeJsonContent(rawInput);
+    if (!node) return '';
+    if (typeof node === 'string') return node;
+    if (Array.isArray(node)) return node.map(tipTapNodeToHtml).join('');
+    if (node.type === 'text') {
+        let txt = escapeHtmlText(node.text || '');
+        (node.marks || []).forEach((m) => {
+            if (m.type === 'bold') txt = `<strong>${txt}</strong>`;
+            else if (m.type === 'italic') txt = `<em>${txt}</em>`;
+            else if (m.type === 'underline') txt = `<u>${txt}</u>`;
+            else if (m.type === 'strike') txt = `<s>${txt}</s>`;
+            else if (m.type === 'code') txt = `<code>${txt}</code>`;
+            else if (m.type === 'link' && m.attrs?.href) txt = `<a href="${escapeHtmlText(m.attrs.href)}" target="_blank" rel="noopener noreferrer">${txt}</a>`;
+        });
+        return txt;
+    }
+    const inner = Array.isArray(node.content) ? node.content.map(tipTapNodeToHtml).join('') : '';
+    switch (node.type) {
+        case 'doc': return inner;
+        case 'paragraph': return `<p>${inner || '<br/>'}</p>`;
+        case 'hardBreak': return '<br/>';
+        case 'horizontalRule': return '<hr/>';
+        case 'heading': {
+            const lvl = Math.min(6, Math.max(1, Number(node.attrs?.level) || 2));
+            return `<h${lvl}>${inner}</h${lvl}>`;
+        }
+        case 'bulletList': return `<ul>${inner}</ul>`;
+        case 'orderedList': return `<ol>${inner}</ol>`;
+        case 'listItem': return `<li>${inner}</li>`;
+        case 'codeBlock': return `<pre><code>${inner}</code></pre>`;
+        case 'table': return `<table class="editor-table" style="width:100%;border-collapse:collapse;margin:12px 0;"><tbody>${inner}</tbody></table>`;
+        case 'tableRow': return `<tr>${inner}</tr>`;
+        case 'tableHeader': {
+            const cs = node.attrs?.colspan > 1 ? ` colspan="${node.attrs.colspan}"` : '';
+            const rs = node.attrs?.rowspan > 1 ? ` rowspan="${node.attrs.rowspan}"` : '';
+            return `<th${cs}${rs}>${inner || '<p></p>'}</th>`;
+        }
+        case 'tableCell': {
+            const cs = node.attrs?.colspan > 1 ? ` colspan="${node.attrs.colspan}"` : '';
+            const rs = node.attrs?.rowspan > 1 ? ` rowspan="${node.attrs.rowspan}"` : '';
+            return `<td${cs}${rs}>${inner || '<p></p>'}</td>`;
+        }
+        case 'image': return node.attrs?.src ? `<p><img src="${escapeHtmlText(node.attrs.src)}" alt="${escapeHtmlText(node.attrs.alt || 'Image')}" style="max-width:100%;" /></p>` : '';
+        case 'blockquote': return `<blockquote>${inner}</blockquote>`;
+        default: return inner;
+    }
+};
+
+const templateSectionsToHtml = (sections = []) => {
+    if (!Array.isArray(sections) || sections.length === 0) return '<p></p>';
+    return sections
+        .slice()
+        .sort((a, b) => (a.order ?? a.section_order ?? 0) - (b.order ?? b.section_order ?? 0))
+        .map((s, idx) => {
+            const title = s.title || s.section_title || `Section ${idx + 1}`;
+            const rawContent = parseMaybeJsonContent(s.draft_content ?? s.content);
+            const body = rawContent && typeof rawContent === 'object' ? tipTapNodeToHtml(rawContent) : (rawContent || '<p></p>');
+            return `<h2>${escapeHtmlText(title)}</h2>\n${body}`;
+        })
+        .join('\n');
+};
+
+const extractPlainFromNode = (node) => {
+    if (!node) return '';
+    if (typeof node.text === 'string') return node.text;
+    if (Array.isArray(node.content)) return node.content.map(extractPlainFromNode).join('');
+    return '';
+};
+
+const splitTipTapDocByH2Sections = (tipTapDoc) => {
+    const nodes = Array.isArray(tipTapDoc?.content) ? tipTapDoc.content : [];
+    const grouped = [];
+    let current = null;
+
+    nodes.forEach((node) => {
+        if (node?.type === 'heading' && Number(node?.attrs?.level) === 2) {
+            const title = extractPlainFromNode(node).trim();
+            if (title) {
+                if (current) grouped.push(current);
+                current = { title, contentNodes: [] };
+                return;
+            }
+        }
+        if (current) {
+            current.contentNodes.push(node);
+        }
+    });
+    if (current) grouped.push(current);
+
+    if (grouped.length < 2) return null;
+    return grouped.map((sec, idx) => ({
+        title: sec.title,
+        order: idx,
+        content: {
+            type: 'doc',
+            content: sec.contentNodes.length > 0
+                ? sec.contentNodes
+                : [{ type: 'paragraph', content: [{ type: 'text', text: '' }] }],
+        },
+    }));
+};
+
 export default function CreateOperationalPolicyPage() {
-    const { user } = useAuth();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
 
-    // Query params: pre-selected library ID from row '+' click
+    // Query params: pre-selected tab, library ID, or source document to copy
     const initialLibraryId = searchParams.get('libraryId') || '';
+    const initialTabParam = searchParams.get('tab');
+    const initialTab = ['direct', 'master', 'upload'].includes(initialTabParam) ? initialTabParam : 'direct';
+    const initialSourceDocId = searchParams.get('sourceDocId') || '';
 
     // Tabs: 'direct' | 'master' | 'upload'
-    const [activeTab, setActiveTab] = useState('direct');
+    const [activeTab, setActiveTab] = useState(initialTab);
 
     // Libraries list & selected library
     const [libraries, setLibraries]             = useState([]);
     const [selectedLibraryId, setSelectedLibraryId] = useState(initialLibraryId);
+
+    // Master Library tab state
+    const [masterSourceLibFilter, setMasterSourceLibFilter] = useState('all');
+    const [masterSearchQuery, setMasterSearchQuery] = useState('');
+    const [masterDocs, setMasterDocs] = useState([]);
+    const [isLoadingMasterDocs, setIsLoadingMasterDocs] = useState(false);
+    const [isCopyingFromMaster, setIsCopyingFromMaster] = useState(false);
+    const [masterErrorMsg, setMasterErrorMsg] = useState('');
+    const handledSourceDocRef = useRef('');
 
     // Direct tab — Target Master Library searchable combobox
     const [directLibrarySearch, setDirectLibrarySearch]           = useState('');
@@ -130,20 +266,37 @@ export default function CreateOperationalPolicyPage() {
 
     // Start the review editor at the beginning when switching between fitted
     // and fullscreen layouts so the document doesn't reopen mid-page.
+    const resetUploadEditorScroll = () => {
+        document.querySelectorAll('.upload-review-container .modern-editor-workspace')
+            .forEach(workspace => { workspace.scrollTop = 0; workspace.scrollLeft = 0; });
+    };
+
     useEffect(() => {
         if (uploadStep !== 3) return;
-        requestAnimationFrame(() => {
-            document.querySelectorAll('.upload-review-container .modern-editor-workspace')
-                .forEach(workspace => { workspace.scrollTop = 0; workspace.scrollLeft = 0; });
-        });
-    }, [isReviewFullscreen, uploadStep]);
+        requestAnimationFrame(resetUploadEditorScroll);
+        const timer = setTimeout(resetUploadEditorScroll, 120);
+        return () => clearTimeout(timer);
+    }, [isReviewFullscreen, uploadStep, uploadEditorKey]);
 
-    // Load available libraries and approved templates on mount
+    // Sync URL query params when navigated from Sidebar Copy Template / + / PolicyViewer
+    useEffect(() => {
+        const t = searchParams.get('tab');
+        if (t && ['direct', 'master', 'upload'].includes(t)) {
+            setActiveTab(t);
+        }
+        const lid = searchParams.get('libraryId');
+        if (lid) {
+            setSelectedLibraryId(lid);
+            setUploadLibraryId(lid);
+        }
+    }, [searchParams]);
+
+    // Load available libraries, approved templates (Template 1 default), and live Master Library policies
     useEffect(() => {
         let isMounted = true;
 
         // 1. Fetch Libraries
-        documentManagementApi.getLibraries()
+        documentManagementApi.getLibraries({ limit: 100 })
             .then(res => {
                 if (!isMounted) return;
                 const libs = res?.data || [];
@@ -154,14 +307,38 @@ export default function CreateOperationalPolicyPage() {
             })
             .catch(err => console.error('Failed to load libraries:', err));
 
-        // 2. Fetch Approved Templates for Tab 1 Autoload
-        documentManagementApi.getTemplates({ status: 'approved' })
+        // 2. Fetch Approved Templates & auto-inherit DB Template 1
+        documentManagementApi.getTemplates({ status: 'approved', limit: 50 })
             .then(res => {
                 if (!isMounted) return;
-                const tmpls = res?.data?.templates || res?.data || [];
+                const rawTmpls = res?.data?.templates || res?.data || [];
+                const tmpls = [...rawTmpls].sort((a, b) => {
+                    const aIsT1 = a.template_id === 'TMPL-001' || /template\s*1/i.test(a.template_name || '');
+                    const bIsT1 = b.template_id === 'TMPL-001' || /template\s*1/i.test(b.template_name || '');
+                    if (aIsT1 && !bIsT1) return -1;
+                    if (!aIsT1 && bIsT1) return 1;
+                    return String(a.template_id || '').localeCompare(String(b.template_id || ''));
+                });
                 setTemplates(tmpls);
+                const template1 = tmpls.find(t => t.template_id === 'TMPL-001' || /template\s*1/i.test(t.template_name || '')) || tmpls[0];
+                if (template1) {
+                    setSelectedUploadTemplate(prev => prev || template1);
+                }
             })
             .catch(err => console.error('Failed to load templates:', err));
+
+        // 3. Fetch Active Master Library Documents
+        setIsLoadingMasterDocs(true);
+        documentManagementApi.getDocuments({ status: 'active', limit: 100 })
+            .then(res => {
+                if (!isMounted) return;
+                const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res?.data?.documents) ? res.data.documents : []);
+                setMasterDocs(list);
+            })
+            .catch(err => console.error('Failed to load master documents:', err))
+            .finally(() => {
+                if (isMounted) setIsLoadingMasterDocs(false);
+            });
 
         return () => { isMounted = false; };
     }, []);
@@ -235,7 +412,7 @@ export default function CreateOperationalPolicyPage() {
         return libraries.filter(l => (l.library_name || '').toLowerCase().includes(q));
     }, [libraries, directLibrarySearch]);
 
-    // When user selects a template -> automatically load into right panel Editor!
+    // When user selects a template -> automatically load all sections into right panel Editor!
     const handleSelectTemplate = (tmpl) => {
         setSelectedTemplate(tmpl);
         setTemplateSearch(tmpl.template_name);
@@ -243,26 +420,158 @@ export default function CreateOperationalPolicyPage() {
 
         // Prepopulate policy name and description if empty
         if (!policyName.trim()) {
-            setPolicyName(tmpl.template_name);
+            setPolicyName(tmpl.template_name.replace(/^Template\s*\d+\s*[:—-]\s*/i, '').trim() || tmpl.template_name);
         }
         if (!description.trim() && tmpl.description) {
             setDescription(tmpl.description);
         }
 
-        // Extract Section 3 (Details) content from template structure
-        const detailsSec = tmpl.structure?.sections?.find(s => s.order === 2 || s.title?.includes('Details')) || tmpl.structure?.sections?.[2];
-        const contentToLoad = detailsSec?.content || {
-            type: 'doc',
-            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Operational policy requirements and governance controls.' }] }]
-        };
+        const tplSections = tmpl.structure?.sections || [];
+        let contentToLoad;
+        if (tplSections.length > 1) {
+            contentToLoad = templateSectionsToHtml(tplSections);
+        } else {
+            const detailsSec = tplSections.find(s => (s.title || '').toLowerCase().includes('details')) || tplSections[0];
+            contentToLoad = detailsSec?.content || {
+                type: 'doc',
+                content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Operational policy requirements and governance controls.' }] }]
+            };
+        }
 
         setEditorInitialContent(contentToLoad);
         setEditorJsonContent(contentToLoad);
         setEditorKey(Date.now()); // Re-mounts editor with template content
 
-        setLoadedTemplateAlert(`Template "${tmpl.template_name}" loaded into editor successfully.`);
+        setLoadedTemplateAlert(`Template "${tmpl.template_name}" loaded into editor (${tplSections.length} sections).`);
         setTimeout(() => setLoadedTemplateAlert(null), 5000);
     };
+
+    // Load a Master Library document as a template into the live editor
+    const handleCopyFromMasterLibrary = async (sourceDoc, templateIdOverride = 'keep-original') => {
+        const chosenTplId = templateIdOverride || 'keep-original';
+        const chosenTpl = chosenTplId === 'keep-original'
+            ? null
+            : (templates.find(t => (t.id || t._id) === chosenTplId) || templates[0] || null);
+
+        setMasterErrorMsg('');
+        setIsCopyingFromMaster(true);
+
+        try {
+            let sourceSections = [];
+            let sourceMeta = sourceDoc || null;
+
+            if (sourceDoc?.id) {
+                const metaRes = await documentManagementApi.getDocumentMetadata(sourceDoc.id);
+                const fullDoc = metaRes?.data || sourceDoc;
+                sourceMeta = fullDoc;
+                sourceSections = Array.isArray(fullDoc.sections) ? fullDoc.sections : [];
+            }
+
+            let htmlToLoad = '';
+            if (chosenTpl && Array.isArray(chosenTpl.structure?.sections) && chosenTpl.structure.sections.length > 0) {
+                if (sourceSections.length === 0) {
+                    htmlToLoad = templateSectionsToHtml(chosenTpl.structure.sections);
+                } else {
+                    const unclaimed = new Set(sourceSections.map((_, i) => i));
+                    const mappedSections = chosenTpl.structure.sections.map((tSec, idx) => {
+                        const normT = (tSec.title || '').toLowerCase().replace(/^\d+\.?\s*/, '').replace(/[^a-z0-9]/g, '');
+                        const matchedIdx = sourceSections.findIndex((sSec, sIdx) => {
+                            if (!unclaimed.has(sIdx)) return false;
+                            const normS = (sSec.section_title || sSec.title || '').toLowerCase().replace(/^\d+\.?\s*/, '').replace(/[^a-z0-9]/g, '');
+                            return normS === normT || normS.includes(normT) || normT.includes(normS);
+                        });
+                        if (matchedIdx >= 0) {
+                            unclaimed.delete(matchedIdx);
+                            const matched = sourceSections[matchedIdx];
+                            return {
+                                title: tSec.title,
+                                order: idx,
+                                content: matched.draft_content || matched.content || tSec.content,
+                            };
+                        }
+                        return {
+                            title: tSec.title,
+                            order: idx,
+                            content: tSec.content,
+                        };
+                    });
+
+                    // Place remaining source sections inside Details section cleanly
+                    if (unclaimed.size > 0) {
+                        const extraHtml = Array.from(unclaimed)
+                            .map((i) => {
+                                const sec = sourceSections[i];
+                                const raw = sec.draft_content || sec.content;
+                                const bodyHtml = typeof raw === 'object' ? tipTapNodeToHtml(raw) : (raw || '');
+                                return `<h3>${escapeHtmlText(sec.section_title || sec.title || `Clause ${i + 1}`)}</h3>\n${bodyHtml}`;
+                            })
+                            .join('\n');
+                        const detIdx = mappedSections.findIndex((s) => (s.title || '').toLowerCase().includes('detail'));
+                        const targetIdx = detIdx >= 0 ? detIdx : 0;
+                        const existingHtml = typeof mappedSections[targetIdx].content === 'object'
+                            ? tipTapNodeToHtml(mappedSections[targetIdx].content)
+                            : (mappedSections[targetIdx].content || '');
+                        mappedSections[targetIdx] = {
+                            ...mappedSections[targetIdx],
+                            content: `${existingHtml}\n${extraHtml}`,
+                        };
+                    }
+
+                    htmlToLoad = templateSectionsToHtml(mappedSections);
+                }
+            } else if (sourceSections.length > 0) {
+                htmlToLoad = templateSectionsToHtml(sourceSections);
+            } else {
+                htmlToLoad = '<p>Compose operational policy clauses and controls.</p>';
+            }
+
+            if (initialLibraryId) {
+                setSelectedLibraryId(initialLibraryId);
+            } else if (sourceMeta?.library_id) {
+                setSelectedLibraryId(sourceMeta.library_id);
+            }
+
+            if (chosenTpl) {
+                setSelectedTemplate(chosenTpl);
+                setTemplateSearch(chosenTpl.template_name);
+            } else {
+                setSelectedTemplate(null);
+                setTemplateSearch('');
+            }
+
+            const newTitle = sourceMeta?.document_name
+                ? `${sourceMeta.document_name} (Copy)`
+                : (chosenTpl?.template_name?.replace(/^Template\s*\d+\s*[:—-]\s*/i, '').trim() || 'New Policy Draft');
+            setPolicyName(newTitle);
+            setDescription(sourceMeta?.description || chosenTpl?.description || '');
+
+            setEditorInitialContent(htmlToLoad);
+            setEditorJsonContent(htmlToLoad);
+            setEditorKey(Date.now());
+            setActiveTab('direct');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
+            setLoadedTemplateAlert(
+                sourceMeta?.document_name
+                    ? `Using "${sourceMeta.document_name}"${chosenTpl ? ` (${chosenTpl.template_name})` : ''} as template. Edit and click Save to Draft.`
+                    : `Started new draft from "${chosenTpl?.template_name || 'Template'}".`
+            );
+            setTimeout(() => setLoadedTemplateAlert(null), 6000);
+        } catch (err) {
+            setMasterErrorMsg(err.message || 'Failed to load document as template.');
+        } finally {
+            setIsCopyingFromMaster(false);
+        }
+    };
+
+    // Auto-handle ?sourceDocId= deep link if provided
+    useEffect(() => {
+        if (!initialSourceDocId || templates.length === 0) return;
+        if (handledSourceDocRef.current === initialSourceDocId) return;
+        const foundDoc = masterDocs.find(d => d.id === initialSourceDocId) || { id: initialSourceDocId };
+        handledSourceDocRef.current = initialSourceDocId;
+        handleCopyFromMasterLibrary(foundDoc, 'keep-original');
+    }, [initialSourceDocId, templates, masterDocs]);
 
     // Save Policy as Draft
     const handleSaveToDraft = async (e) => {
@@ -298,8 +607,8 @@ export default function CreateOperationalPolicyPage() {
                 }
             }
 
-            // Assemble 6 standard sections
-            const sections = [
+            const splitSections = splitTipTapDocByH2Sections(cleanDetailsContent);
+            const sections = splitSections || [
                 { title: '1. Configuration', order: 0, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: `Document classification: Operational Policy. Library: ${libraries.find(l => l.id === selectedLibraryId)?.library_name || 'Banking'}.` }] }] } },
                 { title: '2. Summary',       order: 1, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: description || 'Executive summary of key policy requirements.' }] }] } },
                 { title: '3. Details',       order: 2, content: cleanDetailsContent },
@@ -541,10 +850,28 @@ export default function CreateOperationalPolicyPage() {
                 throw new Error('The extracted document is still loading. Please wait a moment and try again.');
             }
 
-            const sections = [
+            const selectedLibName = libraries.find(l => l.id === uploadLibraryId)?.library_name || 'Banking';
+            const splitUploadSections = splitTipTapDocByH2Sections(cleanUploadContent);
+            const sections = splitUploadSections || [
                 {
-                    title: '1. Policy Provisions & Clauses',
+                    title: '1. Configuration',
                     order: 0,
+                    content: {
+                        type: 'doc',
+                        content: [{ type: 'paragraph', content: [{ type: 'text', text: `Document classification: Operational Policy. Library: ${selectedLibName}. Source: ${uploadedFile?.name || 'Upload'}${useTemplateToFormat && selectedUploadTemplate ? ` | Inherited Template: ${selectedUploadTemplate.template_name}` : ''}.` }] }]
+                    }
+                },
+                {
+                    title: '2. Summary',
+                    order: 1,
+                    content: {
+                        type: 'doc',
+                        content: [{ type: 'paragraph', content: [{ type: 'text', text: uploadDescription.trim() || 'Extracted executive summary.' }] }]
+                    }
+                },
+                {
+                    title: '3. Details',
+                    order: 2,
                     content: cleanUploadContent
                 }
             ];
@@ -586,6 +913,18 @@ export default function CreateOperationalPolicyPage() {
         );
     }, [templates, uploadTemplateSearch]);
 
+    const filteredMasterDocs = useMemo(() => {
+        return masterDocs.filter((doc) => {
+            if (masterSourceLibFilter !== 'all' && doc.library_id !== masterSourceLibFilter) return false;
+            if (masterSearchQuery.trim()) {
+                const q = masterSearchQuery.toLowerCase().trim();
+                const hay = `${doc.document_name || ''} ${doc.description || ''} ${doc.library_name || ''}`.toLowerCase();
+                if (!hay.includes(q)) return false;
+            }
+            return true;
+        });
+    }, [masterDocs, masterSourceLibFilter, masterSearchQuery]);
+
     const selectedLibraryName = libraries.find(l => l.id === selectedLibraryId)?.library_name || 'Select Library';
 
     return (
@@ -622,7 +961,7 @@ export default function CreateOperationalPolicyPage() {
                                 <span>{isUploadSubmitting ? 'Saving Draft...' : 'Save to Draft'}</span>
                             </button>
                         )
-                    ) : (
+                    ) : activeTab === 'direct' && (
                         <button
                             type="button"
                             className="btn btn-primary"
@@ -921,15 +1260,118 @@ export default function CreateOperationalPolicyPage() {
                                 initialContent={editorInitialContent}
                                 value={editorJsonContent}
                                 onChange={(val) => setEditorJsonContent(val?.json || val)}
+                                onReady={(val) => setEditorJsonContent(val?.json || val)}
                             />
                         </div>
                     </div>
                 </div>
             ) : activeTab === 'master' ? (
-                <div className="tab-coming-soon-panel">
-                     
-                    <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a' }}>Working...</h3>
-                     
+                <div className="master-library-shell">
+                    {masterErrorMsg && (
+                        <div className="upload-error-banner">
+                            <AlertCircle size={14} /> {masterErrorMsg}
+                        </div>
+                    )}
+
+                    <div className="master-section-card">
+                        <div className="master-section-head">
+                            <div>
+                                <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 7 }}>
+                                    <BookOpen size={16} style={{ color: '#0057B8' }} />
+                                    <span>Master Library Documents ({filteredMasterDocs.length})</span>
+                                </div>
+                                <p style={{ margin: '3px 0 0', fontSize: '12px', color: '#64748b' }}>
+                                    Choose any approved document below and click <strong>Use Template</strong> to load it into the editor and create your draft.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="master-controls-grid">
+                            <div className="form-group" style={{ margin: 0 }}>
+                                <label className="form-label">Filter Library</label>
+                                <select
+                                    className="form-input"
+                                    value={masterSourceLibFilter}
+                                    onChange={(e) => setMasterSourceLibFilter(e.target.value)}
+                                >
+                                    <option value="all">All Libraries ({libraries.length})</option>
+                                    {libraries.map((lib) => (
+                                        <option key={lib.id} value={lib.id}>{lib.library_name}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="form-group" style={{ margin: 0 }}>
+                                <label className="form-label">Search Document</label>
+                                <div className="template-picker-input-wrap">
+                                    <span className="input-icon-left"><Search size={14} /></span>
+                                    <input
+                                        type="text"
+                                        className="form-input has-left-icon"
+                                        placeholder="Search documents, clauses, policies..."
+                                        value={masterSearchQuery}
+                                        onChange={(e) => setMasterSearchQuery(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {isLoadingMasterDocs ? (
+                            <div style={{ padding: '28px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
+                                Loading Master Library documents...
+                            </div>
+                        ) : filteredMasterDocs.length === 0 ? (
+                            <div style={{ padding: '28px', textAlign: 'center', color: '#94a3b8', fontSize: '13px' }}>
+                                No matching Master Library documents found. Try clearing filters or creating a new document directly.
+                            </div>
+                        ) : (
+                            <div className="master-policies-list">
+                                {filteredMasterDocs.map((doc) => {
+                                    const isHighlighted = initialSourceDocId === doc.id;
+                                    return (
+                                        <div
+                                            key={doc.id}
+                                            className={`master-policy-card ${isHighlighted ? 'highlighted' : ''}`}
+                                            onClick={() => handleCopyFromMasterLibrary(doc)}
+                                        >
+                                            <div>
+                                                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                                                    <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', lineHeight: 1.35 }}>
+                                                        {doc.document_name}
+                                                    </div>
+                                                    <span className="template-card-badge">v{doc.current_version_number || '1.0'}</span>
+                                                </div>
+                                                {doc.description && (
+                                                    <p style={{ margin: '6px 0 0', fontSize: '11.5px', color: '#64748b', lineHeight: 1.45, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                                        {doc.description}
+                                                    </p>
+                                                )}
+                                            </div>
+
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, paddingTop: 8, borderTop: '1px solid #f1f5f9' }}>
+                                                <span style={{ fontSize: '11px', fontWeight: 600, color: '#0057B8', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                                    <Folder size={12} /> {doc.library_name || 'Master Library'}
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-primary"
+                                                    style={{ padding: '5px 11px', fontSize: '11.5px' }}
+                                                    disabled={isCopyingFromMaster}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleCopyFromMasterLibrary(doc);
+                                                    }}
+                                                >
+                                                    <Sparkles size={12} />
+                                                    <span>{isCopyingFromMaster ? 'Loading...' : 'Use Template'}</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
                 </div>
             ) : (
                 /* ── UPLOAD TAB: 4-Step Stepper ── */
@@ -1073,9 +1515,11 @@ export default function CreateOperationalPolicyPage() {
                                                 No approved templates found.
                                             </p>
                                         )}
-                                        {uploadFilteredTemplates.map(tmpl => {
+                                        {uploadFilteredTemplates.map((tmpl, idx) => {
                                             const tmplId = tmpl.id || tmpl._id;
                                             const isSelected = Boolean(selectedUploadTemplate && (selectedUploadTemplate.id || selectedUploadTemplate._id) === tmplId);
+                                            const isTemplate1 = tmpl.template_id === 'TMPL-001' || idx === 0;
+                                            const secList = tmpl.structure?.sections || [];
                                             return (
                                                 <div
                                                     key={tmplId}
@@ -1084,16 +1528,30 @@ export default function CreateOperationalPolicyPage() {
                                                 >
                                                     <div className="template-card-header">
                                                         <span className="template-card-name">{tmpl.template_name}</span>
-                                                        {tmpl.category && (
-                                                            <span className="template-card-badge">{tmpl.category}</span>
-                                                        )}
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                            {isTemplate1 && (
+                                                                <span className="template-default-badge">DB Template 1</span>
+                                                            )}
+                                                            {tmpl.category && (
+                                                                <span className="template-card-badge">{tmpl.category}</span>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                     {tmpl.description && (
                                                         <p className="template-card-desc">{tmpl.description}</p>
                                                     )}
+                                                    {secList.length > 0 && (
+                                                        <div className="template-section-pills">
+                                                            {secList.map((sec, sIdx) => (
+                                                                <span key={sIdx} className="template-section-pill">
+                                                                    {sec.title}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    )}
                                                     <div className="template-card-footer">
                                                         <span className="template-card-sections">
-                                                            <Layers size={12} /> {tmpl.structure?.sections?.length || 0} sections
+                                                            <Layers size={12} /> {secList.length} sections
                                                         </span>
                                                         {isSelected && (
                                                             <div className="template-card-selected-mark">
@@ -1230,7 +1688,10 @@ export default function CreateOperationalPolicyPage() {
                                                     placeholder="AI extracted content appears here…"
                                                     initialContent={uploadEditorContent}
                                                     onChange={(val) => setUploadEditorContent(val?.json || val)}
-                                                    onReady={(val) => setUploadEditorContent(val.json)}
+                                                    onReady={(val) => {
+                                                        setUploadEditorContent(val.json);
+                                                        setTimeout(resetUploadEditorScroll, 50);
+                                                    }}
                                                 />
                                             </div>
                                         </div>
@@ -1246,7 +1707,10 @@ export default function CreateOperationalPolicyPage() {
                                                     placeholder="AI extracted content appears here…"
                                                     initialContent={uploadEditorContent}
                                                     onChange={(val) => setUploadEditorContent(val?.json || val)}
-                                                    onReady={(val) => setUploadEditorContent(val.json)}
+                                                    onReady={(val) => {
+                                                        setUploadEditorContent(val.json);
+                                                        setTimeout(resetUploadEditorScroll, 50);
+                                                    }}
                                                 />
                                             </div>
                                         </div>

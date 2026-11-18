@@ -235,6 +235,8 @@ export const RichTextEditor = ({
         heading: {
           levels: [1, 2, 3, 4],
         },
+        link: false,
+        underline: false,
       }),
       PageBreak,
       Underline,
