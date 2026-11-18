@@ -4,7 +4,7 @@ import {
     FileText, Folder, ChevronRight, X, Check,
     CheckCircle2, XCircle, GitBranch, Edit3,
     AlertTriangle, History, Trash2, Pin, PinOff,
-    MessageSquare
+    MessageSquare, Plus
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { documentManagementApi } from '../../services/api/documentManagementApi';
@@ -38,6 +38,7 @@ export default function PolicyViewerPage() {
     // Editor / Configure modal state
     const [isEditorOpen, setIsEditorOpen] = useState(false);
     const [editorContent, setEditorContent] = useState(null);
+    const [revisionTitle, setRevisionTitle] = useState('');
     const [isSavingDraft, setIsSavingDraft] = useState(false);
     const [isCreatingRevision, setIsCreatingRevision] = useState(false);
     const [isSubmittingReview, setIsSubmittingReview] = useState(false);
@@ -255,6 +256,7 @@ export default function PolicyViewerPage() {
     // Open editor without creating new revision (already in draft or pending revision)
     const handleOpenEditor = () => {
         setEditorContent(draftEditorContent);
+        setRevisionTitle(documentData?.pending_document_name || documentData?.document_name || '');
         setIsEditorOpen(true);
     };
 
@@ -294,7 +296,7 @@ export default function PolicyViewerPage() {
                 content: rawContent,
                 section_title: detailsSection.section_title,
             }];
-            await documentManagementApi.saveSectionEdits(docId, sectionsToSave, { commit_message: commitMessage, isDraftOnly: true });
+            await documentManagementApi.saveSectionEdits(docId, sectionsToSave, { commit_message: commitMessage, isDraftOnly: true, document_name: revisionTitle.trim() });
             await loadDocument();
             showToast(`Draft saved.${commitMessage ? ` "${commitMessage}"` : ''}`);
         } catch (err) {
@@ -307,6 +309,10 @@ export default function PolicyViewerPage() {
     // Submit revision for Super Admin review
     const handleSubmitForReview = async (commitMessage = '') => {
         if (!documentData || !sections.length) return;
+        if (!revisionTitle.trim()) {
+            showToast('Policy title is required.', 'error');
+            return;
+        }
         setIsSubmittingReview(true);
         try {
             if (!documentData.has_pending_revision) {
@@ -324,10 +330,10 @@ export default function PolicyViewerPage() {
                 content: rawContent,
                 section_title: detailsSection.section_title,
             }];
-            await documentManagementApi.saveSectionEdits(docId, sectionsToSave, { commit_message: commitMessage, isDraftOnly: true });
+            await documentManagementApi.saveSectionEdits(docId, sectionsToSave, { commit_message: commitMessage, isDraftOnly: true, document_name: revisionTitle.trim() });
 
             // Now trigger review submission with commit message
-            await documentManagementApi.submitRevision(docId, { commit_message: commitMessage });
+            await documentManagementApi.submitRevision(docId, { commit_message: commitMessage, document_name: revisionTitle.trim() });
             setIsEditorOpen(false);
             await loadDocument();
             showToast(`Revision submitted for Super Admin review.`);
@@ -426,6 +432,18 @@ export default function PolicyViewerPage() {
                 </div>
             )}
 
+            <div className="add-btn-container">
+                <button
+                    type="button"
+                    className="add-css"
+                     onClick={() => navigate('/documents/create')}
+                    title="Create Policy"
+                >
+                    <Plus size={18} strokeWidth={2.5} />
+                    <span>New Policy</span>
+                </button>
+            </div>
+
             {/* Revision In-Progress / Submitted Banner — only visible to Super Admin or the revision author */}
             {documentData.has_pending_revision && !isArchived && (isSuperAdmin || isRevisionAuthor) && (
                 documentData.revision_status === 'pending_review' ? (
@@ -433,7 +451,10 @@ export default function PolicyViewerPage() {
                         <Edit3 size={15} />
                         <span>
                             A new revision draft (<strong>v{documentData.pending_revision_version || ''}</strong>) has been <strong>submitted for Super Admin review</strong>
-                            {documentData.pending_revision_by_name ? ` by ${documentData.pending_revision_by_name}` : ''}. The published version below remains live and visible to all users until approved.
+                            {documentData.pending_revision_by_name ? ` by ${documentData.pending_revision_by_name}` : ''}.
+                            {documentData.pending_document_name && documentData.pending_document_name !== documentData.document_name
+                                ? <> Proposed title: <strong>{documentData.pending_document_name}</strong>.</>
+                                : null} The published version below remains live and visible to all users until approved.
                         </span>
                         {(isRevisionAuthor || isSuperAdmin) && (
                             <button className="btn-return-live" style={{ background: '#d97706' }} onClick={handleOpenEditor}>
@@ -482,7 +503,7 @@ export default function PolicyViewerPage() {
                         <Trash2 size={16} />
                         <span>
                             <strong>Removal Pending Review:</strong> A removal request has been submitted for this policy
-                            {documentData.removal_reason ? ` (Reason: "${documentData.removal_reason}")` : ''}. 
+                            {documentData.removal_reason ? ` (Reason: "${documentData.removal_reason}")` : ''}.
                         </span>
                     </div>
                     {isSuperAdmin && (
@@ -515,7 +536,7 @@ export default function PolicyViewerPage() {
                         </button>
                     </div>
 
-                    <div className="policy-top-actions"> 
+                    <div className="policy-top-actions">
                         {/* {isSuperAdmin && (isPending || isDraft || (documentData.has_pending_revision && documentData.revision_status === 'pending_review')) && !isArchived && (
                             <>
                                 <button type="button" className="btn btn-sm btn-danger"
@@ -530,8 +551,8 @@ export default function PolicyViewerPage() {
                                 </button>
                             </>
                         )} */}
-                          
-                          <button
+
+                        <button
                             type="button"
                             className={`btn-pin-action ${isPinned ? 'is-pinned' : ''}`}
                             onClick={handleTogglePin}
@@ -541,8 +562,8 @@ export default function PolicyViewerPage() {
                             <Pin size={13} style={isPinned ? { fill: '#0057B8', color: '#0057B8' } : { color: '#64748b' }} />
                             <span>{isPinned ? 'Pinned' : 'Pin'}</span>
                         </button>
-                         
-                        
+
+
                         {canEditPolicy && !isArchived && (
                             documentData.has_pending_revision ? (
                                 isRevisionAuthor ? (
@@ -589,7 +610,7 @@ export default function PolicyViewerPage() {
                             </button>
                         )} */}
 
-                       
+
 
                         {/* Annotations & Notes Drawer button (matching Version History) */}
                         <button
@@ -699,6 +720,8 @@ export default function PolicyViewerPage() {
                     isSubmitting={isSavingDraft}
                     onSubmitForReview={handleSubmitForReview}
                     isSubmittingReview={isSubmittingReview}
+                    documentTitle={revisionTitle}
+                    onDocumentTitleChange={documentData.revision_status !== 'pending_review' || isRevisionAuthor ? setRevisionTitle : undefined}
                     onApprove={isSuperAdmin && (documentData.has_pending_revision || documentData.status === 'draft') ? async () => {
                         setIsEditorOpen(false);
                         setReviewAction('approve');

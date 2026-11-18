@@ -417,7 +417,7 @@ export default function DocumentAnnotationsLayer({
                                     setActiveAnnotationId(isActive ? null : ann.id);
                                     if (onOpenDrawer) onOpenDrawer();
                                 }}
-                                title={ann.label || 'Note'}
+                                title={`${ann.custom_id ? `${ann.custom_id} · ` : ''}${ann.label || 'Note'}`}
                             >
                                 <MessageSquare size={13} />
                             </div>
@@ -610,6 +610,11 @@ export default function DocumentAnnotationsLayer({
                                                     {isVisual ? <Crop size={10} /> : <FileText size={10} />}
                                                     {ann.label || (isVisual ? 'Annotation' : 'Note')}
                                                 </span>
+                                                {ann.custom_id && (
+                                                    <span className="annot-card-author" title={isVisual ? 'Annotation ID' : 'Note ID'}>
+                                                        {ann.custom_id}
+                                                    </span>
+                                                )}
                                                 <span className="annot-card-author">
                                                     {ann.author_name || 'User'} · {dateStr}
                                                 </span>

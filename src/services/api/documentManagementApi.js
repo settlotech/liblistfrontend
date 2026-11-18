@@ -264,10 +264,10 @@ export const documentManagementApi = {
         });
     },
 
-    async submitRevision(docId, { commit_message } = {}) {
+    async submitRevision(docId, { commit_message, document_name } = {}) {
         return apiFetch(`${DMS_BASE}/documents/${docId}/submit-revision`, {
             method: 'POST',
-            body: JSON.stringify({ commit_message }),
+            body: JSON.stringify({ commit_message, document_name }),
         });
     },
 
@@ -277,10 +277,10 @@ export const documentManagementApi = {
         });
     },
 
-    async saveSectionEdits(docId, sections, { commit_message, isDraftOnly = true } = {}) {
+    async saveSectionEdits(docId, sections, { commit_message, isDraftOnly = true, document_name } = {}) {
         return apiFetch(`${DMS_BASE}/documents/${docId}/sections`, {
             method: 'PUT',
-            body: JSON.stringify({ sections, commit_message, isDraftOnly }),
+            body: JSON.stringify({ sections, commit_message, isDraftOnly, document_name }),
         });
     },
 

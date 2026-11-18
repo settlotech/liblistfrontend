@@ -18,6 +18,7 @@ import {
     MessageSquare,
     Send,
     Trash2,
+    Edit3,
     UserCheck,
     FileText,
     Bookmark,
@@ -57,6 +58,7 @@ export default function TaskWorkspace() {
 
     // ── CREATE TASK MODAL (2-Column Grid Layout) ──────────────────────────
     const [showCreateModal, setShowCreateModal] = useState(false);
+    const [editingTask, setEditingTask] = useState(null);
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [newTaskDesc, setNewTaskDesc] = useState('');
     const [newTaskCategory, setNewTaskCategory] = useState('general'); // 'general' | 'common'
@@ -89,6 +91,26 @@ export default function TaskWorkspace() {
     const [newTaskParticipants, setNewTaskParticipants] = useState([]);
     const [isSubmittingTask, setIsSubmittingTask] = useState(false);
     const [modalError, setModalError] = useState('');
+
+    const openCreateTaskModal = () => {
+        setEditingTask(null);
+        setNewTaskTitle('');
+        setNewTaskDesc('');
+        setNewTaskCategory('general');
+        setNewTaskDueDate('');
+        setSelectedAssignees([]);
+        setNewTaskParticipants([]);
+        setModalError('');
+        setShowCreateModal(true);
+    };
+
+    const closeTaskModal = () => {
+        if (isSubmittingTask) return;
+        setShowCreateModal(false);
+        setEditingTask(null);
+        setModalError('');
+        setShowCreateGroup(false);
+    };
 
     // ── EXPANDED ROWS FOR AUDIT TRAIL / LOG TABLE (Image 4) ───────────────
     const [expandedTaskIds, setExpandedTaskIds] = useState(new Set());
@@ -371,7 +393,11 @@ export default function TaskWorkspace() {
                 participants: newTaskParticipants
             };
 
-            await taskApi.createTask(payload);
+            if (editingTask) {
+                await taskApi.updateTask(editingTask.id, payload);
+            } else {
+                await taskApi.createTask(payload);
+            }
 
             // Reset form
             setNewTaskTitle('');
@@ -382,12 +408,14 @@ export default function TaskWorkspace() {
             setAssignerSearch('');
             setNewTaskParticipants([]);
             setShowCreateModal(false);
+            setEditingTask(null);
+            setShowCreateGroup(false);
 
             // Reload tasks
             await fetchTasks();
         } catch (err) {
-            console.error('Task creation error:', err);
-            setModalError(err.message || 'Failed to create task.');
+            console.error(editingTask ? 'Task update error:' : 'Task creation error:', err);
+            setModalError(err.message || (editingTask ? 'Failed to update task.' : 'Failed to create task.'));
         } finally {
             setIsSubmittingTask(false);
         }
@@ -474,6 +502,37 @@ export default function TaskWorkspace() {
         }
     };
 
+    const handleBeginEditTask = (task, e) => {
+        if (e) e.stopPropagation();
+        if (!canDeleteTask(task)) {
+            alert('Only the author of this task or a Super Admin can edit it.');
+            return;
+        }
+        setEditingTask(task);
+        setNewTaskTitle(task.title || '');
+        setNewTaskDesc(task.description || '');
+        setNewTaskCategory(task.category || 'general');
+        setNewTaskDueDate(task.due_date ? new Date(task.due_date).toISOString().slice(0, 10) : '');
+        const existingAssignees = Array.isArray(task.assignees) ? task.assignees : [];
+        const assigneeList = existingAssignees.length > 0
+            ? existingAssignees
+            : (task.assigned_to ? [{ id: task.assigned_to, name: task.assigned_name, email: task.assigned_email }] : []);
+        setSelectedAssignees(assigneeList.map(a => ({ id: a.id, name: a.name || 'User', email: a.email || '' })));
+        setActiveGroupId(null);
+        setAssignerSearch('');
+        setAssignerDropdownOpen(false);
+        setAssignerView('flat');
+        setExpandedGroupId(null);
+        setNewTaskParticipants((task.participants || []).map(p => ({ user_id: p.user_id, role: p.role })));
+        setNewTaskParticipantUser('');
+        setNewTaskParticipantRole('reviewer');
+        setParticipantSearch('');
+        setParticipantDropdownOpen(false);
+        setModalError('');
+        setShowCreateGroup(false);
+        setShowCreateModal(true);
+    };
+
     // ── ADD PARTICIPANT TO NEW TASK ───────────────────────────────────────
     const handleAddParticipant = (userId, role) => {
         const uid = userId || newTaskParticipantUser;
@@ -542,7 +601,7 @@ export default function TaskWorkspace() {
                     <button
                         type="button"
                         className="btn btn-primary"
-                        onClick={() => setShowCreateModal(true)}
+                        onClick={openCreateTaskModal}
                     >
                         <Plus size={16} />
                         <span>New Task</span>
@@ -634,7 +693,7 @@ export default function TaskWorkspace() {
                             <div><dt>Type</dt><dd>{t.category || 'general'}</dd></div>
                             <div><dt>Action date</dt><dd>{t.updated_at ? new Date(t.updated_at).toLocaleDateString() : '—'}</dd></div>
                         </dl>
-                        <footer><button type="button" className={`task-icon-btn ${t.is_pinned ? 'pinned' : ''}`} onClick={(e) => handleTogglePin(t, e)} title={t.is_pinned ? 'Unpin Task' : 'Pin Task'}><Pin size={14} /></button>{canDeleteTask(t) && <button type="button" className="task-icon-btn danger" onClick={(e) => handleDeleteTask(t, e)} title="Delete Task"><Trash2 size={14} /></button>}</footer>
+                        <footer>{canDeleteTask(t) && <button type="button" className="task-icon-btn" onClick={(e) => handleBeginEditTask(t, e)} title="Edit Task"><Edit3 size={14} /></button>}<button type="button" className={`task-icon-btn ${t.is_pinned ? 'pinned' : ''}`} onClick={(e) => handleTogglePin(t, e)} title={t.is_pinned ? 'Unpin Task' : 'Pin Task'}><Pin size={14} /></button>{canDeleteTask(t) && <button type="button" className="task-icon-btn danger" onClick={(e) => handleDeleteTask(t, e)} title="Delete Task"><Trash2 size={14} /></button>}</footer>
                     </article>)}
                     <LoadMoreOnScroll hasMore={tasksHasMore} loading={loadingMoreTasks} onLoadMore={() => fetchTasks(taskPage + 1, true)} label="Load more tasks" />
                 </div>
@@ -676,7 +735,7 @@ export default function TaskWorkspace() {
                                                 type="button"
                                                 className="btn btn-primary"
                                                 style={{ marginTop: '8px' }}
-                                                onClick={() => setShowCreateModal(true)}
+                                                onClick={openCreateTaskModal}
                                             >
                                                 <Plus size={15} /> Create Task
                                             </button>
@@ -803,6 +862,11 @@ export default function TaskWorkspace() {
                                                 {/* Actions */}
                                                 <td onClick={(e) => e.stopPropagation()}>
                                                     <div className="task-actions-cell" style={{ justifyContent: 'center' }}>
+                                                        {canDeleteTask(t) && (
+                                                            <button type="button" className="task-icon-btn" onClick={(e) => handleBeginEditTask(t, e)} title="Edit Task">
+                                                                <Edit3 size={14} />
+                                                            </button>
+                                                        )}
                                                         <button
                                                             type="button"
                                                             className={`task-icon-btn ${t.is_pinned ? 'pinned' : ''}`}
@@ -944,7 +1008,7 @@ export default function TaskWorkspace() {
                         className="task-context-menu-item"
                         onClick={() => {
                             setContextMenu(null);
-                            setShowCreateModal(true);
+                            openCreateTaskModal();
                         }}
                     >
                         <Plus size={14} style={{ color: '#0057B8' }} />
@@ -1010,16 +1074,16 @@ export default function TaskWorkspace() {
 
             {/* ── CREATE TASK MODAL — 2-Column Grid Layout ── */}
             {showCreateModal && (
-                <div className="task-modal-backdrop" onClick={() => { setShowCreateModal(false); setModalError(''); setShowCreateGroup(false); }}>
+                <div className="task-modal-backdrop" onClick={closeTaskModal}>
                     <div className="task-modal-card" onClick={(e) => e.stopPropagation()}>
 
                         {/* Header */}
                         <div className="task-modal-header">
                             <h3 className="task-modal-title">
-                                <Plus size={18} style={{ color: '#0057B8' }} />
-                                <span>Create New Task</span>
+                                {editingTask ? <Edit3 size={18} style={{ color: '#0057B8' }} /> : <Plus size={18} style={{ color: '#0057B8' }} />}
+                                <span>{editingTask ? 'Edit Task' : 'Create New Task'}</span>
                             </h3>
-                            <button type="button" className="task-modal-close-btn" onClick={() => setShowCreateModal(false)}>
+                            <button type="button" className="task-modal-close-btn" onClick={closeTaskModal}>
                                 <X size={18} />
                             </button>
                         </div>
@@ -1753,7 +1817,16 @@ export default function TaskWorkspace() {
                                                             <span key={p.user_id} className="task-assignee-chip">
                                                                 <UserCheck size={11} />
                                                                 <strong style={{ fontSize: '11px' }}>{uName}</strong>
-                                                                <span style={{ color: '#93c5fd', fontSize: '10px' }}>({p.role})</span>
+                                                                <select
+                                                                    aria-label={`Role for ${uName}`}
+                                                                    value={p.role}
+                                                                    onChange={(e) => setNewTaskParticipants(prev => prev.map(item => item.user_id === p.user_id ? { ...item, role: e.target.value } : item))}
+                                                                    style={{ border: '1px solid #bfdbfe', borderRadius: '4px', padding: '2px 4px', fontSize: '10px', color: '#1e40af', background: '#fff' }}
+                                                                >
+                                                                    <option value="approver">Approver</option>
+                                                                    <option value="reviewer">Reviewer</option>
+                                                                    <option value="for_info">For Info</option>
+                                                                </select>
                                                                 <button type="button" className="task-assignee-chip-remove" onClick={() => handleRemoveParticipant(p.user_id)}>
                                                                     <X size={10} />
                                                                 </button>
@@ -1778,18 +1851,19 @@ export default function TaskWorkspace() {
 
                             {/* Footer Buttons */}
                             <div className="task-modal-footer">
-                                <button type="button" className="btn btn-secondary" onClick={() => setShowCreateModal(false)} disabled={isSubmittingTask}>
+                                <button type="button" className="btn btn-secondary" onClick={closeTaskModal} disabled={isSubmittingTask}>
                                     Cancel
                                 </button>
                                 <button type="submit" className="btn btn-primary" disabled={isSubmittingTask}>
-                                    <Plus size={15} />
-                                    <span>{isSubmittingTask ? 'Creating Task…' : 'Create Task'}</span>
+                                    {editingTask ? <Check size={15} /> : <Plus size={15} />}
+                                    <span>{isSubmittingTask ? (editingTask ? 'Saving Changes…' : 'Creating Task…') : (editingTask ? 'Save Changes' : 'Create Task')}</span>
                                 </button>
                             </div>
                         </form>
                     </div>
                 </div>
             )}
+
         </div>
     );
 }

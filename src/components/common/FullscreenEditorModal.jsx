@@ -39,7 +39,9 @@ export default function FullscreenEditorModal({
     approveLabel = 'Approve & Publish',
     onReject,
     isRejecting = false,
-    rejectLabel = 'Reject / Rework'
+    rejectLabel = 'Reject / Rework',
+    documentTitle,
+    onDocumentTitleChange
 }) {
     if (!isOpen) return null;
 
@@ -108,6 +110,20 @@ export default function FullscreenEditorModal({
                             <span className="fullscreen-header-subtitle">{subtitle}</span>
                         </div>
                     </div>
+
+                    {onDocumentTitleChange && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '0 16px', minWidth: '220px', flex: 1 }}>
+                            <span style={{ fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap' }}>Policy title</span>
+                            <input
+                                type="text"
+                                value={documentTitle || ''}
+                                onChange={(event) => onDocumentTitleChange(event.target.value)}
+                                maxLength={500}
+                                aria-label="Policy title"
+                                style={{ minWidth: 0, width: '100%', padding: '7px 9px', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                            />
+                        </label>
+                    )}
 
                     <div className="fullscreen-header-actions">
                         {onReject && (

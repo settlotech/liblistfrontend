@@ -133,7 +133,7 @@ export default function ChangeManagementPage() {
             // Search filter
             if (searchQuery.trim()) {
                 const q = searchQuery.toLowerCase().trim();
-                const matchesName = (d.document_name || '').toLowerCase().includes(q);
+                const matchesName = (d.document_name || '').toLowerCase().includes(q) || (d.pending_document_name || '').toLowerCase().includes(q);
                 const matchesLib  = (d.library_name || '').toLowerCase().includes(q);
                 const matchesUser = (d.pending_revision_by_name || d.requested_by_name || d.created_by_name || '').toLowerCase().includes(q);
                 if (!matchesName && !matchesLib && !matchesUser) return false;
@@ -159,7 +159,7 @@ export default function ChangeManagementPage() {
             setReviewingDoc(null);
             setOpenDoc(null);
             setRejectionReason('');
-            setToastMsg(`Policy "${reviewingDoc.document_name}" ${reviewAction === 'approve' ? 'approved & published to Master Library' : 'rejected / returned for revision'}.`);
+            setToastMsg(`Policy "${reviewingDoc.pending_document_name || reviewingDoc.document_name}" ${reviewAction === 'approve' ? 'approved & published to Master Library' : 'rejected / returned for revision'}.`);
             if (reviewAction === 'approve') {
                 // Refresh sidebar Master Library tree so new version appears
                 window.dispatchEvent(new CustomEvent('liblist:document-updated', { detail: { library_id: reviewingDoc.library_id } }));
@@ -378,7 +378,7 @@ export default function ChangeManagementPage() {
                     </h2>
                     <p>
                         {isSuperAdmin
-                            ? 'Super Admin Review Center: Authorize and publish submitted operational policy drafts across institution libraries.'
+                            ? 'Authorize and publish submitted operational policy drafts across institution libraries.'
                             : 'Track the lifecycle of your authored operational policies from draft to Super Admin approval.'
                         }
                     </p>
@@ -390,7 +390,7 @@ export default function ChangeManagementPage() {
                     onClick={() => navigate('/documents/create')}
                 >
                     <Plus size={15} />
-                    <span>Create Operational Policy</span>
+                    <span>Create  Policy</span>
                 </button>
             </div>
 
@@ -747,25 +747,26 @@ export default function ChangeManagementPage() {
                     <table className="change-mgmt-table">
                         <thead>
                             <tr>
-                                <th style={{ width: '25%' }}>Policy Name &amp; Master Library</th>
-                                <th style={{ width: '12%' }}>Status</th>
-                                <th style={{ width: '12%' }}>Version</th>
-                                <th style={{ width: '15%' }}>Parent</th>
-                                <th style={{ width: '15%' }}>Authored By</th>
-                                <th style={{ width: '10%' }}>Updated Date</th>
-                                <th style={{ width: '11%', textAlign: 'right' }}>Actions</th>
+                                <th style={{ width: '22%' }}>Policy Name &amp; Master Library</th>
+                                <th style={{ width: '18%' }}>Revision Commit Message</th>
+                                <th style={{ width: '10%' }}>Status</th>
+                                <th style={{ width: '10%' }}>Version</th>
+                                <th style={{ width: '12%' }}>Parent</th>
+                                <th style={{ width: '12%' }}>Authored By</th>
+                                <th style={{ width: '8%' }}>Updated Date</th>
+                                <th style={{ width: '8%', textAlign: 'right' }}>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {isLoading ? (
                                 <tr>
-                                    <td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
+                                    <td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
                                         Loading policy entries...
                                     </td>
                                 </tr>
                             ) : displayedDocs.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7} style={{ padding: '60px 20px', textAlign: 'center' }}>
+                                    <td colSpan={8} style={{ padding: '60px 20px', textAlign: 'center' }}>
                                         <FileText size={32} style={{ color: '#94a3b8', margin: '0 auto 10px', display: 'block' }} />
                                         <h4 style={{ margin: '0 0 4px', fontSize: '14px', color: '#334155' }}>
                                             No policies found in this category
@@ -782,6 +783,10 @@ export default function ChangeManagementPage() {
                                     const dateStr = doc.updated_at
                                         ? new Date(doc.updated_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
                                         : '—';
+                                    const displayPolicyName = doc.has_pending_revision && doc.pending_document_name
+                                        ? doc.pending_document_name
+                                        : doc.document_name;
+                                    const hasProposedTitle = displayPolicyName !== doc.document_name;
 
                                 
     return (
@@ -793,13 +798,25 @@ export default function ChangeManagementPage() {
                                         >
                                             {/* Policy Name & Library */}
                                             <td>
-                                                <div className="policy-cell-title">{doc.document_name}</div>
+                                                <div className="policy-cell-title">{displayPolicyName}</div>
+                                                {hasProposedTitle && (
+                                                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                                                        Current title: {doc.document_name}
+                                                    </div>
+                                                )}
                                                 <div className="policy-cell-sub">
                                                     <Folder size={12} style={{ color: '#0057B8' }} />
                                                     <span>{doc.library_name || 'Master Library'}</span>
                                                     {/* {doc.description && (
                                                         <span style={{ color: '#94a3b8' }}>• {doc.description.slice(0, 40)}...</span>
                                                     )} */}
+                                                </div>
+                                            </td>
+
+                                            {/* Pending revision commit message */}
+                                            <td>
+                                                <div style={{ fontSize: '12px', color: doc.pending_revision_commit_message ? '#334155' : '#94a3b8', lineHeight: 1.4, whiteSpace: 'pre-wrap' }}>
+                                                    {doc.pending_revision_commit_message || (doc.has_pending_revision ? 'No commit message provided' : '—')}
                                                 </div>
                                             </td>
 
@@ -844,13 +861,12 @@ export default function ChangeManagementPage() {
                                                     <button
                                                         type="button"
                                                         className="policy-parent-link-btn"
-                                                        // onClick={(e) => handleOpenParentDocument(e, doc)}
-                                                        // title={`Click to open parent version (v${doc.parent_version_number || doc.live_version_number || '1.0'}) in editor`}
+                                                        onClick={(e) => handleOpenParentDocument(e, doc)}
+                                                        title={`Open parent version v${doc.parent_version_number || doc.live_version_number || '1.0'}`}
                                                     >
-                                                        {/* <GitBranch size={13} style={{ color: '#0057B8', flexShrink: 0 }} /> */}
+                                                        <GitBranch size={13} style={{ color: '#0057B8', flexShrink: 0 }} />
                                                         <span className="policy-parent-text">
-                                                            {/* {`v${doc.parent_version_number || doc.live_version_number || '1.0'} - ${doc.document_name}`} */}
-                                                            {`${doc.document_name}`}
+                                                            {`v${doc.parent_version_number || doc.live_version_number || '1.0'} · ${doc.document_name}`}
                                                         </span>
                                                     </button>
                                                 ) : (
@@ -978,9 +994,21 @@ export default function ChangeManagementPage() {
                             <div>
                                 <span style={{ fontSize: '12px', color: '#64748b' }}>Policy:</span>
                                 <h4 style={{ margin: '2px 0 0', fontSize: '14px', color: '#0f172a' }}>
-                                    {reviewingDoc.document_name}
+                                    {reviewingDoc.pending_document_name || reviewingDoc.document_name}
                                 </h4>
+                                {reviewingDoc.pending_document_name && reviewingDoc.pending_document_name !== reviewingDoc.document_name && (
+                                    <div style={{ marginTop: '4px', fontSize: '11px', color: '#64748b' }}>
+                                        Current title: {reviewingDoc.document_name}
+                                    </div>
+                                )}
                             </div>
+
+                            {reviewingDoc.pending_revision_commit_message && (
+                                <div style={{ padding: '10px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '7px' }}>
+                                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', marginBottom: '4px' }}>Revision commit message</div>
+                                    <div style={{ fontSize: '12px', color: '#334155', whiteSpace: 'pre-wrap' }}>{reviewingDoc.pending_revision_commit_message}</div>
+                                </div>
+                            )}
 
                             {reviewAction === 'approve' ? (
                                 <p style={{ margin: 0, fontSize: '13px', color: '#334155', lineHeight: '1.5' }}>
@@ -1040,7 +1068,7 @@ export default function ChangeManagementPage() {
                     <FullscreenEditorModal
                         isOpen={Boolean(openDoc)}
                         onClose={() => setOpenDoc(null)}
-                        title={openDoc.document_name}
+                        title={openDoc.pending_document_name || openDoc.document_name}
                         subtitle={
                             isViewingParent
                                 ? `Viewing Reference Parent Policy ${openDoc._parentVersionLabel || ''} (Committed Active Version)`

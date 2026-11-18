@@ -203,6 +203,11 @@ export default function PersonalWorkspaceAnnotations({ mode = 'notes' }) {
                                             <Calendar size={12} />
                                             {dateStr}
                                         </span>
+                                        {item.custom_id && (
+                                            <span className="pw-annot-date" title={isNotesMode ? 'Note ID' : 'Annotation ID'}>
+                                                {item.custom_id}
+                                            </span>
+                                        )}
                                     </div>
 
                                     <button

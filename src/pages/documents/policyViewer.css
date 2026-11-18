@@ -382,3 +382,44 @@
 /* Toast types */
 .templates-toast-alert.info { background: #0057B8; }
 .templates-toast-alert.error { background: #dc2626; }
+
+.add-btn-container{
+    display: flex;
+    justify-content: end;
+}
+.add-css {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 12px;
+    min-height: 32px;
+    background: #0057B8;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.add-css:hover {
+    background: linear-gradient(135deg, #1d4ed8, #1e40af);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+    transform: translateY(-1px);
+}
+
+.add-css:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 3px rgba(37, 99, 235, 0.2);
+}
+
+.add-css:focus-visible {
+    outline: 3px solid rgba(59, 130, 246, 0.25);
+    outline-offset: 3px;
+}
+
+.add-css svg {
+    flex-shrink: 0;
+}
+
