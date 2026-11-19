@@ -408,7 +408,7 @@ export default function ChangeManagementPage() {
                     onClick={() => navigate('/documents/create')}
                 >
                     <Plus size={15} />
-                    <span>Create  Policy</span>
+                    <span>Create Library</span>
                 </button>
             </div>
 
@@ -790,7 +790,7 @@ export default function ChangeManagementPage() {
                                             No policies found in this category
                                         </h4>
                                         <p style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>
-                                            Click <strong>Create Operational Policy</strong> to author a new policy into the Master Library.
+                                            Click <strong>Create Library</strong> to author a new policy into the Liblist.
                                         </p>
                                     </td>
                                 </tr>

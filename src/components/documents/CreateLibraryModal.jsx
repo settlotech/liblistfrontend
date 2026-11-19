@@ -58,7 +58,7 @@ export default function CreateLibraryModal({
                 <div className="dms-modal-header">
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <FolderPlus size={18} style={{ color: 'var(--btn-primary-bg, #0057B8)' }} />
-                        <h3 className="dms-modal-title">Create New Master Library</h3>
+                        <h3 className="dms-modal-title">Create New Department</h3>
                     </div>
                     <button type="button" className="dms-annot-close-btn" onClick={onClose}>
                         <X size={16} />
@@ -75,7 +75,7 @@ export default function CreateLibraryModal({
                         )}
 
                         <div className="dms-form-group">
-                            <label className="dms-form-label">Library Name *</label>
+                            <label className="dms-form-label">Department Name *</label>
                             <input
                                 type="text"
                                 className="dms-form-input"
@@ -88,11 +88,11 @@ export default function CreateLibraryModal({
                         </div>
 
                         <div className="dms-form-group">
-                            <label className="dms-form-label">Parent Library (Search & Select)</label>
+                            <label className="dms-form-label">Parent Department</label>
                             <LibrarySearchSelect
                                 value={parentLibraryId}
                                 onChange={(val) => setParentLibraryId(val)}
-                                placeholder="Search parent library..."
+                                placeholder="Search parent Department..."
                             />
                             <span style={{ fontSize: '11px', color: 'var(--text-muted, #94a3b8)', marginTop: '4px', display: 'block' }}>
                                 Leave blank for a top-level root library, or search to nest under an existing library.

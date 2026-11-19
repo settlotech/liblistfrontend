@@ -6,13 +6,13 @@
 .signup-page-container {
   min-height: 100vh;
   width: 100%;
-  background: #ffffff;
+  background: var(--bg-surface, #ffffff);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  color: #0f172a;
+  color: var(--text-primary, #0f172a);
   box-sizing: border-box;
   padding: 24px 20px 48px;
   margin: 0;
@@ -49,7 +49,7 @@
 
 .signup-login-prompt {
   font-size: 13px;
-  color: #64748b;
+  color: var(--text-secondary, #64748b);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -57,7 +57,7 @@
 
 .btn-link-login {
   background: none;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--border-color, #cbd5e1);
   color: #0b57d0;
   font-size: 12.5px;
   font-weight: 600;
@@ -163,9 +163,9 @@
   justify-content: center;
   font-size: 13px;
   font-weight: 700;
-  background: #ffffff;
-  border: 2px solid #cbd5e1;
-  color: #64748b;
+  background: var(--bg-surface, #ffffff);
+  border: 2px solid var(--border-color, #cbd5e1);
+  color: var(--text-secondary, #64748b);
   box-shadow: none;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -183,15 +183,15 @@
 }
 
 .signup-step-node.upcoming .signup-step-circle {
-  background: #ffffff;
-  border-color: #cbd5e1;
-  color: #94a3b8;
+  background: var(--bg-surface, #ffffff);
+  border-color: var(--border-color, #cbd5e1);
+  color: var(--text-muted, #94a3b8);
 }
 
 .signup-step-title {
   font-size: 12px;
   font-weight: 600;
-  color: #64748b;
+  color: var(--text-secondary, #64748b);
   text-align: center;
   transition: color 0.3s ease;
   white-space: nowrap;
@@ -199,7 +199,7 @@
 
 .signup-step-node.completed .signup-step-title,
 .signup-step-node.active .signup-step-title {
-  color: #0f172a;
+  color: var(--text-primary, #0f172a);
   font-weight: 700;
 }
 
@@ -226,7 +226,7 @@
 .signup-card-heading {
   font-size: 25px;
   font-weight: 800;
-  color: #0f172a;
+  color: var(--text-primary, #0f172a);
   letter-spacing: -0.025em;
   margin: 0 0 6px 0;
   line-height: 1.25;
@@ -234,7 +234,7 @@
 
 .signup-card-subheading {
   font-size: 13.5px;
-  color: #475569;
+  color: var(--text-secondary, #475569);
   line-height: 1.45;
   margin: 0 0 20px 0;
 }
@@ -279,7 +279,7 @@
 .email-address-text {
   font-size: 14px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--text-primary, #0f172a);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -289,7 +289,7 @@
 .email-edit-btn {
   background: transparent;
   border: none;
-  color: #64748b;
+  color: var(--text-secondary, #64748b);
   cursor: pointer;
   padding: 3px;
   display: inline-flex;
@@ -316,7 +316,7 @@
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: #475569;
+  color: var(--text-secondary, #475569);
   flex-shrink: 0;
 }
 
@@ -339,7 +339,7 @@
   display: block;
   font-size: 13.5px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--text-primary, #0f172a);
   margin-bottom: 10px;
 }
 
@@ -362,8 +362,8 @@
   text-align: center;
   font-size: 21px;
   font-weight: 700;
-  color: #0f172a;
-  background: #ffffff;
+  color: var(--text-primary, #0f172a);
+  background: var(--bg-surface, #ffffff);
   border: 1.5px solid #d1d5db;
   border-radius: 6px;
   outline: none;
@@ -385,7 +385,7 @@
 
 .otp-digit-input.filled {
   border-color: #93c5fd;
-  background-color: #f8fafc;
+  background-color: var(--bg-primary, #f8fafc);
 }
 
 /* ── Buttons Row (Resend + Verify - Compact) ── */
@@ -403,7 +403,7 @@
   justify-content: center;
   gap: 6px;
   padding: 0 18px;
-  background-color: #ffffff;
+  background-color: var(--bg-surface, #ffffff);
   border: 1.5px solid #0b57d0;
   color: #0b57d0;
   font-size: 13.5px;
@@ -425,8 +425,8 @@
 .btn-otp-resend:disabled {
   opacity: 0.6;
   cursor: not-allowed;
-  border-color: #cbd5e1;
-  color: #94a3b8;
+  border-color: var(--border-color, #cbd5e1);
+  color: var(--text-muted, #94a3b8);
 }
 
 .btn-otp-verify {
@@ -475,7 +475,7 @@
 
 .signup-info-text {
   font-size: 12.5px;
-  color: #334155;
+  color: var(--text-secondary, #334155);
   line-height: 1.45;
   margin: 0;
 }
@@ -514,14 +514,14 @@
 .success-heading {
   font-size: 23px;
   font-weight: 800;
-  color: #0f172a;
+  color: var(--text-primary, #0f172a);
   letter-spacing: -0.02em;
   margin: 0 0 6px;
 }
 
 .success-lead-text {
   font-size: 13.5px;
-  color: #475569;
+  color: var(--text-secondary, #475569);
   line-height: 1.5;
   max-width: 480px;
   margin: 0 0 20px;
@@ -565,9 +565,9 @@
   justify-content: center;
   gap: 5px;
   padding: 0 16px;
-  background-color: #ffffff;
-  border: 1px solid #cbd5e1;
-  color: #475569;
+  background-color: var(--bg-surface, #ffffff);
+  border: 1px solid var(--border-color, #cbd5e1);
+  color: var(--text-secondary, #475569);
   font-size: 13px;
   font-weight: 600;
   border-radius: 6px;
@@ -578,7 +578,7 @@
 }
 
 .btn-reset-flow:hover {
-  background-color: #f8fafc;
+  background-color: var(--bg-primary, #f8fafc);
   border-color: #94a3b8;
 }
 

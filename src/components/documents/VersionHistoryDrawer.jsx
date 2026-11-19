@@ -57,11 +57,13 @@ export default function VersionHistoryDrawer({ docId, currentVersionId, isOpen, 
                     ) : (
                         <div className="vh-timeline">
                             {versions.map((v, idx) => (
+
                                 <div
                                     key={v.id}
                                     className={`vh-entry ${v.id === currentVersionId ? 'current' : ''}`}
                                     onClick={() => onSelectVersion(v)}
                                 >
+                                    {console.log(v)}
                                     <div className="vh-entry-line">
                                         <div className="vh-dot" style={{ background: tagColor(v.version_tag), boxShadow: `0 0 0 2px ${tagColor(v.version_tag)}33` }} />
                                         {idx < versions.length - 1 && <div className="vh-line" />}
@@ -69,9 +71,18 @@ export default function VersionHistoryDrawer({ docId, currentVersionId, isOpen, 
                                     <div className="vh-entry-content">
                                         <div className="vh-entry-top">
                                             <span className="vh-version-num">v{v.version_number}</span>
-                                            <span className="vh-tag" style={{ color: tagColor(v.version_tag), borderColor: `${tagColor(v.version_tag)}55` }}>
+                                            {/* <span className="vh-tag" style={{ color: tagColor(v.version_tag), borderColor: `${tagColor(v.version_tag)}55` }}>
                                                 {v.version_tag || 'draft'}
-                                            </span>
+                                            </span> */}
+
+                                            {
+                                                (v.id === currentVersionId && v.version_tag == 'active') && (
+                                                    <span className="vh-tag" style={{ color: tagColor(v.version_tag), borderColor: `${tagColor(v.version_tag)}55` }}>
+                                                        {v.version_tag || 'draft'}
+                                                    </span>
+                                                )
+                                            }
+
                                             {v.id === currentVersionId && (
                                                 <span className="vh-current-badge">Current</span>
                                             )}

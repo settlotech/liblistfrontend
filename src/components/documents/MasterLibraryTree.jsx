@@ -11,9 +11,11 @@ import {
     AlertTriangle,
     X,
     Check,
-    Pin
+    Pin,
+    FileSpreadsheet
 } from 'lucide-react';
 import { documentManagementApi } from '../../services/api/documentManagementApi';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 const flattenLibraries = (libraries = []) => libraries.flatMap((library) => [
     library,
@@ -32,6 +34,38 @@ const nestLibraries = (libraries = []) => {
     return roots;
 };
 
+const templateCss = {
+    button: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '7px',
+        width: '100%',
+        padding: '7px 10px',
+        border: 'none',
+        borderRadius: '5px',
+        background: 'transparent',
+        color: '#475569',
+        fontSize: '12px',
+        fontWeight: 500,
+        cursor: 'pointer',
+        transition: 'all 0.2s ease',
+        textAlign: 'left',
+        whiteSpace: 'nowrap'
+    },
+
+    icon: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minWidth: '16px'
+    },
+
+    text: {
+        fontSize: '12px',
+        lineHeight: '16px'
+    }
+};
+
 export default function MasterLibraryTree({
     searchQuery = '',
     selectedDocId = null,
@@ -39,11 +73,15 @@ export default function MasterLibraryTree({
     onSelectSection,
     onOpenCreateDocModal
 }) {
+
+    const navigate = useNavigate();
     const [treeData, setTreeData] = useState([]);
     const [expandedNodeIds, setExpandedNodeIds] = useState(new Set());
     const [isLoading, setIsLoading] = useState(true);
     const [pinnedDocIds, setPinnedDocIds] = useState(new Set());
-
+    const templateNav = [
+        { name: 'Policy Templates', path: '/templates', icon: <FileSpreadsheet size={17} strokeWidth={2.2} /> }
+    ];
     // Library Removal Request State
     const [removalTargetLib, setRemovalTargetLib] = useState(null);
     const [removalReason, setRemovalReason] = useState('');
@@ -321,56 +359,67 @@ export default function MasterLibraryTree({
 
     return (
         <div className="dms-master-tree-container">
+            {templateNav.map((item) => (
+                <button
+                    key={item.name}
+                    type="button"
+                    style={templateCss.button}
+                    onClick={() => navigate(item.path)}
+                >
+                    <span style={templateCss.icon}>{item.icon}</span>
+                    <span style={templateCss.text}>{item.name}</span>
+                </button>
+            ))}
             {filteredTree.map((rootLib) => {
                 const renderNode = (lib) => {
-                const isLibExpanded = expandedNodeIds.has(lib.id);
-                const docCount = lib.documents ? lib.documents.length : 0;
+                    const isLibExpanded = expandedNodeIds.has(lib.id);
+                    const docCount = lib.documents ? lib.documents.length : 0;
 
-                return (
-                    <div key={lib.id} className="dms-tree-node">
-                        {/* Library Header Row */}
-                        <div
-                            className="sidebar-dept-row"
-                            onClick={(e) => toggleExpand(lib.id, e)}
-                        >
-                            <div className="sidebar-dept-main">
-                                <button
-                                    type="button"
-                                    className="sidebar-chevron-btn"
-                                    onClick={(e) => toggleExpand(lib.id, e)}
-                                >
-                                    <ChevronRight
-                                        size={12}
-                                        className={`sidebar-chevron-icon ${isLibExpanded ? 'expanded' : ''}`}
-                                    />
-                                </button>
-                                <Folder size={13} style={{ color: 'var(--btn-primary-bg)', flexShrink: 0 }} />
-                                <span className="sidebar-dept-name" title={lib.library_name}>
-                                    {lib.library_name}
-                                </span>
-                            </div>
-
-                            <div className="sidebar-dept-actions">
-                                {lib.pending_removal && (
-                                    <span style={{ fontSize: '9.5px', background: '#fef3c7', color: '#b45309', padding: '1px 5px', borderRadius: '4px', fontWeight: 600 }}>
-                                        Removal Pending
+                    return (
+                        <div key={lib.id} className="dms-tree-node">
+                            {/* Library Header Row */}
+                            <div
+                                className="sidebar-dept-row"
+                                onClick={(e) => toggleExpand(lib.id, e)}
+                            >
+                                <div className="sidebar-dept-main">
+                                    <button
+                                        type="button"
+                                        className="sidebar-chevron-btn"
+                                        onClick={(e) => toggleExpand(lib.id, e)}
+                                    >
+                                        <ChevronRight
+                                            size={12}
+                                            className={`sidebar-chevron-icon ${isLibExpanded ? 'expanded' : ''}`}
+                                        />
+                                    </button>
+                                    <Folder size={13} style={{ color: 'var(--btn-primary-bg)', flexShrink: 0 }} />
+                                    <span className="sidebar-dept-name" title={lib.library_name}>
+                                        {lib.library_name}
                                     </span>
-                                )}
-                                <span className="sidebar-count-badge" title={`${docCount} Documents`}>
-                                    {docCount}
-                                </span>
-                                <button
-                                    type="button"
-                                    className="sidebar-dept-add-btn"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onOpenCreateDocModal && onOpenCreateDocModal(lib.id);
-                                    }}
-                                    title={`Add new document into ${lib.library_name}`}
-                                >
-                                    <Plus size={11} strokeWidth={2.5} />
-                                </button>
-                                {/* <button
+                                </div>
+
+                                <div className="sidebar-dept-actions">
+                                    {lib.pending_removal && (
+                                        <span style={{ fontSize: '9.5px', background: '#fef3c7', color: '#b45309', padding: '1px 5px', borderRadius: '4px', fontWeight: 600 }}>
+                                            Removal Pending
+                                        </span>
+                                    )}
+                                    <span className="sidebar-count-badge" title={`${docCount} Documents`}>
+                                        {docCount}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        className="sidebar-dept-add-btn"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onOpenCreateDocModal && onOpenCreateDocModal(lib.id);
+                                        }}
+                                        title={`Add new document into ${lib.library_name}`}
+                                    >
+                                        <Plus size={11} strokeWidth={2.5} />
+                                    </button>
+                                    {/* <button
                                     type="button"
                                     className="sidebar-dept-add-btn"
                                     style={{ color: lib.pending_removal ? '#94a3b8' : '#ef4444' }}
@@ -386,63 +435,63 @@ export default function MasterLibraryTree({
                                 >
                                     <Trash2 size={11} />
                                 </button> */}
+                                </div>
                             </div>
-                        </div>
 
-                        {isLibExpanded && lib.children?.length > 0 && (
-                            <div className="sidebar-library-children">
-                                {lib.children.map(renderNode)}
-                            </div>
-                        )}
+                            {isLibExpanded && lib.children?.length > 0 && (
+                                <div className="sidebar-library-children">
+                                    {lib.children.map(renderNode)}
+                                </div>
+                            )}
 
-                        {/* Documents Hierarchy under Library */}
-                        {isLibExpanded && lib.documents && (
-                            <div className="sidebar-child-policies">
-                                {lib.documents.length === 0 ? (
-                                    <div style={{ fontSize: '10.5px', color: '#94a3b8', padding: '4px 8px' }}>
-                                        No documents yet. Click + to add.
-                                    </div>
-                                ) : (
-                                    lib.documents.map((doc) => {
-                                        const isDocSelected = selectedDocId === doc.id;
-                                        const versionTag = `v${doc.current_version_number || '1.0'}`;
+                            {/* Documents Hierarchy under Library */}
+                            {isLibExpanded && lib.documents && (
+                                <div className="sidebar-child-policies">
+                                    {lib.documents.length === 0 ? (
+                                        <div style={{ fontSize: '10.5px', color: '#94a3b8', padding: '4px 8px' }}>
+                                            No documents yet. Click + to add.
+                                        </div>
+                                    ) : (
+                                        lib.documents.map((doc) => {
+                                            const isDocSelected = selectedDocId === doc.id;
+                                            const versionTag = `v${doc.current_version_number || '1.0'}`;
 
-                                        return (
-                                            <div key={doc.id} className="dms-tree-node">
-                                                <div
-                                                    className={`sidebar-policy-row ${isDocSelected ? 'active' : ''}`}
-                                                    onClick={() => onSelectDocument && onSelectDocument(doc.id)}
-                                                    title={`${doc.document_name} (v${doc.current_version_number || '1.0'})`}
-                                                >
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: 0, flex: 1 }}>
-                                                        <div style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: '#16a34a' }} title="Published & Live" />
-                                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                            {doc.document_name}
-                                                        </span>
-                                                    </div>
+                                            return (
+                                                <div key={doc.id} className="dms-tree-node">
+                                                    <div
+                                                        className={`sidebar-policy-row ${isDocSelected ? 'active' : ''}`}
+                                                        onClick={() => onSelectDocument && onSelectDocument(doc.id)}
+                                                        title={`${doc.document_name} (v${doc.current_version_number || '1.0'})`}
+                                                    >
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: 0, flex: 1 }}>
+                                                            <div style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: '#16a34a' }} title="Published & Live" />
+                                                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                                {doc.document_name}
+                                                            </span>
+                                                        </div>
 
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                        <span className="sidebar-ver-tag">
-                                                            {versionTag}
-                                                        </span>
-                                                        <button
-                                                            type="button"
-                                                            className={`sidebar-pin-btn ${pinnedDocIds.has(doc.id) ? 'pinned' : ''}`}
-                                                            onClick={(e) => handleTogglePinDoc(doc.id, e)}
-                                                            title={pinnedDocIds.has(doc.id) ? 'Unpin policy from sidebar' : 'Pin policy to sidebar'}
-                                                        >
-                                                            <Pin size={11} style={pinnedDocIds.has(doc.id) ? { fill: '#0057B8', color: '#0057B8' } : {}} />
-                                                        </button>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                            <span className="sidebar-ver-tag">
+                                                                {versionTag}
+                                                            </span>
+                                                            <button
+                                                                type="button"
+                                                                className={`sidebar-pin-btn ${pinnedDocIds.has(doc.id) ? 'pinned' : ''}`}
+                                                                onClick={(e) => handleTogglePinDoc(doc.id, e)}
+                                                                title={pinnedDocIds.has(doc.id) ? 'Unpin policy from sidebar' : 'Pin policy to sidebar'}
+                                                            >
+                                                                <Pin size={11} style={pinnedDocIds.has(doc.id) ? { fill: '#0057B8', color: '#0057B8' } : {}} />
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            </div>
-                                        );
-                                    })
-                                )}
-                            </div>
-                        )}
-                    </div>
-                );
+                                            );
+                                        })
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    );
                 };
                 return renderNode(rootLib);
             })}

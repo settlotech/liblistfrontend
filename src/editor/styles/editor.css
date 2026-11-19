@@ -6,7 +6,7 @@
 :root {
   --rte-bg: #f8fafc;
   --rte-surface: #ffffff;
-  --rte-border: #e2e8f0;
+  --rte-border: var(--border-color, #e2e8f0);
   --rte-border-hover: #cbd5e1;
   --rte-primary: #6366f1;
   --rte-primary-light: #eef2ff;
@@ -42,7 +42,7 @@
 }
 
 .modern-editor-container:focus-within {
-  border-color: #cbd5e1;
+  border-color: var(--border-color, #cbd5e1);
   box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.15), var(--rte-shadow-sm);
 }
 
@@ -50,7 +50,7 @@
    Modern Toolbar Wrapper
    -------------------------------------------------------------------------- */
 .modern-editor-toolbar-wrapper {
-  background: #ffffff;
+  background: var(--bg-surface, #ffffff);
   border-bottom: 1px solid var(--rte-border);
   position: sticky;
   top: 0;
@@ -66,7 +66,7 @@
   align-items: center;
   flex-wrap: wrap;
   padding: 6px 10px;
-  background: #ffffff;
+  background: var(--bg-surface, #ffffff);
   gap: 3px;
   min-height: 42px;
 }
@@ -107,7 +107,7 @@
   padding: 0 20px 0 6px;
   border: 1px solid var(--rte-border);
   border-radius: 4px;
-  background: #ffffff;
+  background: var(--bg-surface, #ffffff);
   color: var(--rte-text-secondary);
   font: inherit;
   cursor: pointer;
@@ -140,7 +140,7 @@
 
 .modern-tool-btn:hover:not(:disabled),
 .toolbar-btn:hover:not(:disabled) {
-  background-color: #f1f5f9;
+  background-color: var(--bg-hover, #f1f5f9);
   color: var(--rte-text);
 }
 
@@ -176,7 +176,7 @@
   justify-content: space-between;
   height: 28px;
   padding: 0 8px;
-  background: #ffffff;
+  background: var(--bg-surface, #ffffff);
   border: 1px solid var(--rte-border);
   border-radius: 5px;
   color: var(--rte-text);
@@ -188,7 +188,7 @@
 }
 
 .toolbar-dropdown-btn:hover {
-  background-color: #f8fafc;
+  background-color: var(--bg-primary, #f8fafc);
   border-color: var(--rte-border-hover);
 }
 
@@ -202,7 +202,7 @@
   top: 100%;
   left: 0;
   margin-top: 4px;
-  background: #ffffff;
+  background: var(--bg-surface, #ffffff);
   border: 1px solid var(--rte-border);
   border-radius: 6px;
   box-shadow: var(--rte-shadow-lg);
@@ -225,7 +225,7 @@
 }
 
 .dropdown-item:hover {
-  background-color: #f1f5f9;
+  background-color: var(--bg-hover, #f1f5f9);
   color: var(--rte-text);
 }
 
@@ -330,7 +330,7 @@
   align-items: center;
   border: 1px solid var(--rte-border);
   border-radius: 5px;
-  background: #ffffff;
+  background: var(--bg-surface, #ffffff);
   height: 28px;
   overflow: hidden;
 }
@@ -384,7 +384,7 @@
   top: 100%;
   left: 0;
   margin-top: 4px;
-  background: #ffffff;
+  background: var(--bg-surface, #ffffff);
   border: 1px solid var(--rte-border);
   border-radius: 8px;
   box-shadow: var(--rte-shadow-lg);
@@ -418,7 +418,7 @@
 
 .btn-text-reset:hover,
 .btn-no-color:hover {
-  background: #f1f5f9;
+  background: var(--bg-hover, #f1f5f9);
   color: var(--rte-text);
 }
 
@@ -590,7 +590,7 @@
   top: 100%;
   left: 0;
   margin-top: 4px;
-  background: #ffffff;
+  background: var(--bg-surface, #ffffff);
   border: 1px solid var(--rte-border);
   border-radius: 8px;
   box-shadow: var(--rte-shadow-lg);
@@ -618,7 +618,7 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
-  background: #f8fafc;
+  background: var(--bg-primary, #f8fafc);
   padding: 6px;
   border-radius: 6px;
   border: 1px solid var(--rte-border);
@@ -633,7 +633,7 @@
   width: 16px;
   height: 16px;
   border: 1px solid var(--rte-border);
-  background: #ffffff;
+  background: var(--bg-surface, #ffffff);
   border-radius: 2px;
   cursor: pointer;
 }
@@ -705,7 +705,7 @@
   padding: 5px 8px;
   font-size: 11px;
   color: var(--rte-text-secondary);
-  background: #f8fafc;
+  background: var(--bg-primary, #f8fafc);
   border: 1px solid var(--rte-border);
   border-radius: 4px;
   cursor: pointer;
@@ -713,7 +713,7 @@
 }
 
 .table-action-item:hover {
-  background: #f1f5f9;
+  background: var(--bg-hover, #f1f5f9);
   color: var(--rte-text);
 }
 
@@ -729,7 +729,7 @@
   top: 100%;
   left: 0;
   margin-top: 4px;
-  background: #ffffff;
+  background: var(--bg-surface, #ffffff);
   border: 1px solid var(--rte-border);
   border-radius: 8px;
   box-shadow: var(--rte-shadow-lg);
@@ -815,7 +815,7 @@
   border-radius: 4px;
   border: 1px solid var(--rte-border);
   text-align: center;
-  background: #f8fafc;
+  background: var(--bg-primary, #f8fafc);
 }
 
 .image-preview-box img {
@@ -871,7 +871,7 @@
 .align-btn {
   flex: 1;
   height: 26px;
-  background: #ffffff;
+  background: var(--bg-surface, #ffffff);
   border: none;
   color: var(--rte-text-secondary);
   cursor: pointer;
@@ -891,7 +891,7 @@
   border: 1px solid var(--rte-border);
   border-radius: 4px;
   font-size: 11px;
-  background: #ffffff;
+  background: var(--bg-surface, #ffffff);
 }
 
 .image-modal-actions,
@@ -929,7 +929,7 @@
   top: 100%;
   left: 0;
   margin-top: 4px;
-  background: #ffffff;
+  background: var(--bg-surface, #ffffff);
   border: 1px solid var(--rte-border);
   border-radius: 8px;
   box-shadow: var(--rte-shadow-lg);
@@ -965,7 +965,7 @@
 
 /* When in seamless flow mode (inside cards/modals/forms) */
 .modern-editor-workspace.flow-mode {
-  background-color: #ffffff;
+  background-color: var(--bg-surface, #ffffff);
   padding: 16px 20px;
 }
 
@@ -1007,12 +1007,12 @@
   min-height: var(--rte-page-height);
   background: repeating-linear-gradient(
     to bottom,
-    #ffffff 0,
-    #ffffff calc(var(--rte-page-height) - 1px),
+    var(--bg-surface, #ffffff) 0,
+    var(--bg-surface, #ffffff) calc(var(--rte-page-height) - 1px),
     #94a3b8 calc(var(--rte-page-height) - 1px),
     #cbd5e1 var(--rte-page-height),
     #cbd5e1 calc(var(--rte-page-height) + var(--rte-page-gap)),
-    #ffffff calc(var(--rte-page-height) + var(--rte-page-gap))
+    var(--bg-surface, #ffffff) calc(var(--rte-page-height) + var(--rte-page-gap))
   );
   padding: 96px;
   margin: 0 auto 32px;          /* bottom gap = workspace gap between pages */
@@ -1024,7 +1024,7 @@
 }
 
 .document-page .tiptap > :not(.document-page-break) {
-  background-color: #ffffff;
+  background-color: var(--bg-surface, #ffffff);
 }
 
 /* Automatic Visual Page Break Boundaries (MS Word Style Divider Gap) */
@@ -1080,8 +1080,8 @@
   font-weight: 600;
   letter-spacing: 0.8px;
   text-transform: uppercase;
-  color: #64748b;
-  background: #ffffff;
+  color: var(--text-secondary, #64748b);
+  background: var(--bg-surface, #ffffff);
   padding: 1px 10px;
   border-radius: 999px;
   border: 1px dashed #94a3b8;
@@ -1139,7 +1139,7 @@
   font-size: 11px;
   font-weight: 700;
   color: #1e3a8a;
-  background: #ffffff;
+  background: var(--bg-surface, #ffffff);
   padding: 3px 14px;
   border-radius: 999px;
   border: 1px solid #94a3b8;
@@ -1173,7 +1173,7 @@
 .tiptap h3,
 .tiptap h4 {
   font-family: inherit;
-  color: #0f172a;
+  color: var(--text-primary, #0f172a);
   margin-top: 1.3em;
   margin-bottom: 0.4em;
   line-height: 1.3;
@@ -1218,8 +1218,8 @@
 }
 
 .tiptap code {
-  background-color: #f1f5f9;
-  color: #0f172a;
+  background-color: var(--bg-hover, #f1f5f9);
+  color: var(--text-primary, #0f172a);
   padding: 2px 6px;
   border-radius: 4px;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
@@ -1231,7 +1231,7 @@
   border-left: 3px solid var(--rte-primary);
   margin: 1.2em 0;
   padding: 6px 16px;
-  background-color: #f8fafc;
+  background-color: var(--bg-primary, #f8fafc);
   border-radius: 0 4px 4px 0;
   color: var(--rte-text-secondary);
   font-style: italic;
@@ -1288,8 +1288,8 @@
 .tiptap table th {
   font-weight: 600;
   text-align: left;
-  background-color: #f1f5f9;
-  color: #0f172a;
+  background-color: var(--bg-hover, #f1f5f9);
+  color: var(--text-primary, #0f172a);
 }
 
 .tiptap table .selectedCell:after {
@@ -1344,7 +1344,7 @@
   justify-content: space-between;
   padding: 0 14px;
   height: 30px;
-  background: #ffffff;
+  background: var(--bg-surface, #ffffff);
   border-top: 1px solid var(--rte-border);
   font-size: 11px;
   color: var(--rte-text-muted);
@@ -1428,7 +1428,7 @@
 }
 
 .btn-status-zoom:hover:not(:disabled) {
-  background-color: #f1f5f9;
+  background-color: var(--bg-hover, #f1f5f9);
   color: var(--rte-text);
 }
 
@@ -1444,7 +1444,7 @@
 .context-menu-floating-toolbar {
   position: fixed;
   z-index: 1000;
-  background: #ffffff;
+  background: var(--bg-surface, #ffffff);
   border: 1px solid var(--rte-border);
   border-radius: 8px;
   box-shadow: 0 12px 32px rgba(15, 23, 42, 0.15), 0 2px 6px rgba(15, 23, 42, 0.08);
@@ -1472,7 +1472,7 @@
   justify-content: space-between;
   gap: 2px;
   padding: 2px;
-  background: #f8fafc;
+  background: var(--bg-primary, #f8fafc);
   border-radius: 6px;
   border: 1px solid var(--rte-border);
 }
@@ -1497,7 +1497,7 @@
 }
 
 .context-tool-btn:hover {
-  background: #ffffff;
+  background: var(--bg-surface, #ffffff);
   color: var(--rte-text);
   box-shadow: var(--rte-shadow-sm);
 }
@@ -1537,7 +1537,7 @@
 }
 
 .context-menu-item:hover {
-  background: #f1f5f9;
+  background: var(--bg-hover, #f1f5f9);
   color: var(--rte-text);
 }
 
@@ -1595,7 +1595,7 @@
   max-height: 280px;
   overflow-y: auto;
   overflow-x: hidden;
-  background: #ffffff;
+  background: var(--bg-surface, #ffffff);
   border: 1px solid var(--rte-border);
   border-radius: 8px;
   box-shadow: 0 16px 36px rgba(15, 23, 42, 0.22), 0 4px 12px rgba(15, 23, 42, 0.08);
@@ -1613,7 +1613,7 @@
   max-height: none !important;
   overflow-y: visible !important;
   overflow-x: visible !important;
-  background: #ffffff;
+  background: var(--bg-surface, #ffffff);
   border: 1px solid var(--rte-border);
   border-radius: 8px;
   box-shadow: 0 16px 36px rgba(15, 23, 42, 0.22), 0 4px 12px rgba(15, 23, 42, 0.08);

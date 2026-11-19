@@ -38,7 +38,7 @@ const Sidebar = ({ isOpen, onToggle }) => {
     { name: 'Change Management', path: '/change-management', icon: <ShieldCheck size={17} strokeWidth={2.2} /> },
     { name: 'Notes', path: '/notes', icon: <FileText size={17} strokeWidth={2.2} /> },
     { name: 'Annotations', path: '/annotations', icon: <Highlighter size={17} strokeWidth={2.2} /> },
-    { name: 'Policy Templates', path: '/templates', icon: <FileSpreadsheet size={17} strokeWidth={2.2} /> },
+    // { name: 'Policy Templates', path: '/templates', icon: <FileSpreadsheet size={17} strokeWidth={2.2} /> },
     { name: 'Settings', path: '/settings', icon: <Settings size={17} strokeWidth={2.2} /> },
   ];
 

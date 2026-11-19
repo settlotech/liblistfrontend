@@ -494,7 +494,7 @@ export default function PolicyViewerPage() {
                     title="Create Policy"
                 >
                     <Plus size={18} strokeWidth={2.5} />
-                    <span>New Policy</span>
+                    <span>New Library</span>
                 </button>
             </div>
 

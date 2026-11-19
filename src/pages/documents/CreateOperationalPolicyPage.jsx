@@ -1141,7 +1141,7 @@ export default function CreateOperationalPolicyPage() {
                     <div className="create-policy-title-group">
                         <h2>
                             <FileText size={22} style={{ color: 'var(--btn-primary-bg, #0057B8)' }} />
-                            <span>Create Operational Policy</span>
+                            <span>Create Library</span>
                         </h2> 
                     </div>
 

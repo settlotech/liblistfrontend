@@ -8,15 +8,15 @@
     flex-direction: column;
     gap: 20px;
     padding: 24px 32px 48px;
-    background: #f1f5f9;
+    background: var(--bg-hover, #f1f5f9);
     min-height: 100%;
     box-sizing: border-box;
 }
 
 /* ─── Top Policy Header Card ─────────────────────────────────────────── */
 .policy-header-card {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
+    background: var(--bg-surface, #ffffff);
+    border: 1px solid var(--border-color, #e2e8f0);
     border-radius: 14px;
     padding: 22px 28px 24px;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
@@ -40,12 +40,12 @@
     align-items: center;
     gap: 6px;
     font-size: 0.8125rem;
-    color: #64748b;
+    color: var(--text-secondary, #64748b);
     font-weight: 500;
 }
 
 .breadcrumb-arrow {
-    color: #94a3b8;
+    color: var(--text-muted, #94a3b8);
 }
 
 .version-pill {
@@ -89,9 +89,9 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: #ffffff;
-    color: #475569;
-    border: 1px solid #cbd5e1;
+    background: var(--bg-surface, #ffffff);
+    color: var(--text-secondary, #475569);
+    border: 1px solid var(--border-color, #cbd5e1);
     padding: 6px 12px;
     border-radius: 8px;
     font-size: 0.8125rem;
@@ -101,9 +101,9 @@
 }
 
 .btn-pin-action:hover {
-    background: #f8fafc;
+    background: var(--bg-primary, #f8fafc);
     border-color: #94a3b8;
-    color: #0f172a;
+    color: var(--text-primary, #0f172a);
 }
 
 .btn-pin-action.is-pinned {
@@ -121,9 +121,9 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: #ffffff;
-    color: #475569;
-    border: 1px solid #cbd5e1;
+    background: var(--bg-surface, #ffffff);
+    color: var(--text-secondary, #475569);
+    border: 1px solid var(--border-color, #cbd5e1);
     padding: 6px 12px;
     border-radius: 8px;
     font-size: 0.8125rem;
@@ -133,9 +133,9 @@
 }
 
 .btn-annotations-action:hover {
-    background: #f8fafc;
+    background: var(--bg-primary, #f8fafc);
     border-color: #94a3b8;
-    color: #0f172a;
+    color: var(--text-primary, #0f172a);
 }
 
 .btn-annotations-action.active {
@@ -157,9 +157,9 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: #ffffff;
-    border: 1px solid #cbd5e1;
-    color: #0f172a;
+    background: var(--bg-surface, #ffffff);
+    border: 1px solid var(--border-color, #cbd5e1);
+    color: var(--text-primary, #0f172a);
     font-size: 0.8125rem;
     font-weight: 600;
     padding: 6px 14px;
@@ -185,22 +185,22 @@
 .policy-title {
     font-size: 1.45rem;
     font-weight: 800;
-    color: #0f172a;
+    color: var(--text-primary, #0f172a);
     margin: 0;
     letter-spacing: -0.02em;
 }
 
 .policy-description {
     font-size: 0.875rem;
-    color: #64748b;
+    color: var(--text-secondary, #64748b);
     margin: 0;
     line-height: 1.5;
 }
 
 /* ─── Detailed Library Info Card (Core Specification) ─────────────────── */
 .policy-spec-card {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
+    background: var(--bg-surface, #ffffff);
+    border: 1px solid var(--border-color, #e2e8f0);
     border-radius: 14px;
     padding: 24px 28px;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
@@ -224,7 +224,7 @@
     font-size: 0.78rem;
     font-weight: 800;
     letter-spacing: 0.05em;
-    color: #0f172a;
+    color: var(--text-primary, #0f172a);
     text-transform: uppercase;
 }
 
@@ -236,7 +236,7 @@
     font-size: 0.68rem;
     font-weight: 700;
     letter-spacing: 0.06em;
-    color: #94a3b8;
+    color: var(--text-muted, #94a3b8);
     text-transform: uppercase;
 }
 
@@ -277,7 +277,7 @@
     min-height: unset !important;
     font-size: 0.925rem !important;
     line-height: 1.65 !important;
-    color: #1e293b !important;
+    color: var(--text-primary, #1e293b) !important;
 }
 
 /* Empty / Fallback State */
@@ -288,7 +288,7 @@
     justify-content: center;
     height: 70vh;
     text-align: center;
-    color: #64748b;
+    color: var(--text-secondary, #64748b);
     gap: 12px;
 }
 
@@ -346,14 +346,14 @@
     width: 34px;
     height: 34px;
     border-radius: 8px;
-    border: 1px solid #e2e8f0;
-    background: #f8fafc;
-    color: #64748b;
+    border: 1px solid var(--border-color, #e2e8f0);
+    background: var(--bg-primary, #f8fafc);
+    color: var(--text-secondary, #64748b);
     cursor: pointer;
     transition: all 0.15s;
 }
 .btn-version-history:hover {
-    background: #f1f5f9;
+    background: var(--bg-hover, #f1f5f9);
     color: #0057B8;
     border-color: #0057B8;
 }
@@ -372,8 +372,8 @@
     align-items: center;
     gap: 5px;
     font-size: 11px;
-    color: #64748b;
-    background: #f1f5f9;
+    color: var(--text-secondary, #64748b);
+    background: var(--bg-hover, #f1f5f9);
     padding: 3px 10px;
     border-radius: 20px;
     font-weight: 500;

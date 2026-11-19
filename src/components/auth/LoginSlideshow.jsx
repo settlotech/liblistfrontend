@@ -17,6 +17,12 @@ import {
   ArrowRight
 } from 'lucide-react';
 import multiLevelAuthImg from '../../assets/multi-level-auth.png';
+import policyAccessScreenshot from '../../assets/login-slideshow/policy-access.png';
+import policyChatScreenshot from '../../assets/login-slideshow/policy-chat.png';
+import taskManagementScreenshot from '../../assets/login-slideshow/task-management.png';
+import policyAnnotationsScreenshot from '../../assets/login-slideshow/policy-annotations.png';
+import libraryCreationScreenshot from '../../assets/login-slideshow/library-creation.png';
+import policyLibraryScreenshot from '../../assets/login-slideshow/policy-library.png';
 import './LoginSlideshow.css';
 
 const SLIDES = [
@@ -109,6 +115,8 @@ const SLIDES = [
   },
   {
     id: 3,
+    screenshot: policyAccessScreenshot,
+    screenshotAlt: 'LibList policy access permissions list',
     tag: 'Access Governance',
     title: 'Access rights aligned to organizational standard',
     description: 'Give each team the right level of access: Edit or View. Confidential and restricted libraries remain completely hidden.',
@@ -150,6 +158,8 @@ const SLIDES = [
   },
   {
     id: 4,
+    screenshot: policyChatScreenshot,
+    screenshotAlt: 'LibList policy chat with a structured answer',
     tag: 'AI Intelligence',
     title: 'Communicate, Collaborate, Clarify',
     description: 'Query LibList to retrieve instant answers with verified clause citations from entitled policy sets.',
@@ -170,6 +180,8 @@ const SLIDES = [
   },
   {
     id: 5,
+    screenshot: taskManagementScreenshot,
+    screenshotAlt: 'LibList task management table with task history',
     tag: 'Workflow Actions',
     title: 'Assign and Track Tasks',
     description: 'Assign tasks to self and team members. Track SLA compliance and governance action items in one place.',
@@ -196,6 +208,8 @@ const SLIDES = [
   },
   {
     id: 6,
+    screenshot: policyAnnotationsScreenshot,
+    screenshotAlt: 'LibList policy viewer with an inline note annotation',
     tag: 'Inline Annotations',
     title: 'Comment and Feedback in Context',
     description: 'Collaborate directly inside policies. Tag colleagues, leave clause-specific notes, and maintain clear review feedback.',
@@ -219,6 +233,8 @@ const SLIDES = [
   },
   {
     id: 7,
+    screenshot: libraryCreationScreenshot,
+    screenshotAlt: 'LibList create library screen with policy sections',
     tag: 'Quick Ingestion',
     title: 'Easy Modes for Library Creation',
     description: 'Start from a standard, not a blank page. Create libraries through AI file upload, approved templates, or direct in-system drafting.',
@@ -252,9 +268,11 @@ const SLIDES = [
   },
   {
     id: 8,
-    tag: 'Maker-Checker Lifecycle',
-    title: 'Change Management Control',
-    description: 'Ensure audit readiness. Draft revisions, submit for Checker review, and track parent baseline version histories.',
+    screenshot: policyLibraryScreenshot,
+    screenshotAlt: 'LibList policy library list with approval status and actions',
+    tag: 'Policy Library',
+    title: 'Track policies through their lifecycle',
+    description: 'Browse policies by status, version, owner, and library, with review actions available from one central list.',
     renderVisual: () => (
       <div className="cm-table-mini">
         <div style={{ display: 'flex', gap: 6, marginBottom: 8, borderBottom: '1px solid #f1f5f9', paddingBottom: 4 }}>
@@ -386,7 +404,15 @@ export default function LoginSlideshow({ autoPlayInterval = 5000 }) {
 
       {/* Central Interactive Visual Component */}
       <div className="slide-stage">
-        {slide.renderVisual()}
+        {slide.screenshot ? (
+          <img
+            className="slide-feature-screenshot"
+            src={slide.screenshot}
+            alt={slide.screenshotAlt}
+          />
+        ) : (
+          slide.renderVisual()
+        )}
       </div>
 
       {/* Bottom Controls: Navigation Arrows & Indicator Dots */}

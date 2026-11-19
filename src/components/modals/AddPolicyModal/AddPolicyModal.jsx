@@ -1939,7 +1939,7 @@ Immediate escalation to Chief Compliance Officer prior to facility establishment
                     </span>
                   </>
                 ) : (
-                  'LibList • Create Operational Policy'
+                  'LibList • Create Library'
                 )}
               </h2>
               {editingPolicy && (

@@ -3,17 +3,19 @@
   display: flex;
   min-height: 100vh;
   width: 100%;
-  background: #ffffff;
-  color: #0f172a;
+  gap: 10px;
+  padding: 16px;
+  background: var(--bg-surface, #ffffff);
+  color: var(--text-primary, #0f172a);
   overflow-x: hidden;
 }
  
 .leftPanel {
-  flex: 0 0 58%;
-  max-width: 58%;
-  background: #ffffff;
-  border-right: 1px solid #f1f5f9;
-  padding: 32px 48px;
+  flex: 0 0 56%;
+  max-width: 56%;
+  background: var(--bg-surface, #ffffff);
+  border-right: 1px solid #e8edf3;
+  padding: 30px 44px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -38,11 +40,12 @@
   height: 38px;
   width: auto;
   object-fit: contain;
+  filter: none;
 }
 
 .versionTag {
   font-size: 0.8125rem;
-  color: #94a3b8;
+  color: var(--text-muted, #94a3b8);
   font-family: var(--font-mono);
   font-weight: 500;
 }
@@ -55,14 +58,14 @@
 .platformTitle {
   font-size: 1.05rem;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--text-primary, #0f172a);
   letter-spacing: -0.01em;
   margin-bottom: 6px;
 }
 
 .platformSubtitle {
   font-size: 0.8125rem;
-  color: #64748b;
+  color: var(--text-secondary, #64748b);
   line-height: 1.5;
 }
 
@@ -91,7 +94,7 @@
 .whyTitle {
   font-size: 1rem;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--text-primary, #0f172a);
   margin-bottom: 14px;
 }
 
@@ -107,7 +110,7 @@
   align-items: center;
   gap: 10px;
   font-size: 0.8125rem;
-  color: #475569;
+  color: var(--text-secondary, #475569);
 }
 
 .checkIcon {
@@ -127,8 +130,9 @@
 ══════════════════════════════════════════════════════════════════════════ */
 .rightPanel {
   flex: 1;
-  background: #fafcff;
-  padding: 36px 48px;
+  min-width: 0;
+  background: var(--bg-surface, #ffffff);
+  padding: 32px 44px;
   display: flex;
   flex-direction: column;
   position: relative;
@@ -146,7 +150,7 @@
 
 .signupPrompt {
   font-size: 0.8125rem;
-  color: #64748b;
+  color: var(--text-secondary, #64748b);
 }
 
 /* Form Container */
@@ -177,14 +181,14 @@
 .loginTitle {
   font-size: 1.625rem;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--text-primary, #0f172a);
   letter-spacing: -0.02em;
   margin-bottom: 4px;
 }
 
 .loginSubtitle {
   font-size: 0.875rem;
-  color: #64748b;
+  color: var(--text-secondary, #64748b);
   margin-bottom: 24px;
 }
 
@@ -214,8 +218,8 @@
 }
 
 .personaCard {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
+  background: var(--bg-surface, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
   border-radius: var(--radius-md);
   padding: 10px 10px;
   display: flex;
@@ -257,7 +261,7 @@
 .personaRole {
   font-size: 0.75rem;
   font-weight: 700;
-  color: #1e293b;
+  color: var(--text-primary, #1e293b);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -265,7 +269,7 @@
 
 .personaEmail {
   font-size: 0.6875rem;
-  color: #94a3b8;
+  color: var(--text-muted, #94a3b8);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -333,6 +337,8 @@
 @media (max-width: 868px) {
   .page {
     flex-direction: column;
+    gap: 0;
+    padding: 0;
   }
   .leftPanel {
     flex: unset;
@@ -340,7 +346,7 @@
     width: 100%;
     padding: 32px 24px;
     border-right: none;
-    border-bottom: 1px solid #f1f5f9;
+    border-bottom: 1px solid #e8edf3;
   }
   .illustrationContainer {
     margin: 20px 0;
