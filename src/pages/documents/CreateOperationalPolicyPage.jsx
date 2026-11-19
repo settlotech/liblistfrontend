@@ -30,10 +30,42 @@ import {
     Loader2,
     Copy
 } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 import { documentManagementApi } from '../../services/api/documentManagementApi';
 import RichTextEditor from '../../editor/RichTextEditor';
 import FullscreenEditorModal from '../../components/common/FullscreenEditorModal';
+import SectionWiseEditor, {
+    normalizeSectionContent,
+    extractSectionTipTapJson,
+    sectionsToCombinedDoc,
+} from '../../components/documents/SectionWiseEditor';
+import BrowserDocumentViewer from '../../components/documents/BrowserDocumentViewer';
 import './createOperationalPolicy.css';
+
+const DEFAULT_STARTER_SECTIONS = [
+    {
+        id: 'sec-default-1',
+        title: '1. Summary',
+        section_title: '1. Summary',
+        isTemplateSection: true,
+        order: 0,
+        content: {
+            type: 'doc',
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Summarize the regulatory intent, purpose, and scope of this policy.' }] }],
+        },
+    },
+    {
+        id: 'sec-default-2',
+        title: '2. Details',
+        section_title: '2. Details',
+        isTemplateSection: true,
+        order: 1,
+        content: {
+            type: 'doc',
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Define operational rules, thresholds, controls, and responsibilities.' }] }],
+        },
+    },
+];
 
 const escapeHtmlText = (str = '') =>
     String(str)
@@ -164,6 +196,15 @@ const splitTipTapDocByH2Sections = (tipTapDoc) => {
 export default function CreateOperationalPolicyPage() {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
+    const { user } = useAuth();
+
+    const isSuperAdmin = user?.isSuperAdmin === true || (user?.roles || []).some(r => {
+        const name = typeof r === 'string' ? r : r.role_name;
+        return name?.toLowerCase() === 'super admin';
+    });
+    const permList = user?.permissionStrings || user?.permissions || [];
+    const hasTemplateUpdatePerm = isSuperAdmin || permList.includes('templates:update');
+    const hasTemplateCreatePerm = isSuperAdmin || permList.includes('templates:create');
 
     // Query params: pre-selected tab, library ID, or source document to copy
     const initialLibraryId = searchParams.get('libraryId') || '';
@@ -204,7 +245,9 @@ export default function CreateOperationalPolicyPage() {
     const [isTemplateDropdownOpen, setIsTemplateDropdownOpen] = useState(false);
     const templateWrapRef                       = useRef(null);
 
-    // Editor content state
+    // Editor content state (section-wise + unified preview)
+    const [directSections, setDirectSections] = useState(DEFAULT_STARTER_SECTIONS);
+    const hasTouchedDirectSectionsRef = useRef(false);
     const [editorJsonContent, setEditorJsonContent] = useState(null);
     const [editorInitialContent, setEditorInitialContent] = useState(null);
     const [editorKey, setEditorKey]             = useState(Date.now());
@@ -214,6 +257,16 @@ export default function CreateOperationalPolicyPage() {
     const [isSubmitting, setIsSubmitting]       = useState(false);
     const [errorMsg, setErrorMsg]               = useState('');
     const [loadedTemplateAlert, setLoadedTemplateAlert] = useState(null);
+
+    // Store sections back into an existing or new template modal
+    const [isStoreTemplateOpen, setIsStoreTemplateOpen] = useState(false);
+    const [storeTemplateMode, setStoreTemplateMode] = useState('existing');
+    const [targetExistingTemplateId, setTargetExistingTemplateId] = useState('');
+    const [newTemplateName, setNewTemplateName] = useState('');
+    const [newTemplateCategory, setNewTemplateCategory] = useState('Operational Policy');
+    const [newTemplateDescription, setNewTemplateDescription] = useState('');
+    const [isStoringTemplate, setIsStoringTemplate] = useState(false);
+    const [storeTemplateError, setStoreTemplateError] = useState('');
 
     // ── Upload Stepper State ──────────────────────────────────────────────────
     const [uploadStep, setUploadStep] = useState(1); // 1 | 2 | 3 | 4
@@ -232,6 +285,8 @@ export default function CreateOperationalPolicyPage() {
 
     const [uploadPanelsSwapped, setUploadPanelsSwapped] = useState(false);
     const [isReviewFullscreen, setIsReviewFullscreen] = useState(false);
+    const [uploadSections, setUploadSections] = useState([]);
+    const [uploadViewMode, setUploadViewMode] = useState('sections'); // 'sections' | 'document'
     const [uploadEditorContent, setUploadEditorContent] = useState(null);
     const [uploadEditorKey, setUploadEditorKey] = useState(Date.now());
     const [unmappedDismissed, setUnmappedDismissed] = useState(new Set());
@@ -323,6 +378,22 @@ export default function CreateOperationalPolicyPage() {
                 const template1 = tmpls.find(t => t.template_id === 'TMPL-001' || /template\s*1/i.test(t.template_name || '')) || tmpls[0];
                 if (template1) {
                     setSelectedUploadTemplate(prev => prev || template1);
+                    if (!hasTouchedDirectSectionsRef.current && !initialSourceDocId && Array.isArray(template1.structure?.sections) && template1.structure.sections.length > 0) {
+                        const starterFromT1 = template1.structure.sections
+                            .slice()
+                            .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+                            .map((s, idx) => ({
+                                id: `sec-t1-${idx}-${Date.now()}`,
+                                title: s.title || `Section ${idx + 1}`,
+                                section_title: s.title || `Section ${idx + 1}`,
+                                isTemplateSection: true,
+                                order: idx,
+                                content: normalizeSectionContent(s.content || (s.description ? `<p>${escapeHtmlText(s.description)}</p>` : '')),
+                            }));
+                        setSelectedTemplate(prev => prev || template1);
+                        setTemplateSearch(prev => prev || template1.template_name || '');
+                        setDirectSections(starterFromT1);
+                    }
                 }
             })
             .catch(err => console.error('Failed to load templates:', err));
@@ -412,13 +483,12 @@ export default function CreateOperationalPolicyPage() {
         return libraries.filter(l => (l.library_name || '').toLowerCase().includes(q));
     }, [libraries, directLibrarySearch]);
 
-    // When user selects a template -> automatically load all sections into right panel Editor!
+    // When user selects a template -> automatically load all sections into Section-Wise Editor!
     const handleSelectTemplate = (tmpl) => {
         setSelectedTemplate(tmpl);
         setTemplateSearch(tmpl.template_name);
         setIsTemplateDropdownOpen(false);
 
-        // Prepopulate policy name and description if empty
         if (!policyName.trim()) {
             setPolicyName(tmpl.template_name.replace(/^Template\s*\d+\s*[:—-]\s*/i, '').trim() || tmpl.template_name);
         }
@@ -426,27 +496,34 @@ export default function CreateOperationalPolicyPage() {
             setDescription(tmpl.description);
         }
 
-        const tplSections = tmpl.structure?.sections || [];
-        let contentToLoad;
-        if (tplSections.length > 1) {
-            contentToLoad = templateSectionsToHtml(tplSections);
-        } else {
-            const detailsSec = tplSections.find(s => (s.title || '').toLowerCase().includes('details')) || tplSections[0];
-            contentToLoad = detailsSec?.content || {
-                type: 'doc',
-                content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Operational policy requirements and governance controls.' }] }]
-            };
-        }
+        const tplSections = (tmpl.structure?.sections || [])
+            .slice()
+            .sort((a, b) => (a.order ?? a.section_order ?? 0) - (b.order ?? b.section_order ?? 0));
 
-        setEditorInitialContent(contentToLoad);
-        setEditorJsonContent(contentToLoad);
-        setEditorKey(Date.now()); // Re-mounts editor with template content
+        const nextSections = tplSections.length > 0
+            ? tplSections.map((s, idx) => ({
+                id: `sec-tpl-${idx}-${Date.now()}`,
+                title: s.title || s.section_title || `Section ${idx + 1}`,
+                section_title: s.title || s.section_title || `Section ${idx + 1}`,
+                isTemplateSection: true,
+                order: idx,
+                content: normalizeSectionContent(s.content || (s.description ? `<p>${escapeHtmlText(s.description)}</p>` : '')),
+            }))
+            : DEFAULT_STARTER_SECTIONS;
 
-        setLoadedTemplateAlert(`Template "${tmpl.template_name}" loaded into editor (${tplSections.length} sections).`);
+        hasTouchedDirectSectionsRef.current = true;
+        setDirectSections(nextSections);
+
+        const combined = sectionsToCombinedDoc(nextSections, true);
+        setEditorInitialContent(combined);
+        setEditorJsonContent(combined);
+        setEditorKey(Date.now());
+
+        setLoadedTemplateAlert(`Template "${tmpl.template_name}" loaded (${nextSections.length} sections).`);
         setTimeout(() => setLoadedTemplateAlert(null), 5000);
     };
 
-    // Load a Master Library document as a template into the live editor
+    // Load a Master Library document as a template into the Section-Wise Editor
     const handleCopyFromMasterLibrary = async (sourceDoc, templateIdOverride = 'keep-original') => {
         const chosenTplId = templateIdOverride || 'keep-original';
         const chosenTpl = chosenTplId === 'keep-original'
@@ -467,13 +544,20 @@ export default function CreateOperationalPolicyPage() {
                 sourceSections = Array.isArray(fullDoc.sections) ? fullDoc.sections : [];
             }
 
-            let htmlToLoad = '';
+            let mappedSectionCards = [];
             if (chosenTpl && Array.isArray(chosenTpl.structure?.sections) && chosenTpl.structure.sections.length > 0) {
                 if (sourceSections.length === 0) {
-                    htmlToLoad = templateSectionsToHtml(chosenTpl.structure.sections);
+                    mappedSectionCards = chosenTpl.structure.sections.map((tSec, idx) => ({
+                        id: `sec-master-${idx}-${Date.now()}`,
+                        title: tSec.title || `Section ${idx + 1}`,
+                        section_title: tSec.title || `Section ${idx + 1}`,
+                        isTemplateSection: true,
+                        order: idx,
+                        content: normalizeSectionContent(tSec.content),
+                    }));
                 } else {
                     const unclaimed = new Set(sourceSections.map((_, i) => i));
-                    const mappedSections = chosenTpl.structure.sections.map((tSec, idx) => {
+                    mappedSectionCards = chosenTpl.structure.sections.map((tSec, idx) => {
                         const normT = (tSec.title || '').toLowerCase().replace(/^\d+\.?\s*/, '').replace(/[^a-z0-9]/g, '');
                         const matchedIdx = sourceSections.findIndex((sSec, sIdx) => {
                             if (!unclaimed.has(sIdx)) return false;
@@ -484,45 +568,57 @@ export default function CreateOperationalPolicyPage() {
                             unclaimed.delete(matchedIdx);
                             const matched = sourceSections[matchedIdx];
                             return {
+                                id: `sec-master-${idx}-${Date.now()}`,
                                 title: tSec.title,
+                                section_title: tSec.title,
+                                isTemplateSection: true,
                                 order: idx,
-                                content: matched.draft_content || matched.content || tSec.content,
+                                content: normalizeSectionContent(matched.draft_content || matched.content || tSec.content),
                             };
                         }
                         return {
+                            id: `sec-master-${idx}-${Date.now()}`,
                             title: tSec.title,
+                            section_title: tSec.title,
+                            isTemplateSection: true,
                             order: idx,
-                            content: tSec.content,
+                            content: normalizeSectionContent(tSec.content),
                         };
                     });
 
-                    // Place remaining source sections inside Details section cleanly
                     if (unclaimed.size > 0) {
-                        const extraHtml = Array.from(unclaimed)
-                            .map((i) => {
-                                const sec = sourceSections[i];
-                                const raw = sec.draft_content || sec.content;
-                                const bodyHtml = typeof raw === 'object' ? tipTapNodeToHtml(raw) : (raw || '');
-                                return `<h3>${escapeHtmlText(sec.section_title || sec.title || `Clause ${i + 1}`)}</h3>\n${bodyHtml}`;
-                            })
-                            .join('\n');
-                        const detIdx = mappedSections.findIndex((s) => (s.title || '').toLowerCase().includes('detail'));
-                        const targetIdx = detIdx >= 0 ? detIdx : 0;
-                        const existingHtml = typeof mappedSections[targetIdx].content === 'object'
-                            ? tipTapNodeToHtml(mappedSections[targetIdx].content)
-                            : (mappedSections[targetIdx].content || '');
-                        mappedSections[targetIdx] = {
-                            ...mappedSections[targetIdx],
-                            content: `${existingHtml}\n${extraHtml}`,
-                        };
+                        Array.from(unclaimed).forEach((i, extraIdx) => {
+                            const sec = sourceSections[i];
+                            const t = sec.section_title || sec.title || `Clause ${i + 1}`;
+                            mappedSectionCards.push({
+                                id: `sec-master-extra-${extraIdx}-${Date.now()}`,
+                                title: t,
+                                section_title: t,
+                                isTemplateSection: false,
+                                isCustom: true,
+                                order: mappedSectionCards.length,
+                                content: normalizeSectionContent(sec.draft_content ?? sec.content),
+                            });
+                        });
                     }
-
-                    htmlToLoad = templateSectionsToHtml(mappedSections);
                 }
             } else if (sourceSections.length > 0) {
-                htmlToLoad = templateSectionsToHtml(sourceSections);
+                mappedSectionCards = sourceSections
+                    .slice()
+                    .sort((a, b) => (a.section_order ?? a.order ?? 0) - (b.section_order ?? b.order ?? 0))
+                    .map((sec, idx) => {
+                        const t = sec.section_title || sec.title || `Section ${idx + 1}`;
+                        return {
+                            id: `sec-master-${idx}-${Date.now()}`,
+                            title: t,
+                            section_title: t,
+                            isTemplateSection: true,
+                            order: idx,
+                            content: normalizeSectionContent(sec.draft_content ?? sec.content),
+                        };
+                    });
             } else {
-                htmlToLoad = '<p>Compose operational policy clauses and controls.</p>';
+                mappedSectionCards = DEFAULT_STARTER_SECTIONS;
             }
 
             if (initialLibraryId) {
@@ -545,15 +641,19 @@ export default function CreateOperationalPolicyPage() {
             setPolicyName(newTitle);
             setDescription(sourceMeta?.description || chosenTpl?.description || '');
 
-            setEditorInitialContent(htmlToLoad);
-            setEditorJsonContent(htmlToLoad);
+            hasTouchedDirectSectionsRef.current = true;
+            setDirectSections(mappedSectionCards);
+
+            const combined = sectionsToCombinedDoc(mappedSectionCards, true);
+            setEditorInitialContent(combined);
+            setEditorJsonContent(combined);
             setEditorKey(Date.now());
             setActiveTab('direct');
             window.scrollTo({ top: 0, behavior: 'smooth' });
 
             setLoadedTemplateAlert(
                 sourceMeta?.document_name
-                    ? `Using "${sourceMeta.document_name}"${chosenTpl ? ` (${chosenTpl.template_name})` : ''} as template. Edit and click Save to Draft.`
+                    ? `Loaded "${sourceMeta.document_name}" (${mappedSectionCards.length} sections) into the editor.`
                     : `Started new draft from "${chosenTpl?.template_name || 'Template'}".`
             );
             setTimeout(() => setLoadedTemplateAlert(null), 6000);
@@ -573,6 +673,95 @@ export default function CreateOperationalPolicyPage() {
         handleCopyFromMasterLibrary(foundDoc, 'keep-original');
     }, [initialSourceDocId, templates, masterDocs]);
 
+    // Open modal to store current SectionWiseEditor sections into an existing or new template
+    const openStoreTemplateModal = () => {
+        const defaultTpl = selectedTemplate || templates[0] || null;
+        setStoreTemplateError('');
+        setStoreTemplateMode(hasTemplateUpdatePerm && defaultTpl ? 'existing' : 'new');
+        setTargetExistingTemplateId(defaultTpl?.id || '');
+        setNewTemplateName(
+            policyName.trim() ||
+            (defaultTpl ? `${defaultTpl.template_name} (Custom)` : 'Custom Policy Template')
+        );
+        setNewTemplateCategory(defaultTpl?.category || 'Operational Policy');
+        setNewTemplateDescription(description.trim() || defaultTpl?.description || '');
+        setIsStoreTemplateOpen(true);
+    };
+
+    const handleStoreToTemplate = async (e) => {
+        if (e && e.preventDefault) e.preventDefault();
+        if (!Array.isArray(directSections) || directSections.length === 0) {
+            setStoreTemplateError('At least one section is required before saving to a template.');
+            return;
+        }
+
+        const serializedSections = directSections.map((sec, idx) => ({
+            title: (sec.section_title || sec.title || `Section ${idx + 1}`).trim() || `Section ${idx + 1}`,
+            order: idx,
+            content: extractSectionTipTapJson(sec.content),
+            subsections: [],
+        }));
+
+        setIsStoringTemplate(true);
+        setStoreTemplateError('');
+
+        try {
+            if (storeTemplateMode === 'existing') {
+                const targetTpl = templates.find(t => t.id === targetExistingTemplateId);
+                if (!targetTpl) {
+                    setStoreTemplateError('Please select an existing template to update.');
+                    return;
+                }
+                const res = await documentManagementApi.updateTemplate(targetTpl.id, {
+                    template_name: targetTpl.template_name,
+                    category: targetTpl.category || 'General',
+                    description: targetTpl.description ?? null,
+                    structure: { sections: serializedSections },
+                });
+                const updatedTpl = res?.data || {
+                    ...targetTpl,
+                    structure: { sections: serializedSections },
+                };
+                setTemplates(prev => prev.map(t => (t.id === updatedTpl.id ? { ...t, ...updatedTpl } : t)));
+                setSelectedTemplate(updatedTpl);
+                setTemplateSearch(updatedTpl.template_name || '');
+                setIsStoreTemplateOpen(false);
+                setLoadedTemplateAlert(
+                    `Stored ${serializedSections.length} sections into existing template "${updatedTpl.template_name}".`
+                );
+                setTimeout(() => setLoadedTemplateAlert(null), 6000);
+            } else {
+                if (!newTemplateName.trim()) {
+                    setStoreTemplateError('Template name is required.');
+                    return;
+                }
+                const res = await documentManagementApi.createTemplate({
+                    template_name: newTemplateName.trim(),
+                    category: newTemplateCategory.trim() || 'Operational Policy',
+                    description: newTemplateDescription.trim() || null,
+                    structure: { sections: serializedSections },
+                });
+                const createdTpl = res?.data;
+                if (createdTpl && createdTpl.status === 'approved') {
+                    setTemplates(prev => [createdTpl, ...prev]);
+                    setSelectedTemplate(createdTpl);
+                    setTemplateSearch(createdTpl.template_name || '');
+                }
+                setIsStoreTemplateOpen(false);
+                setLoadedTemplateAlert(
+                    createdTpl?.status === 'approved'
+                        ? `Created & approved template "${newTemplateName.trim()}" with ${serializedSections.length} sections.`
+                        : `Submitted template "${newTemplateName.trim()}" (${serializedSections.length} sections) for Admin approval.`
+                );
+                setTimeout(() => setLoadedTemplateAlert(null), 6500);
+            }
+        } catch (err) {
+            setStoreTemplateError(err?.message || 'Failed to store sections into template.');
+        } finally {
+            setIsStoringTemplate(false);
+        }
+    };
+
     // Save Policy as Draft
     const handleSaveToDraft = async (e) => {
         if (e && e.preventDefault) e.preventDefault();
@@ -590,32 +779,17 @@ export default function CreateOperationalPolicyPage() {
         setErrorMsg('');
 
         try {
-            // Serialize editor AST
-            let cleanDetailsContent = {
-                type: 'doc',
-                content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Operational clauses and controls.' }] }]
-            };
-
-            if (editorJsonContent) {
-                const rawJson = editorJsonContent?.json || (editorJsonContent?.type === 'doc' ? editorJsonContent : null);
-                if (rawJson) {
-                    try {
-                        cleanDetailsContent = JSON.parse(JSON.stringify(rawJson));
-                    } catch (err) {
-                        console.warn('Failed serializing editor content', err);
-                    }
-                }
-            }
-
-            const splitSections = splitTipTapDocByH2Sections(cleanDetailsContent);
-            const sections = splitSections || [
-                { title: '1. Configuration', order: 0, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: `Document classification: Operational Policy. Library: ${libraries.find(l => l.id === selectedLibraryId)?.library_name || 'Banking'}.` }] }] } },
-                { title: '2. Summary',       order: 1, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: description || 'Executive summary of key policy requirements.' }] }] } },
-                { title: '3. Details',       order: 2, content: cleanDetailsContent },
-                { title: '4. Reference',     order: 3, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Statutory citations and internal bank policies.' }] }] } },
-                { title: '5. Dependencies',  order: 4, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Cross-functional system dependencies.' }] }] } },
-                { title: '6. Controls',      order: 5, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Compliance checkpoints and verification metrics.' }] }] } },
-            ];
+            const sections = (Array.isArray(directSections) && directSections.length > 0)
+                ? directSections.map((sec, idx) => ({
+                    title: (sec.section_title || sec.title || `Section ${idx + 1}`).trim(),
+                    order: idx,
+                    content: extractSectionTipTapJson(sec.content),
+                }))
+                : [{
+                    title: '1. Details',
+                    order: 0,
+                    content: extractSectionTipTapJson(editorJsonContent),
+                }];
 
             const payload = {
                 library_id:    selectedLibraryId,
@@ -722,7 +896,18 @@ export default function CreateOperationalPolicyPage() {
                 if (!uploadLibraryId && libraries.length > 0) {
                     setUploadLibraryId(libraries[0].id);
                 }
-                const fullHtmlDoc = convertAISectionsToHtml(extracted.sections || []);
+                const extractedList = Array.isArray(extracted.sections) ? extracted.sections : [];
+                const normalizedUploadSecs = extractedList.map((sec, idx) => ({
+                    id: `sec-upload-${idx}-${Date.now()}`,
+                    title: sec.section_title || sec.title || `Section ${idx + 1}`,
+                    section_title: sec.section_title || sec.title || `Section ${idx + 1}`,
+                    isTemplateSection: true,
+                    order: idx,
+                    content: normalizeSectionContent(sec.content || '<p></p>'),
+                }));
+                setUploadSections(normalizedUploadSecs);
+                setUploadViewMode(normalizedUploadSecs.length > 0 ? 'sections' : 'document');
+                const fullHtmlDoc = convertAISectionsToHtml(extractedList);
                 setUploadEditorContent(fullHtmlDoc);
                 setUploadEditorKey(Date.now());
                 setUnmappedDismissed(new Set());
@@ -786,6 +971,20 @@ export default function CreateOperationalPolicyPage() {
         const clauseTitle = clause.title || 'Unmapped Clause';
         const clauseContent = clause.content || '';
 
+        setUploadSections(prev => ([
+            ...prev,
+            {
+                id: `sec-unmapped-${Date.now()}`,
+                title: clauseTitle,
+                section_title: clauseTitle,
+                isTemplateSection: false,
+                isCustom: true,
+                order: prev.length,
+                section_order: prev.length,
+                content: normalizeSectionContent(clauseContent),
+            },
+        ]));
+
         setUploadEditorContent(prev => {
             if (typeof prev === 'string') {
                 return `${prev}\n<h3 style="color: #1e293b; margin-top: 18px;">${clauseTitle}</h3>\n${clauseContent}`;
@@ -837,44 +1036,50 @@ export default function CreateOperationalPolicyPage() {
         setIsUploadSubmitting(true);
         setUploadError('');
         try {
-            // Build sections preserving full TipTap AST (tables, lists, images)
-            let cleanUploadContent = null;
-            if (uploadEditorContent) {
-                const rawJson = uploadEditorContent?.json || (uploadEditorContent?.type === 'doc' ? uploadEditorContent : null);
-                if (rawJson) {
-                    cleanUploadContent = JSON.parse(JSON.stringify(rawJson));
-                }
-            }
-
-            if (!cleanUploadContent) {
-                throw new Error('The extracted document is still loading. Please wait a moment and try again.');
-            }
-
-            const selectedLibName = libraries.find(l => l.id === uploadLibraryId)?.library_name || 'Banking';
-            const splitUploadSections = splitTipTapDocByH2Sections(cleanUploadContent);
-            const sections = splitUploadSections || [
-                {
-                    title: '1. Configuration',
-                    order: 0,
-                    content: {
-                        type: 'doc',
-                        content: [{ type: 'paragraph', content: [{ type: 'text', text: `Document classification: Operational Policy. Library: ${selectedLibName}. Source: ${uploadedFile?.name || 'Upload'}${useTemplateToFormat && selectedUploadTemplate ? ` | Inherited Template: ${selectedUploadTemplate.template_name}` : ''}.` }] }]
+            let sections = [];
+            if (Array.isArray(uploadSections) && uploadSections.length > 0) {
+                sections = uploadSections.map((sec, idx) => ({
+                    title: (sec.section_title || sec.title || `Section ${idx + 1}`).trim(),
+                    order: idx,
+                    content: extractSectionTipTapJson(sec.content),
+                }));
+            } else {
+                let cleanUploadContent = null;
+                if (uploadEditorContent) {
+                    const rawJson = uploadEditorContent?.json || (uploadEditorContent?.type === 'doc' ? uploadEditorContent : null);
+                    if (rawJson) {
+                        cleanUploadContent = JSON.parse(JSON.stringify(rawJson));
                     }
-                },
-                {
-                    title: '2. Summary',
-                    order: 1,
-                    content: {
-                        type: 'doc',
-                        content: [{ type: 'paragraph', content: [{ type: 'text', text: uploadDescription.trim() || 'Extracted executive summary.' }] }]
-                    }
-                },
-                {
-                    title: '3. Details',
-                    order: 2,
-                    content: cleanUploadContent
                 }
-            ];
+                if (!cleanUploadContent) {
+                    throw new Error('The extracted document is still loading. Please wait a moment and try again.');
+                }
+                const selectedLibName = libraries.find(l => l.id === uploadLibraryId)?.library_name || 'Banking';
+                const splitUploadSections = splitTipTapDocByH2Sections(cleanUploadContent);
+                sections = splitUploadSections || [
+                    {
+                        title: '1. Configuration',
+                        order: 0,
+                        content: {
+                            type: 'doc',
+                            content: [{ type: 'paragraph', content: [{ type: 'text', text: `Document classification: Operational Policy. Library: ${selectedLibName}. Source: ${uploadedFile?.name || 'Upload'}${useTemplateToFormat && selectedUploadTemplate ? ` | Inherited Template: ${selectedUploadTemplate.template_name}` : ''}.` }] }]
+                        }
+                    },
+                    {
+                        title: '2. Summary',
+                        order: 1,
+                        content: {
+                            type: 'doc',
+                            content: [{ type: 'paragraph', content: [{ type: 'text', text: uploadDescription.trim() || 'Extracted executive summary.' }] }]
+                        }
+                    },
+                    {
+                        title: '3. Details',
+                        order: 2,
+                        content: cleanUploadContent
+                    }
+                ];
+            }
 
             const payload = {
                 library_id:    uploadLibraryId,
@@ -926,84 +1131,89 @@ export default function CreateOperationalPolicyPage() {
     }, [masterDocs, masterSourceLibFilter, masterSearchQuery]);
 
     const selectedLibraryName = libraries.find(l => l.id === selectedLibraryId)?.library_name || 'Select Library';
+    const isUploadReviewFocus = activeTab === 'upload' && uploadStep === 3;
 
     return (
-        <div className="create-policy-container">
-            {/* Top Header Bar with Title & Top Action Buttons */}
-            <div className="create-policy-header">
-                <div className="create-policy-title-group">
-                    <h2>
-                        <FileText size={22} style={{ color: 'var(--btn-primary-bg, #0057B8)' }} />
-                        <span>Create Operational Policy</span>
-                    </h2> 
-                </div>
+        <div className={`create-policy-container ${isUploadReviewFocus ? 'is-upload-review' : ''}`}>
+            {/* Top Header Bar with Title & Top Action Buttons (hidden during Step 3 Review for full workspace height) */}
+            {!isUploadReviewFocus && (
+                <div className="create-policy-header">
+                    <div className="create-policy-title-group">
+                        <h2>
+                            <FileText size={22} style={{ color: 'var(--btn-primary-bg, #0057B8)' }} />
+                            <span>Create Operational Policy</span>
+                        </h2> 
+                    </div>
 
-                {/* Top Action Buttons (Cancel and Save to Draft) */}
-                <div className="create-policy-header-actions">
-                    <button
-                        type="button"
-                        className="btn btn-secondary"
-                        onClick={handleCancel}
-                        disabled={isSubmitting || isUploadSubmitting}
-                    >
-                        <X size={15} />
-                        <span>Cancel</span>
-                    </button>
-                    {activeTab === 'upload' ? (
-                        uploadStep === 4 && (
+                    {/* Top Action Buttons (Cancel and Save to Draft) */}
+                    <div className="create-policy-header-actions">
+                        <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={handleCancel}
+                            disabled={isSubmitting || isUploadSubmitting}
+                        >
+                            <X size={15} />
+                            <span>Cancel</span>
+                        </button>
+                        {activeTab === 'upload' ? (
+                            uploadStep === 4 && (
+                                <button
+                                    type="button"
+                                    className="btn btn-primary"
+                                    onClick={handleUploadSaveToDraft}
+                                    disabled={isUploadSubmitting}
+                                >
+                                    <Save size={15} />
+                                    <span>{isUploadSubmitting ? 'Saving Draft...' : 'Save to Draft'}</span>
+                                </button>
+                            )
+                        ) : activeTab === 'direct' && (
                             <button
                                 type="button"
                                 className="btn btn-primary"
-                                onClick={handleUploadSaveToDraft}
-                                disabled={isUploadSubmitting}
+                                onClick={handleSaveToDraft}
+                                disabled={isSubmitting}
                             >
                                 <Save size={15} />
-                                <span>{isUploadSubmitting ? 'Saving Draft...' : 'Save to Draft'}</span>
+                                <span>{isSubmitting ? 'Saving Draft...' : 'Save to Draft'}</span>
                             </button>
-                        )
-                    ) : activeTab === 'direct' && (
-                        <button
-                            type="button"
-                            className="btn btn-primary"
-                            onClick={handleSaveToDraft}
-                            disabled={isSubmitting}
-                        >
-                            <Save size={15} />
-                            <span>{isSubmitting ? 'Saving Draft...' : 'Save to Draft'}</span>
-                        </button>
-                    )}
+                        )}
+                    </div>
                 </div>
-            </div>
+            )}
 
-            {/* 3 Top Tabs Navigation */}
-            <div className="create-policy-tabs-bar">
-                <button
-                    type="button"
-                    className={`create-policy-tab-item ${activeTab === 'direct' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('direct')}
-                >
-                    {/* <Sparkles size={15} /> */}
-                    <span>1. Direct In System</span>
-                </button>
+            {/* 3 Top Tabs Navigation (hidden during Step 3 Extraction Review to maximize screen space) */}
+            {!isUploadReviewFocus && (
+                <div className="create-policy-tabs-bar">
+                    <button
+                        type="button"
+                        className={`create-policy-tab-item ${activeTab === 'direct' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('direct')}
+                    >
+                        {/* <Sparkles size={15} /> */}
+                        <span>1. Direct In System</span>
+                    </button>
 
-                <button
-                    type="button"
-                    className={`create-policy-tab-item ${activeTab === 'master' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('master')}
-                >
-                    {/* <BookOpen size={15} /> */}
-                    <span>2. Master Library</span> 
-                </button>
+                    <button
+                        type="button"
+                        className={`create-policy-tab-item ${activeTab === 'master' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('master')}
+                    >
+                        {/* <BookOpen size={15} /> */}
+                        <span>2. Master Library</span> 
+                    </button>
 
-                <button
-                    type="button"
-                    className={`create-policy-tab-item ${activeTab === 'upload' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('upload')}
-                >
-                    {/* <UploadCloud size={15} /> */}
-                    <span>3. Document Upload</span> 
-                </button>
-            </div>
+                    <button
+                        type="button"
+                        className={`create-policy-tab-item ${activeTab === 'upload' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('upload')}
+                    >
+                        {/* <UploadCloud size={15} /> */}
+                        <span>3. Document Upload</span> 
+                    </button>
+                </div>
+            )}
 
             {/* Tab 1: Direct In System Content */}
             {activeTab === 'direct' ? (
@@ -1218,33 +1428,45 @@ export default function CreateOperationalPolicyPage() {
                         </div> */}
                     </div>
 
-                    {/* ── Right Panel (62%): Rich Text Editor Component ── */}
+                    {/* ── Right Panel (62%): Section-Wise Policy Clauses & Controls Editor ── */}
                     <div className="create-policy-right-panel">
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
                             <div>
                                 <label className="form-label" style={{ margin: 0 }}>
-                                    Section 3: Details — Policy Clauses &amp; Controls Editor
+                                    Policy Sections &amp; Modular Clauses ({directSections.length})
                                 </label>
                                 <span style={{ fontSize: '12px', color: '#64748b' }}>
                                     {selectedTemplate
-                                        ? `Loaded from template: ${selectedTemplate.template_name}. Fully editable.`
-                                        : 'Compose and format operational banking clauses, tables, and rules.'
+                                        ? `Loaded from template: ${selectedTemplate.template_name}. Add, reorder, rename, or edit sections.`
+                                        : 'Edit section titles, reorder up/down, add paragraphs, tables, or expand any clause.'
                                     }
                                 </span>
                             </div>
 
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                 {selectedTemplate && (
                                     <span className="template-badge" style={{ background: '#dbeafe', color: '#1d4ed8' }}>
-                                        Template: {selectedTemplate.category}
+                                        Template: {selectedTemplate.template_name || selectedTemplate.category}
                                     </span>
+                                )}
+
+                                {(hasTemplateUpdatePerm || hasTemplateCreatePerm) && (
+                                    <button
+                                        type="button"
+                                        className="btn-store-template"
+                                        onClick={openStoreTemplateModal}
+                                        title="Store these sections (including newly added sections) into an existing or new template"
+                                    >
+                                        <Layers size={13} />
+                                        <span>Store in Template</span>
+                                    </button>
                                 )}
 
                                 <button
                                     type="button"
                                     className="btn-fullscreen-toggle"
                                     onClick={() => setIsFullscreen(true)}
-                                    title="Open Editor in Full Page Mode"
+                                    title="Open Section-Wise Editor in Full Page Mode"
                                 >
                                     <Maximize2 size={13} />
                                     <span>Full Page View</span>
@@ -1252,15 +1474,14 @@ export default function CreateOperationalPolicyPage() {
                             </div>
                         </div>
 
-                        <div className="create-policy-editor-wrapper">
-                            <RichTextEditor
-                                key={`editor-${editorKey}`}
-                                paged={true}
-                                placeholder="Write operational policy clauses, criteria, tables, and requirements here..."
-                                initialContent={editorInitialContent}
-                                value={editorJsonContent}
-                                onChange={(val) => setEditorJsonContent(val?.json || val)}
-                                onReady={(val) => setEditorJsonContent(val?.json || val)}
+                        <div className="create-policy-sections-wrapper">
+                            <SectionWiseEditor
+                                sections={directSections}
+                                documentTitle={policyName || selectedTemplate?.template_name || 'Operational Policy Document'}
+                                onChange={(nextSections) => {
+                                    hasTouchedDirectSectionsRef.current = true;
+                                    setDirectSections(nextSections);
+                                }}
                             />
                         </div>
                     </div>
@@ -1375,27 +1596,29 @@ export default function CreateOperationalPolicyPage() {
                 </div>
             ) : (
                 /* ── UPLOAD TAB: 4-Step Stepper ── */
-                <div className="upload-stepper-container">
+                <div className={`upload-stepper-container ${isUploadReviewFocus ? 'is-upload-review' : ''}`}>
 
-                    {/* Step Nav Bar */}
-                    <div className="upload-stepper-nav">
-                        {[
-                            { n: 1, label: 'Upload File', icon: <FileUp size={16} /> },
-                            { n: 2, label: 'Select Template', icon: <Layers size={16} /> },
-                            { n: 3, label: 'Review', icon: <Cpu size={16} /> },
-                            { n: 4, label: 'Finalise', icon: <CheckSquare size={16} /> },
-                        ].map(({ n, label, icon }, i) => (
-                            <React.Fragment key={n}>
-                                <div className={`upload-stepper-step ${uploadStep === n ? 'active' : uploadStep > n ? 'done' : ''}`}>
-                                    <div className="upload-step-circle">
-                                        {uploadStep > n ? <CheckCircle2 size={16} /> : icon}
+                    {/* Step Nav Bar (hidden during Step 3 Extraction Review to use full screen height) */}
+                    {!isUploadReviewFocus && (
+                        <div className="upload-stepper-nav">
+                            {[
+                                { n: 1, label: 'Upload File', icon: <FileUp size={16} /> },
+                                { n: 2, label: 'Select Template', icon: <Layers size={16} /> },
+                                { n: 3, label: 'Review', icon: <Cpu size={16} /> },
+                                { n: 4, label: 'Finalise', icon: <CheckSquare size={16} /> },
+                            ].map(({ n, label, icon }, i) => (
+                                <React.Fragment key={n}>
+                                    <div className={`upload-stepper-step ${uploadStep === n ? 'active' : uploadStep > n ? 'done' : ''}`}>
+                                        <div className="upload-step-circle">
+                                            {uploadStep > n ? <CheckCircle2 size={16} /> : icon}
+                                        </div>
+                                        <span className="upload-step-label">{label}</span>
                                     </div>
-                                    <span className="upload-step-label">{label}</span>
-                                </div>
-                                {i < 3 && <div className={`upload-step-connector ${uploadStep > n ? 'done' : ''}`} />}
-                            </React.Fragment>
-                        ))}
-                    </div>
+                                    {i < 3 && <div className={`upload-step-connector ${uploadStep > n ? 'done' : ''}`} />}
+                                </React.Fragment>
+                            ))}
+                        </div>
+                    )}
 
                     {/* ── STEP 1: File Upload ── */}
                     {uploadStep === 1 && (
@@ -1620,6 +1843,30 @@ export default function CreateOperationalPolicyPage() {
                                     <span className="upload-review-filename">{uploadedFile?.name}</span>
                                 </div>
                                 <div className="upload-review-topbar-right">
+                                    {uploadSections.length > 0 && (
+                                        <div className="fullscreen-view-toggle">
+                                            <button
+                                                type="button"
+                                                className={`fullscreen-toggle-pill ${uploadViewMode === 'sections' ? 'active' : ''}`}
+                                                onClick={() => setUploadViewMode('sections')}
+                                            >
+                                                <Layers size={13} />
+                                                <span>Sections ({uploadSections.length})</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={`fullscreen-toggle-pill ${uploadViewMode === 'document' ? 'active' : ''}`}
+                                                onClick={() => {
+                                                    setUploadEditorContent(sectionsToCombinedDoc(uploadSections, true));
+                                                    setUploadEditorKey(Date.now());
+                                                    setUploadViewMode('document');
+                                                }}
+                                            >
+                                                <FileText size={13} />
+                                                <span>Full Document</span>
+                                            </button>
+                                        </div>
+                                    )}
                                     <button
                                         type="button"
                                         className="btn btn-secondary upload-review-back-btn"
@@ -1655,6 +1902,14 @@ export default function CreateOperationalPolicyPage() {
                                             </>
                                         )}
                                     </button>
+                                    <button
+                                        type="button"
+                                        className="btn btn-primary"
+                                        onClick={() => { setUploadError(''); setUploadStep(4); }}
+                                    >
+                                        <span>Continue to Finalise</span>
+                                        <ArrowRight size={15} />
+                                    </button>
                                 </div>
                             </div>
 
@@ -1663,36 +1918,40 @@ export default function CreateOperationalPolicyPage() {
                                 {!uploadPanelsSwapped ? (
                                     <>
                                         <div className="upload-panel upload-panel-left">
-                                            <div className="upload-panel-header">Original Document</div>
-                                            <div className="upload-panel-body">
-                                                {uploadPreviewUrl && (uploadedFile?.type === 'application/pdf' || uploadedFile?.name?.toLowerCase().endsWith('.pdf')) ? (
-                                                    <iframe
-                                                        src={uploadPreviewUrl}
-                                                        title="PDF Preview"
-                                                        className="upload-pdf-iframe"
-                                                    />
-                                                ) : (
-                                                    <div className="upload-doc-placeholder">
-                                                        <FileText size={40} style={{ color: '#94a3b8' }} />
-                                                        <p>Preview not available for DOC/DOCX files.<br />Content has been extracted by AI on the right.</p>
-                                                    </div>
-                                                )}
+                                            <div className="upload-panel-body upload-original-doc-body">
+                                                <BrowserDocumentViewer
+                                                    headerLabel="Original Document"
+                                                    fileName={uploadedFile?.name || ''}
+                                                    fileObj={uploadedFile}
+                                                    previewUrl={uploadPreviewUrl || ''}
+                                                    fallbackRawText={(extractionResult?.sections || [])
+                                                        .map(s => `${s.section_title || s.title || ''}\n${String(s.content || '').replace(/<[^>]+>/g, ' ').trim()}`)
+                                                        .join('\n\n')}
+                                                />
                                             </div>
                                         </div>
                                         <div className="upload-panel upload-panel-right">
                                             <div className="upload-panel-header">Extracted Content (Editable)</div>
-                                            <div className="upload-panel-body upload-panel-editor">
-                                                <RichTextEditor
-                                                    key={`upload-editor-${uploadEditorKey}`}
-                                                    paged={true}
-                                                    placeholder="AI extracted content appears here…"
-                                                    initialContent={uploadEditorContent}
-                                                    onChange={(val) => setUploadEditorContent(val?.json || val)}
-                                                    onReady={(val) => {
-                                                        setUploadEditorContent(val.json);
-                                                        setTimeout(resetUploadEditorScroll, 50);
-                                                    }}
-                                                />
+                                            <div className={`upload-panel-body upload-panel-editor ${uploadViewMode === 'sections' && uploadSections.length > 0 ? 'upload-sections-scroll' : ''}`}>
+                                                {uploadViewMode === 'sections' && uploadSections.length > 0 ? (
+                                                    <SectionWiseEditor
+                                                        sections={uploadSections}
+                                                        documentTitle={uploadPolicyName || selectedUploadTemplate?.template_name || 'Uploaded Policy Document'}
+                                                        onChange={setUploadSections}
+                                                    />
+                                                ) : (
+                                                    <RichTextEditor
+                                                        key={`upload-editor-${uploadEditorKey}`}
+                                                        paged={true}
+                                                        placeholder="AI extracted content appears here…"
+                                                        initialContent={uploadEditorContent}
+                                                        onChange={(val) => setUploadEditorContent(val?.json || val)}
+                                                        onReady={(val) => {
+                                                            setUploadEditorContent(val.json);
+                                                            setTimeout(resetUploadEditorScroll, 50);
+                                                        }}
+                                                    />
+                                                )}
                                             </div>
                                         </div>
                                     </>
@@ -1700,35 +1959,39 @@ export default function CreateOperationalPolicyPage() {
                                     <>
                                         <div className="upload-panel upload-panel-left">
                                             <div className="upload-panel-header">Extracted Content (Editable)</div>
-                                            <div className="upload-panel-body upload-panel-editor">
-                                                <RichTextEditor
-                                                    key={`upload-editor-swap-${uploadEditorKey}`}
-                                                    paged={true}
-                                                    placeholder="AI extracted content appears here…"
-                                                    initialContent={uploadEditorContent}
-                                                    onChange={(val) => setUploadEditorContent(val?.json || val)}
-                                                    onReady={(val) => {
-                                                        setUploadEditorContent(val.json);
-                                                        setTimeout(resetUploadEditorScroll, 50);
-                                                    }}
-                                                />
+                                            <div className={`upload-panel-body upload-panel-editor ${uploadViewMode === 'sections' && uploadSections.length > 0 ? 'upload-sections-scroll' : ''}`}>
+                                                {uploadViewMode === 'sections' && uploadSections.length > 0 ? (
+                                                    <SectionWiseEditor
+                                                        sections={uploadSections}
+                                                        documentTitle={uploadPolicyName || selectedUploadTemplate?.template_name || 'Uploaded Policy Document'}
+                                                        onChange={setUploadSections}
+                                                    />
+                                                ) : (
+                                                    <RichTextEditor
+                                                        key={`upload-editor-swap-${uploadEditorKey}`}
+                                                        paged={true}
+                                                        placeholder="AI extracted content appears here…"
+                                                        initialContent={uploadEditorContent}
+                                                        onChange={(val) => setUploadEditorContent(val?.json || val)}
+                                                        onReady={(val) => {
+                                                            setUploadEditorContent(val.json);
+                                                            setTimeout(resetUploadEditorScroll, 50);
+                                                        }}
+                                                    />
+                                                )}
                                             </div>
                                         </div>
                                         <div className="upload-panel upload-panel-right">
-                                            <div className="upload-panel-header">Original Document</div>
-                                            <div className="upload-panel-body">
-                                                {uploadPreviewUrl && (uploadedFile?.type === 'application/pdf' || uploadedFile?.name?.toLowerCase().endsWith('.pdf')) ? (
-                                                    <iframe
-                                                        src={uploadPreviewUrl}
-                                                        title="PDF Preview"
-                                                        className="upload-pdf-iframe"
-                                                    />
-                                                ) : (
-                                                    <div className="upload-doc-placeholder">
-                                                        <FileText size={40} style={{ color: '#94a3b8' }} />
-                                                        <p>Preview not available for DOC/DOCX files.<br />Content has been extracted by AI on the left.</p>
-                                                    </div>
-                                                )}
+                                            <div className="upload-panel-body upload-original-doc-body">
+                                                <BrowserDocumentViewer
+                                                    headerLabel="Original Document"
+                                                    fileName={uploadedFile?.name || ''}
+                                                    fileObj={uploadedFile}
+                                                    previewUrl={uploadPreviewUrl || ''}
+                                                    fallbackRawText={(extractionResult?.sections || [])
+                                                        .map(s => `${s.section_title || s.title || ''}\n${String(s.content || '').replace(/<[^>]+>/g, ' ').trim()}`)
+                                                        .join('\n\n')}
+                                                />
                                             </div>
                                         </div>
                                     </>
@@ -1829,14 +2092,6 @@ export default function CreateOperationalPolicyPage() {
                                     )}
                                 </div>
                             )}
-
-                            {/* Step actions */}
-                            <div className="upload-step-actions upload-review-actions">
-                                <div />
-                                <button type="button" className="btn btn-primary" onClick={() => { setUploadError(''); setUploadStep(4); }}>
-                                    Continue to Finalise <ArrowRight size={15} />
-                                </button>
-                            </div>
                         </div>
                     )}
 
@@ -2077,14 +2332,183 @@ export default function CreateOperationalPolicyPage() {
                 </div>
             )}
 
+            {/* Store Sections in Template Modal */}
+            {isStoreTemplateOpen && (
+                <div
+                    className="store-template-overlay"
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget && !isStoringTemplate) setIsStoreTemplateOpen(false);
+                    }}
+                >
+                    <form className="store-template-modal" onSubmit={handleStoreToTemplate}>
+                        <div className="store-template-head">
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <div className="store-template-icon">
+                                    <Layers size={16} />
+                                </div>
+                                <div>
+                                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>
+                                        Store Sections into Template
+                                    </h3>
+                                    <span style={{ fontSize: '12px', color: '#64748b' }}>
+                                        Save all {directSections.length} section{directSections.length === 1 ? '' : 's'} into an existing template or create a new template.
+                                    </span>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                className="btn btn-sm btn-secondary"
+                                onClick={() => setIsStoreTemplateOpen(false)}
+                                disabled={isStoringTemplate}
+                            >
+                                <X size={14} />
+                            </button>
+                        </div>
+
+                        <div className="store-template-body">
+                            {storeTemplateError && (
+                                <div style={{ padding: '9px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', color: '#b91c1c', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <AlertCircle size={14} />
+                                    <span>{storeTemplateError}</span>
+                                </div>
+                            )}
+
+                            <div className="store-template-mode-tabs">
+                                <button
+                                    type="button"
+                                    className={`store-mode-btn ${storeTemplateMode === 'existing' ? 'active' : ''}`}
+                                    onClick={() => setStoreTemplateMode('existing')}
+                                    disabled={templates.length === 0}
+                                >
+                                    Update Existing Template
+                                </button>
+                                {hasTemplateCreatePerm && (
+                                    <button
+                                        type="button"
+                                        className={`store-mode-btn ${storeTemplateMode === 'new' ? 'active' : ''}`}
+                                        onClick={() => setStoreTemplateMode('new')}
+                                    >
+                                        Save as New Template
+                                    </button>
+                                )}
+                            </div>
+
+                            {storeTemplateMode === 'existing' ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                    {!hasTemplateUpdatePerm && (
+                                        <div style={{ padding: '10px 12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', fontSize: '12px', color: '#92400e', lineHeight: 1.45 }}>
+                                            <strong>Note:</strong> Your current role does not have <code>templates:update</code> permission to overwrite shared approved templates directly. Switch to <strong>Save as New Template</strong> above to store your extended sections (for Admin approval), or sign in as Admin / Super Admin.
+                                        </div>
+                                    )}
+                                    <div className="form-group">
+                                        <label className="form-label">Select Existing Template *</label>
+                                        <select
+                                            className="form-input"
+                                            value={targetExistingTemplateId}
+                                            onChange={(e) => setTargetExistingTemplateId(e.target.value)}
+                                        >
+                                            {templates.map((t) => (
+                                                <option key={t.id} value={t.id}>
+                                                    {t.template_name} ({Array.isArray(t.structure?.sections) ? t.structure.sections.length : 0} sections)
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                    <div className="form-group">
+                                        <label className="form-label">New Template Name *</label>
+                                        <input
+                                            type="text"
+                                            className="form-input"
+                                            placeholder="e.g. Template 1: Policy Document (Extended)"
+                                            value={newTemplateName}
+                                            onChange={(e) => setNewTemplateName(e.target.value)}
+                                            required
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Category</label>
+                                        <input
+                                            type="text"
+                                            className="form-input"
+                                            placeholder="e.g. Operational Policy"
+                                            value={newTemplateCategory}
+                                            onChange={(e) => setNewTemplateCategory(e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Description</label>
+                                        <textarea
+                                            className="form-input"
+                                            rows={2}
+                                            style={{ padding: '8px 12px', resize: 'vertical' }}
+                                            placeholder="Describe this template..."
+                                            value={newTemplateDescription}
+                                            onChange={(e) => setNewTemplateDescription(e.target.value)}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="store-template-preview">
+                                <div style={{ fontSize: '11.5px', fontWeight: 700, color: '#475569', marginBottom: '6px' }}>
+                                    Sections to store ({directSections.length}):
+                                </div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                    {directSections.map((sec, idx) => (
+                                        <span key={sec.id || idx} className="store-sec-chip">
+                                            {idx + 1}. {sec.section_title || sec.title || `Section ${idx + 1}`}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="store-template-foot">
+                            <button
+                                type="button"
+                                className="btn btn-secondary"
+                                onClick={() => setIsStoreTemplateOpen(false)}
+                                disabled={isStoringTemplate}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                className="btn btn-primary"
+                                disabled={isStoringTemplate || (storeTemplateMode === 'existing' && !hasTemplateUpdatePerm)}
+                            >
+                                <Save size={14} />
+                                <span>
+                                    {isStoringTemplate
+                                        ? 'Storing...'
+                                        : storeTemplateMode === 'existing'
+                                            ? 'Update Existing Template'
+                                            : isSuperAdmin
+                                                ? 'Save & Publish Template'
+                                                : 'Submit New Template'}
+                                </span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            )}
+
             {/* Reusable Fullscreen Editor Modal */}
             <FullscreenEditorModal
                 isOpen={isFullscreen}
                 onClose={() => setIsFullscreen(false)}
                 title={policyName ? `Editing: ${policyName}` : 'Operational Policy Clauses Editor'}
-                subtitle="Full Page Focused Authoring Mode — Press Esc or click Minimize to return"
+                subtitle="Full Page Section-Wise Authoring Mode — Press Esc or click Cancel to return"
                 placeholder="Write operational policy clauses, criteria, tables, and requirements here..."
                 initialContent={editorJsonContent || editorInitialContent}
+                sections={directSections}
+                onSectionsChange={(nextSections) => {
+                    hasTouchedDirectSectionsRef.current = true;
+                    setDirectSections(nextSections);
+                }}
                 onChange={(val) => {
                     const json = val?.json || val;
                     setEditorJsonContent(json);

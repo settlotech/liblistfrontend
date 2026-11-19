@@ -12,6 +12,7 @@ import RichTextEditor from '../../editor/RichTextEditor';
 import FullscreenEditorModal from '../../components/common/FullscreenEditorModal';
 import VersionHistoryDrawer from '../../components/documents/VersionHistoryDrawer';
 import DocumentAnnotationsLayer from '../../components/documents/DocumentAnnotationsLayer';
+import { normalizeSectionContent, extractSectionTipTapJson } from '../../components/documents/SectionWiseEditor';
 import './policyViewer.css';
 
 export default function PolicyViewerPage() {
@@ -38,6 +39,7 @@ export default function PolicyViewerPage() {
     // Editor / Configure modal state
     const [isEditorOpen, setIsEditorOpen] = useState(false);
     const [editorContent, setEditorContent] = useState(null);
+    const [editableSections, setEditableSections] = useState([]);
     const [revisionTitle, setRevisionTitle] = useState('');
     const [isSavingDraft, setIsSavingDraft] = useState(false);
     const [isCreatingRevision, setIsCreatingRevision] = useState(false);
@@ -180,30 +182,61 @@ export default function PolicyViewerPage() {
         return null;
     };
 
+    // Build section-wise editable items preserving order and draft_content
+    const buildEditableSections = useCallback((rawSections = []) => {
+        return (rawSections || [])
+            .slice()
+            .sort((a, b) => (a.section_order ?? a.order ?? 0) - (b.section_order ?? b.order ?? 0))
+            .map((sec, idx) => ({
+                id: sec.id,
+                sectionId: sec.id,
+                title: sec.section_title || sec.title || `Section ${idx + 1}`,
+                section_title: sec.section_title || sec.title || `Section ${idx + 1}`,
+                isTemplateSection: true,
+                order: idx,
+                section_order: idx,
+                content: normalizeSectionContent(sec.draft_content || sec.content),
+            }));
+    }, []);
+
     // Combined editor content (from live sections or archived version sections)
     const combinedEditorContent = useMemo(() => {
-        const activeSections = viewingVersionSections || sections;
+        const activeSections = (viewingVersionSections || sections)
+            .slice()
+            .sort((a, b) => (a.section_order ?? a.order ?? 0) - (b.section_order ?? b.order ?? 0));
 
         if (!documentData || activeSections.length === 0) {
             return { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'No policy content available.' }] }] };
         }
 
-        // When viewing live version on the page, always show the published content!
-        const getDisplayContent = (sec) => {
-            // For general viewing, use live content
-            return sec.content;
-        };
-
-        // Prefer Details section if it has rich content
-        const detailsSection = activeSections.find(s => (s.section_title || '').toLowerCase().includes('details'));
-        const parsedDetails = detailsSection ? parseContent(getDisplayContent(detailsSection)) : null;
-        if (parsedDetails?.content?.length > 1) return parsedDetails;
-
-        // Merge all sections
+        const getDisplayContent = (sec) => sec.content;
+        const multiSection = activeSections.length > 1;
         const allBlocks = [];
-        activeSections.forEach(sec => {
+
+        activeSections.forEach((sec) => {
             const p = parseContent(getDisplayContent(sec));
-            if (p?.content) p.content.forEach(b => allBlocks.push(b));
+            const blocks = Array.isArray(p?.content) ? p.content : [];
+            const hasMeaningfulContent = blocks.some((b) =>
+                b.type !== 'paragraph' || (Array.isArray(b.content) && b.content.length > 0)
+            );
+            // Skip newly added empty draft-only sections on live reader until approved
+            if (!viewingVersionSections && documentData.has_pending_revision && !hasMeaningfulContent && sec.draft_content) {
+                return;
+            }
+
+            if (multiSection && sec.section_title) {
+                const firstIsMatchingHeading =
+                    blocks[0]?.type === 'heading' &&
+                    String(blocks[0]?.content?.[0]?.text || '').trim().toLowerCase() === sec.section_title.trim().toLowerCase();
+                if (!firstIsMatchingHeading) {
+                    allBlocks.push({
+                        type: 'heading',
+                        attrs: { level: 2 },
+                        content: [{ type: 'text', text: sec.section_title }],
+                    });
+                }
+            }
+            blocks.forEach((b) => allBlocks.push(b));
         });
 
         return allBlocks.length > 0
@@ -211,12 +244,11 @@ export default function PolicyViewerPage() {
             : { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'No content available.' }] }] };
     }, [documentData, sections, viewingVersionSections]);
 
-    // Content specifically for authoring/editing in FullscreenEditorModal
+    // Content specifically for fallback single-doc editor
     const draftEditorContent = useMemo(() => {
         if (!documentData || sections.length === 0) return combinedEditorContent;
 
         const detailsSection = sections.find(s => (s.section_title || '').toLowerCase().includes('details')) || sections[0];
-        // In the editor, prefer draft_content if available, fallback to content
         const contentToEdit = detailsSection.draft_content || detailsSection.content;
         const parsed = parseContent(contentToEdit);
         return parsed || combinedEditorContent;
@@ -247,14 +279,17 @@ export default function PolicyViewerPage() {
         showToast('Returned to current live version');
     };
 
-    // Handle Configure: Open editor for drafting without touching DB until Save Draft or Submit
+    // Handle Configure: Open section-wise editor for drafting without touching DB until Save Draft or Submit
     const handleConfigure = () => {
+        setEditableSections(buildEditableSections(sections));
+        setRevisionTitle(documentData?.pending_document_name || documentData?.document_name || '');
         setEditorContent(draftEditorContent);
         setIsEditorOpen(true);
     };
 
     // Open editor without creating new revision (already in draft or pending revision)
     const handleOpenEditor = () => {
+        setEditableSections(buildEditableSections(sections));
         setEditorContent(draftEditorContent);
         setRevisionTitle(documentData?.pending_document_name || documentData?.document_name || '');
         setIsEditorOpen(true);
@@ -275,12 +310,11 @@ export default function PolicyViewerPage() {
         }
     };
 
-    // Save draft from fullscreen editor
+    // Save draft from fullscreen section-wise editor
     const handleSaveDraft = async (commitMessage = '') => {
-        if (!documentData || !sections.length) return;
+        if (!documentData || (!sections.length && !editableSections.length)) return;
         setIsSavingDraft(true);
         try {
-            // If revision not initialized yet in DB, create revision snapshot first
             if (!documentData.has_pending_revision) {
                 await documentManagementApi.createRevision(docId, {
                     commit_message: commitMessage || `Revision draft started`,
@@ -288,15 +322,25 @@ export default function PolicyViewerPage() {
                 });
             }
 
-            // Save to the Details section (or first section)
-            const detailsSection = sections.find(s => (s.section_title || '').toLowerCase().includes('details')) || sections[0];
-            const rawContent = editorContent?.json || (editorContent?.type === 'doc' ? editorContent : null) || draftEditorContent;
-            const sectionsToSave = [{
-                sectionId: detailsSection.id,
-                content: rawContent,
-                section_title: detailsSection.section_title,
-            }];
-            await documentManagementApi.saveSectionEdits(docId, sectionsToSave, { commit_message: commitMessage, isDraftOnly: true, document_name: revisionTitle.trim() });
+            const sectionsToSave = editableSections.length > 0
+                ? editableSections.map((s, idx) => ({
+                    sectionId: s.sectionId || null,
+                    section_title: (s.section_title || s.title || `Section ${idx + 1}`).trim(),
+                    section_order: idx,
+                    content: extractSectionTipTapJson(s.content),
+                }))
+                : [{
+                    sectionId: (sections.find(s => (s.section_title || '').toLowerCase().includes('details')) || sections[0]).id,
+                    content: editorContent?.json || (editorContent?.type === 'doc' ? editorContent : null) || draftEditorContent,
+                    section_title: (sections.find(s => (s.section_title || '').toLowerCase().includes('details')) || sections[0]).section_title,
+                }];
+
+            await documentManagementApi.saveSectionEdits(docId, sectionsToSave, {
+                commit_message: commitMessage,
+                isDraftOnly: true,
+                document_name: revisionTitle.trim(),
+                replaceAll: editableSections.length > 0,
+            });
             await loadDocument();
             showToast(`Draft saved.${commitMessage ? ` "${commitMessage}"` : ''}`);
         } catch (err) {
@@ -308,7 +352,7 @@ export default function PolicyViewerPage() {
 
     // Submit revision for Super Admin review
     const handleSubmitForReview = async (commitMessage = '') => {
-        if (!documentData || !sections.length) return;
+        if (!documentData || (!sections.length && !editableSections.length)) return;
         if (!revisionTitle.trim()) {
             showToast('Policy title is required.', 'error');
             return;
@@ -322,15 +366,25 @@ export default function PolicyViewerPage() {
                 });
             }
 
-            // First persist current editor content
-            const detailsSection = sections.find(s => (s.section_title || '').toLowerCase().includes('details')) || sections[0];
-            const rawContent = editorContent?.json || (editorContent?.type === 'doc' ? editorContent : null) || draftEditorContent;
-            const sectionsToSave = [{
-                sectionId: detailsSection.id,
-                content: rawContent,
-                section_title: detailsSection.section_title,
-            }];
-            await documentManagementApi.saveSectionEdits(docId, sectionsToSave, { commit_message: commitMessage, isDraftOnly: true, document_name: revisionTitle.trim() });
+            const sectionsToSave = editableSections.length > 0
+                ? editableSections.map((s, idx) => ({
+                    sectionId: s.sectionId || null,
+                    section_title: (s.section_title || s.title || `Section ${idx + 1}`).trim(),
+                    section_order: idx,
+                    content: extractSectionTipTapJson(s.content),
+                }))
+                : [{
+                    sectionId: (sections.find(s => (s.section_title || '').toLowerCase().includes('details')) || sections[0]).id,
+                    content: editorContent?.json || (editorContent?.type === 'doc' ? editorContent : null) || draftEditorContent,
+                    section_title: (sections.find(s => (s.section_title || '').toLowerCase().includes('details')) || sections[0]).section_title,
+                }];
+
+            await documentManagementApi.saveSectionEdits(docId, sectionsToSave, {
+                commit_message: commitMessage,
+                isDraftOnly: true,
+                document_name: revisionTitle.trim(),
+                replaceAll: editableSections.length > 0,
+            });
 
             // Now trigger review submission with commit message
             await documentManagementApi.submitRevision(docId, { commit_message: commitMessage, document_name: revisionTitle.trim() });
@@ -711,6 +765,8 @@ export default function PolicyViewerPage() {
                             : `Editing v${documentData.current_version_number || '1.0'} revision draft — Live version unchanged until approval`
                     }
                     initialContent={editorContent || draftEditorContent}
+                    sections={editableSections}
+                    onSectionsChange={setEditableSections}
                     onChange={(val) => {
                         const doc = val?.json || (val?.type === 'doc' ? val : null) || val;
                         setEditorContent(doc);

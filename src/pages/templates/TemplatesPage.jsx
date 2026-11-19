@@ -25,9 +25,62 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { documentManagementApi } from '../../services/api/documentManagementApi';
-import RichTextEditor from '../../editor/RichTextEditor';
+import SectionWiseEditor, {
+    normalizeSectionContent,
+    extractSectionTipTapJson,
+} from '../../components/documents/SectionWiseEditor';
 import './templates.css';
 import LoadMoreOnScroll from '../../components/common/LoadMoreOnScroll';
+
+const buildDefaultTemplateSections = () => {
+    const stamp = Date.now();
+    const specs = [
+        { title: '1. Configuration', text: 'Document configuration, ownership, and scope.' },
+        { title: '2. Summary', text: 'Executive summary of key policy requirements.' },
+        { title: '3. Details', text: 'Detailed operational clauses and controls.' },
+        { title: '4. Reference', text: 'Statutory citations and internal bank policies.' },
+        { title: '5. Dependencies', text: 'Cross-functional system dependencies.' },
+        { title: '6. Controls', text: 'Compliance checkpoints and verification metrics.' },
+    ];
+    return specs.map((spec, idx) => ({
+        id: `tpl-sec-${idx}-${stamp}`,
+        title: spec.title,
+        section_title: spec.title,
+        order: idx,
+        content: {
+            type: 'doc',
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: spec.text }] }],
+        },
+    }));
+};
+
+const templateSectionsToEditorCards = (sections = []) => {
+    if (!Array.isArray(sections) || sections.length === 0) {
+        return buildDefaultTemplateSections();
+    }
+    const stamp = Date.now();
+    return sections
+        .slice()
+        .sort((a, b) => (a.order ?? a.section_order ?? 0) - (b.order ?? b.section_order ?? 0))
+        .map((s, idx) => {
+            const title = s.section_title || s.title || `Section ${idx + 1}`;
+            return {
+                id: s.id || `tpl-sec-${idx}-${stamp}`,
+                title,
+                section_title: title,
+                order: idx,
+                content: normalizeSectionContent(s.content || (s.description ? `<p>${s.description}</p>` : '')),
+            };
+        });
+};
+
+const serializeTemplateSections = (cards = []) =>
+    (Array.isArray(cards) ? cards : []).map((s, idx) => ({
+        title: (s.section_title || s.title || `Section ${idx + 1}`).trim() || `Section ${idx + 1}`,
+        order: idx,
+        content: extractSectionTipTapJson(s.content),
+        subsections: [],
+    }));
 
 /* ─────────────────────────────────────────────────────────────
    CategoryCombobox
@@ -184,7 +237,7 @@ export default function TemplatesPage() {
     const [templateName, setTemplateName]           = useState('');
     const [category, setCategory]                   = useState('Information Security');
     const [description, setDescription]             = useState('');
-    const [editorJsonContent, setEditorJsonContent] = useState(null);
+    const [createSections, setCreateSections]       = useState(() => buildDefaultTemplateSections());
     const [isSubmitting, setIsSubmitting]           = useState(false);
     const [errorMsg, setErrorMsg]                   = useState('');
 
@@ -194,7 +247,7 @@ export default function TemplatesPage() {
     const [editName, setEditName]                   = useState('');
     const [editCategory, setEditCategory]           = useState('');
     const [editDescription, setEditDescription]     = useState('');
-    const [editEditorContent, setEditEditorContent] = useState(null);
+    const [editSections, setEditSections]           = useState([]);
     const [isSavingEdit, setIsSavingEdit]           = useState(false);
     const [editErrorMsg, setEditErrorMsg]           = useState('');
     const [rejectionReason, setRejectionReason]     = useState('');
@@ -249,7 +302,7 @@ export default function TemplatesPage() {
         setTemplateName('');
         setCategory('Information Security');
         setDescription('');
-        setEditorJsonContent(null);
+        setCreateSections(buildDefaultTemplateSections());
         setErrorMsg('');
     };
 
@@ -263,12 +316,7 @@ export default function TemplatesPage() {
         setEditName(tmpl.template_name || '');
         setEditCategory(tmpl.category || 'Information Security');
         setEditDescription(tmpl.description || '');
-        const detailsSec =
-            tmpl.structure?.sections?.find(s => (s.title || '').toLowerCase().includes('details')) ||
-            tmpl.structure?.sections?.find(s => s.order === 2) ||
-            tmpl.structure?.sections?.[1] ||
-            tmpl.structure?.sections?.[0];
-        setEditEditorContent(detailsSec?.content || null);
+        setEditSections(templateSectionsToEditorCards(tmpl.structure?.sections));
         setRejectionReason('');
         setReviewFeedbackMsg('');
         setEditErrorMsg('');
@@ -281,12 +329,7 @@ export default function TemplatesPage() {
         setEditName(tmpl.template_name || '');
         setEditCategory(tmpl.category || 'Information Security');
         setEditDescription(tmpl.description || '');
-        const detailsSec =
-            tmpl.structure?.sections?.find(s => (s.title || '').toLowerCase().includes('details')) ||
-            tmpl.structure?.sections?.find(s => s.order === 2) ||
-            tmpl.structure?.sections?.[1] ||
-            tmpl.structure?.sections?.[0];
-        setEditEditorContent(detailsSec?.content || null);
+        setEditSections(templateSectionsToEditorCards(tmpl.structure?.sections));
         setRejectionReason('');
         setReviewFeedbackMsg('');
         setEditErrorMsg('');
@@ -302,46 +345,16 @@ export default function TemplatesPage() {
             setEditErrorMsg('Category is required.');
             return;
         }
+        if (!editSections || editSections.length === 0) {
+            setEditErrorMsg('A template must contain at least one section.');
+            return;
+        }
 
         setIsSavingEdit(true);
         setEditErrorMsg('');
 
         try {
-            let cleanContent = {
-                type: 'doc',
-                content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Detailed operational clauses and controls.' }] }]
-            };
-
-            if (editEditorContent) {
-                const rawJson = editEditorContent?.json || (editEditorContent?.type === 'doc' ? editEditorContent : null);
-                if (rawJson) {
-                    try {
-                        cleanContent = JSON.parse(JSON.stringify(rawJson));
-                    } catch (e) {
-                        console.warn('Failed to serialize editor AST', e);
-                    }
-                }
-            }
-
-            // Update details and summary in structure sections
-            const currentSections = reviewingTemplate.structure?.sections || [
-                { title: '1. Configuration', order: 0, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Document configuration, ownership, and scope.' }] }] } },
-                { title: '2. Summary',       order: 1, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: editDescription || 'Executive summary.' }] }] } },
-                { title: '3. Details',       order: 2, content: cleanContent },
-                { title: '4. Reference',     order: 3, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Statutory citations and internal bank policies.' }] }] } },
-                { title: '5. Dependencies',  order: 4, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Cross-functional system dependencies.' }] }] } },
-                { title: '6. Controls',      order: 5, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Compliance checkpoints and verification metrics.' }] }] } },
-            ];
-
-            const updatedSections = currentSections.map(s => {
-                if ((s.title || '').toLowerCase().includes('details')) {
-                    return { ...s, content: cleanContent };
-                }
-                if ((s.title || '').toLowerCase().includes('summary')) {
-                    return { ...s, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: editDescription || 'Executive summary.' }] }] } };
-                }
-                return s;
-            });
+            const updatedSections = serializeTemplateSections(editSections);
 
             const res = await documentManagementApi.updateTemplate(reviewingTemplate.id, {
                 template_name: editName.trim(),
@@ -359,11 +372,12 @@ export default function TemplatesPage() {
                     structure:     { sections: updatedSections },
                 };
                 setReviewingTemplate(updatedTmpl);
+                setEditSections(templateSectionsToEditorCards(updatedSections));
                 setModalMode('view');
                 loadTemplates();
                 setToastMsg({
                     type: 'success',
-                    text: res?.message || 'Template updated successfully.'
+                    text: res?.message || `Template updated (${updatedSections.length} sections saved).`
                 });
             } else {
                 setEditErrorMsg(res?.message || 'Failed to update template.');
@@ -379,41 +393,22 @@ export default function TemplatesPage() {
         if (e && e.preventDefault) e.preventDefault();
         if (!templateName.trim()) { setErrorMsg('Template name is required.'); return; }
         if (!category.trim())     { setErrorMsg('Category is required.'); return; }
+        if (!createSections || createSections.length === 0) {
+            setErrorMsg('Please add at least one section to this template.');
+            return;
+        }
 
         setIsSubmitting(true);
         setErrorMsg('');
 
         try {
-            let cleanDetailsContent = {
-                type: 'doc',
-                content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Detailed operational clauses and controls.' }] }]
-            };
-
-            if (editorJsonContent) {
-                const rawJson = editorJsonContent?.json || (editorJsonContent?.type === 'doc' ? editorJsonContent : null);
-                if (rawJson) {
-                    try {
-                        cleanDetailsContent = JSON.parse(JSON.stringify(rawJson));
-                    } catch (e) {
-                        console.warn('Failed to serialize editor AST', e);
-                    }
-                }
-            }
-
-            const standardSections = [
-                { title: '1. Configuration', order: 0, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Document configuration, ownership, and scope.' }] }] } },
-                { title: '2. Summary',       order: 1, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: description || 'Executive summary of key policy requirements.' }] }] } },
-                { title: '3. Details',       order: 2, content: cleanDetailsContent },
-                { title: '4. Reference',     order: 3, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Statutory citations and internal bank policies.' }] }] } },
-                { title: '5. Dependencies',  order: 4, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Cross-functional system dependencies.' }] }] } },
-                { title: '6. Controls',      order: 5, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Compliance checkpoints and verification metrics.' }] }] } },
-            ];
+            const structuredSections = serializeTemplateSections(createSections);
 
             const res = await documentManagementApi.createTemplate({
                 template_name: templateName.trim(),
                 category:      category.trim(),
                 description:   description.trim(),
-                structure:     { sections: standardSections },
+                structure:     { sections: structuredSections },
             });
 
             if (res?.success) {
@@ -1031,37 +1026,36 @@ export default function TemplatesPage() {
                                 </div> */}
                             </div>
 
-                            {/* Right Panel: Rich Text Editor */}
+                            {/* Right Panel: Section-Wise Template Structure & Clauses */}
                             <div className="review-modal-right">
                                 <div>
                                     <label className="form-label" style={{ marginBottom: '2px', display: 'block' }}>
                                         {modalMode === 'edit'
-                                            ? 'Section 3: Details — Edit Standard Clauses & Content'
-                                            : 'Section 3: Details — Authored Content Preview'
+                                            ? `Template Sections (${editSections.length}) — Add, Reorder & Edit Clauses`
+                                            : `Template Sections (${editSections.length}) — Read-Only Preview`
                                         }
                                     </label>
                                     <span style={{ fontSize: '12px', color: '#94a3b8' }}>
                                         {modalMode === 'edit'
-                                            ? 'Edit rich formatted clauses, tables, and compliance requirements.'
-                                            : 'Read-only preview of formatted clauses, SLAs, and rules.'
+                                            ? 'Add new sections, rename headings, reorder above/below, or expand any section into Full Screen.'
+                                            : 'Preview structured sections, clauses, and formatting rules stored in this template.'
                                         }
                                     </span>
                                 </div>
 
-                                <div className="template-editor-wrapper">
-                                    <RichTextEditor
-                                        key={`editor-${reviewingTemplate.id}-${modalMode}`}
-                                        paged={false}
+                                <div className="template-editor-wrapper template-sections-wrapper">
+                                    <SectionWiseEditor
+                                        sections={editSections}
+                                        onChange={setEditSections}
                                         readOnly={modalMode === 'view'}
-                                        showToolbar={modalMode === 'edit'}
-                                        placeholder="Write standard policy template clauses, requirements, SLAs and tables here..."
-                                        initialContent={
-                                            editEditorContent ||
-                                            reviewingTemplate.structure?.sections?.find(s => s.order === 2 || s.title?.includes('Details'))?.content ||
-                                            reviewingTemplate.structure?.sections?.[2]?.content ||
-                                            { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'No detailed clauses.' }] }] }
+                                        allowEditTemplateTitles={true}
+                                        documentTitle={editName || reviewingTemplate?.template_name}
+                                        headerTitle="TEMPLATE SECTIONS"
+                                        headerSubtitle={
+                                            modalMode === 'edit'
+                                                ? 'Add new sections, reorder cards, rename headings, or open Full Screen per section.'
+                                                : 'Inspect every section stored in this template.'
                                         }
-                                        onChange={modalMode === 'edit' ? (val) => setEditEditorContent(val?.json || val) : undefined}
                                     />
                                 </div>
                             </div>
@@ -1181,22 +1175,25 @@ export default function TemplatesPage() {
                                     </div>
                                 </div>
 
-                                {/* Right Panel (60%): Rich Text Editor */}
+                                {/* Right Panel (60%): Section-Wise Template Structure & Clauses */}
                                 <div className="template-modal-right">
                                     <div>
                                         <label className="form-label" style={{ marginBottom: '2px', display: 'block' }}>
-                                            Template Standard Clauses &amp; Content
+                                            Template Sections &amp; Standard Clauses ({createSections.length})
                                         </label>
                                         <span style={{ fontSize: '12px', color: 'var(--text-muted, #94a3b8)' }}>
-                                            Stored as structured JSON for Section 3: Details.
+                                            Add, rename, reorder, or customize every section saved in this template.
                                         </span>
                                     </div>
 
-                                    <div className="template-editor-wrapper">
-                                        <RichTextEditor
-                                            paged={false}
-                                            placeholder="Write standard policy template clauses, requirements, SLAs and tables here..."
-                                            onChange={(val) => setEditorJsonContent(val?.json || val)}
+                                    <div className="template-editor-wrapper template-sections-wrapper">
+                                        <SectionWiseEditor
+                                            sections={createSections}
+                                            onChange={setCreateSections}
+                                            allowEditTemplateTitles={true}
+                                            documentTitle={templateName || 'New Policy Template'}
+                                            headerTitle="TEMPLATE SECTIONS"
+                                            headerSubtitle="Add sections, edit clause text & tables, reorder above/below, or expand to Full Screen."
                                         />
                                     </div>
                                 </div>

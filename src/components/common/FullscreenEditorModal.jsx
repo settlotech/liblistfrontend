@@ -1,25 +1,9 @@
-import React, { useState } from 'react';
-import { Minimize2, Sparkles, X, Check, Send, MessageSquare } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Minimize2, Sparkles, X, Check, Send, MessageSquare, Layers, FileText } from 'lucide-react';
 import RichTextEditor from '../../editor/RichTextEditor';
+import SectionWiseEditor, { sectionsToCombinedDoc } from '../documents/SectionWiseEditor';
 import './fullscreenEditorModal.css';
 
-/**
- * FullscreenEditorModal
- * A reusable modal/fullscreen dialog wrapping the RichTextEditor.
- * Supports commit messages on Save Draft and Submit for Review.
- *
- * @param {boolean} isOpen - Whether fullscreen mode is open
- * @param {function} onClose - Triggered when exiting fullscreen
- * @param {string} title - Document or modal header title
- * @param {string} subtitle - Optional helper text / metadata
- * @param {object} initialContent - Starting TipTap JSON
- * @param {function} onChange - Fires on every editor change with updated JSON
- * @param {boolean} readOnly - Whether editing is enabled
- * @param {function} onSaveDraft(commitMessage) - Optional action to save directly from fullscreen
- * @param {boolean} isSubmitting - Whether save action is in flight
- * @param {function} onSubmitForReview(commitMessage) - Optional action to submit draft for review
- * @param {boolean} isSubmittingReview - Whether review submission is in flight
- */
 export default function FullscreenEditorModal({
     isOpen,
     onClose,
@@ -28,6 +12,8 @@ export default function FullscreenEditorModal({
     subtitle = 'Full Page Focused Authoring Mode',
     initialContent,
     onChange,
+    sections = null,
+    onSectionsChange = null,
     readOnly = false,
     placeholder = 'Write content here...',
     onSaveDraft,
@@ -43,16 +29,19 @@ export default function FullscreenEditorModal({
     documentTitle,
     onDocumentTitleChange
 }) {
-    if (!isOpen) return null;
-
     const handleCancel = onCancel || onClose;
+    const isSectionWise = Array.isArray(sections) && typeof onSectionsChange === 'function';
 
-    // ── Commit Message Dialog State ──
+    // ── View & Commit Message Dialog State (Hooks unconditionally before early return) ──
+    const [viewMode, setViewMode] = useState('sections'); // 'sections' | 'document'
     const [commitDialog, setCommitDialog] = useState(null); // null | 'draft' | 'review'
     const [commitMessage, setCommitMessage] = useState('');
 
-    // Safely extract TipTap doc AST
-    const safeStartingContent = React.useMemo(() => {
+    // Safely extract TipTap doc AST for full-document preview/single-editor mode
+    const safeStartingContent = useMemo(() => {
+        if (isSectionWise) {
+            return sectionsToCombinedDoc(sections, true);
+        }
         if (!initialContent) return null;
         let c = initialContent;
         if (typeof c === 'string') {
@@ -64,7 +53,21 @@ export default function FullscreenEditorModal({
             if (Array.isArray(c.content)) return { type: 'doc', content: c.content };
         }
         return c;
-    }, [initialContent]);
+    }, [initialContent, isSectionWise, sections]);
+
+    // Close on Escape key
+    useEffect(() => {
+        if (!isOpen) return;
+        const handleKeyDown = (e) => {
+            if (e.key === 'Escape' && !commitDialog) {
+                handleCancel();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isOpen, commitDialog, handleCancel]);
+
+    if (!isOpen) return null;
 
     // ── Commit dialog helpers ──
     const openCommitDialog = (type) => {
@@ -83,18 +86,6 @@ export default function FullscreenEditorModal({
         setCommitDialog(null);
         setCommitMessage('');
     };
-
-    // Close on Escape key
-    React.useEffect(() => {
-        if (!isOpen) return;
-        const handleKeyDown = (e) => {
-            if (e.key === 'Escape' && !commitDialog) {
-                handleCancel();
-            }
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, commitDialog, handleCancel]);
 
     return (
         <div className="fullscreen-editor-overlay">
@@ -126,6 +117,27 @@ export default function FullscreenEditorModal({
                     )}
 
                     <div className="fullscreen-header-actions">
+                        {isSectionWise && (
+                            <div className="fullscreen-view-toggle">
+                                <button
+                                    type="button"
+                                    className={`fullscreen-toggle-pill ${viewMode === 'sections' ? 'active' : ''}`}
+                                    onClick={() => setViewMode('sections')}
+                                >
+                                    <Layers size={13} />
+                                    <span>Sections ({sections.length})</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`fullscreen-toggle-pill ${viewMode === 'document' ? 'active' : ''}`}
+                                    onClick={() => setViewMode('document')}
+                                >
+                                    <FileText size={13} />
+                                    <span>Document Preview</span>
+                                </button>
+                            </div>
+                        )}
+
                         {onReject && (
                             <button
                                 type="button"
@@ -191,18 +203,29 @@ export default function FullscreenEditorModal({
                     </div>
                 </div>
 
-                {/* ── Editor Workspace (Full Height Word/A4 Mode) ── */}
-                <div className="fullscreen-editor-body">
-                    <RichTextEditor
-                        key={`fs-editor-${isOpen ? '1' : '0'}`}
-                        paged={true}
-                        readOnly={readOnly}
-                        showToolbar={true}
-                        showStatusBar={true}
-                        placeholder={placeholder}
-                        initialContent={safeStartingContent}
-                        onChange={onChange}
-                    />
+                {/* ── Editor Workspace (Section-Wise Cards OR Full Height Word/A4 Mode) ── */}
+                <div className={`fullscreen-editor-body ${isSectionWise && viewMode === 'sections' ? 'fullscreen-sections-scroll' : ''}`}>
+                    {isSectionWise && viewMode === 'sections' ? (
+                        <div className="fullscreen-sections-inner">
+                            <SectionWiseEditor
+                                sections={sections}
+                                onChange={onSectionsChange}
+                                readOnly={readOnly}
+                                documentTitle={documentTitle || title}
+                            />
+                        </div>
+                    ) : (
+                        <RichTextEditor
+                            key={`fs-editor-${isOpen ? '1' : '0'}-${isSectionWise ? 'preview' : 'std'}`}
+                            paged={true}
+                            readOnly={isSectionWise ? true : readOnly}
+                            showToolbar={!(isSectionWise && viewMode === 'document')}
+                            showStatusBar={true}
+                            placeholder={placeholder}
+                            initialContent={safeStartingContent}
+                            onChange={isSectionWise ? undefined : onChange}
+                        />
+                    )}
                 </div>
             </div>
 

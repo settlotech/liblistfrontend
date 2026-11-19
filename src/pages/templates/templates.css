@@ -426,6 +426,12 @@
     background: #ffffff;
 }
 
+.template-editor-wrapper.template-sections-wrapper {
+    overflow-y: auto;
+    padding: 12px;
+    background: #f8fafc;
+}
+
 .template-editor-wrapper .editor-container,
 .template-editor-wrapper .editor-shell {
     height: 100% !important;

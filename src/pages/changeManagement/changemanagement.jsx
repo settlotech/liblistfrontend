@@ -22,6 +22,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { documentManagementApi } from '../../services/api/documentManagementApi';
 import FullscreenEditorModal from '../../components/common/FullscreenEditorModal';
+import { normalizeSectionContent, extractSectionTipTapJson } from '../../components/documents/SectionWiseEditor';
 import './changemanagement.css';
 import LoadMoreOnScroll from '../../components/common/LoadMoreOnScroll';
 
@@ -44,6 +45,7 @@ export default function ChangeManagementPage() {
     // Fullscreen Editor State for Reviewing submitted versions
     const [openDoc, setOpenDoc]           = useState(null);
     const [openDocContent, setOpenDocContent] = useState(null);
+    const [openDocSections, setOpenDocSections] = useState(null);
     const [isLoadingDoc, setIsLoadingDoc] = useState(false);
 
     // Library Removal Review State
@@ -223,6 +225,21 @@ export default function ChangeManagementPage() {
 
             setOpenDoc(fullDoc);
             setOpenDocContent(parsed);
+            setOpenDocSections(
+                sections
+                    .slice()
+                    .sort((a, b) => (a.section_order ?? a.order ?? 0) - (b.section_order ?? b.order ?? 0))
+                    .map((sec, idx) => ({
+                        id: sec.id,
+                        sectionId: sec.id,
+                        title: sec.section_title || sec.title || `Section ${idx + 1}`,
+                        section_title: sec.section_title || sec.title || `Section ${idx + 1}`,
+                        isTemplateSection: true,
+                        order: idx,
+                        section_order: idx,
+                        content: normalizeSectionContent(sec.draft_content || sec.content),
+                    }))
+            );
         } catch (err) {
             console.error('Failed to load document content:', err);
             setToastMsg('Failed to open document for review.');
@@ -299,6 +316,7 @@ export default function ChangeManagementPage() {
                 document_name: `${fullDoc.document_name} [Parent v${parentVerNum}]`,
             });
             setOpenDocContent(parsed);
+            setOpenDocSections(null);
         } catch (err) {
             console.error('Failed to load parent document:', err);
             setToastMsg('Failed to open parent version.');
@@ -1080,6 +1098,8 @@ export default function ChangeManagementPage() {
                                         : `Reviewing Operational Policy v${openDoc.current_version_number || '1.0'} (${openDoc.status === 'draft' ? 'Draft' : openDoc.status} submitted by ${openDoc.requested_by_name || openDoc.created_by_name || 'Author'})`
                         }
                         initialContent={openDocContent}
+                        sections={openDoc?._viewingParent ? null : openDocSections}
+                        onSectionsChange={openDoc?._viewingParent ? null : setOpenDocSections}
                         readOnly={isViewingParent ? true : !docNeedsReview}
                         onChange={(val) => {
                             const doc = val?.json || (val?.type === 'doc' ? val : null) || val;
@@ -1088,14 +1108,24 @@ export default function ChangeManagementPage() {
                         onApprove={(docNeedsReview && canApprove) ? async () => {
                             setIsReviewing(true);
                             try {
-                                const sections = openDoc.sections || [];
-                                const detailsSection = sections.find(s => (s.section_title || '').toLowerCase().includes('details')) || sections[0];
-                                if (detailsSection && openDocContent) {
-                                    await documentManagementApi.saveSectionEdits(openDoc.id, [{
-                                        sectionId: detailsSection.id,
-                                        content: openDocContent,
-                                        section_title: detailsSection.section_title,
-                                    }], { isDraftOnly: true });
+                                if (Array.isArray(openDocSections) && openDocSections.length > 0) {
+                                    const payloadSecs = openDocSections.map((s, idx) => ({
+                                        sectionId: s.sectionId || null,
+                                        section_title: (s.section_title || s.title || `Section ${idx + 1}`).trim(),
+                                        section_order: idx,
+                                        content: extractSectionTipTapJson(s.content),
+                                    }));
+                                    await documentManagementApi.saveSectionEdits(openDoc.id, payloadSecs, { isDraftOnly: true, replaceAll: true });
+                                } else {
+                                    const sections = openDoc.sections || [];
+                                    const detailsSection = sections.find(s => (s.section_title || '').toLowerCase().includes('details')) || sections[0];
+                                    if (detailsSection && openDocContent) {
+                                        await documentManagementApi.saveSectionEdits(openDoc.id, [{
+                                            sectionId: detailsSection.id,
+                                            content: openDocContent,
+                                            section_title: detailsSection.section_title,
+                                        }], { isDraftOnly: true });
+                                    }
                                 }
 
                                 await documentManagementApi.reviewDocument(openDoc.id, 'approve');

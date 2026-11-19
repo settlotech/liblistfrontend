@@ -12,6 +12,13 @@
     overflow-y: auto;
 }
 
+.create-policy-container.is-upload-review {
+    padding: 8px 14px;
+    height: calc(100vh - 60px);
+    min-height: 0;
+    overflow: hidden;
+}
+
 /* ── Top Header Bar ────────────────────────────────────────── */
 .create-policy-header {
     display: flex;
@@ -230,6 +237,138 @@
     color: #004494;
 }
 
+/* ── Store Sections in Template Button & Modal ─────────────── */
+.btn-store-template {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: #f0fdf4;
+    border: 1px solid #86efac;
+    color: #15803d;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 5px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-store-template:hover {
+    background: #dcfce7;
+    border-color: #4ade80;
+    color: #166534;
+}
+
+.store-template-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10040;
+    background: rgba(15, 23, 42, 0.55);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.store-template-modal {
+    width: 100%;
+    max-width: 560px;
+    max-height: 90vh;
+    background: #ffffff;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.24);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.store-template-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 20px;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
+}
+
+.store-template-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    background: #eff6ff;
+    color: #0057B8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.store-template-body {
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    overflow-y: auto;
+}
+
+.store-template-mode-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    background: #f1f5f9;
+    padding: 4px;
+    border-radius: 8px;
+}
+
+.store-mode-btn {
+    border: none;
+    background: transparent;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #475569;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.store-mode-btn.active {
+    background: #ffffff;
+    color: #0057B8;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1);
+}
+
+.store-template-preview {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 10px 12px;
+}
+
+.store-sec-chip {
+    display: inline-block;
+    padding: 3px 8px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    color: #1d4ed8;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.store-template-foot {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 14px 20px;
+    border-top: 1px solid #e2e8f0;
+    background: #f8fafc;
+}
+
 /* ── Editor Shell on Right Panel ───────────────────────────── */
 .create-policy-editor-wrapper {
     flex: 1;
@@ -240,6 +379,28 @@
     border-radius: 8px;
     overflow: hidden;
     background: #ffffff;
+}
+
+.create-policy-sections-wrapper {
+    flex: 1;
+    min-height: 520px;
+    max-height: calc(100vh - 185px);
+    overflow-y: auto;
+    padding: 14px 14px 32px;
+    background: #f8fafc;
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: 10px;
+}
+
+.upload-sections-scroll {
+    overflow-y: auto !important;
+    padding: 12px 14px 36px !important;
+    background: #f8fafc !important;
+}
+
+.upload-original-doc-body {
+    overflow: hidden !important;
+    padding: 0 !important;
 }
 
 .create-policy-editor-wrapper .editor-container,
@@ -814,11 +975,20 @@
 /* ═══════════════════════════════════════════════
    STEP 3 — Two-Panel Review
    ═══════════════════════════════════════════════ */
+.upload-stepper-container.is-upload-review {
+    flex: 1;
+    min-height: 0;
+    height: 100%;
+    padding: 10px 12px;
+    gap: 0;
+}
+
 .upload-review-container {
     flex: 1;
     display: flex;
     flex-direction: column;
-    min-height: 520px;
+    min-height: 0;
+    height: 100%;
     gap: 0;
     position: relative;
     transition: all 0.2s ease;
@@ -845,9 +1015,10 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 0 12px;
+    padding: 0 0 8px;
     flex-shrink: 0;
-    gap: 12px;
+    gap: 10px;
+    flex-wrap: wrap;
 }
 
 .upload-review-topbar-left {
@@ -894,8 +1065,9 @@
 .upload-review-panels {
     flex: 1;
     display: flex;
-    gap: 14px;
-    min-height: 480px;
+    gap: 12px;
+    min-height: 0;
+    height: 100%;
     overflow: hidden;
 }
 
@@ -931,6 +1103,8 @@
 
 .upload-panel-body {
     flex: 1;
+    display: flex;
+    flex-direction: column;
     overflow: auto;
     min-height: 0;
 }

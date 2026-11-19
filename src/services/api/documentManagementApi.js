@@ -277,10 +277,10 @@ export const documentManagementApi = {
         });
     },
 
-    async saveSectionEdits(docId, sections, { commit_message, isDraftOnly = true, document_name } = {}) {
+    async saveSectionEdits(docId, sections, { commit_message, isDraftOnly = true, document_name, replaceAll = false } = {}) {
         return apiFetch(`${DMS_BASE}/documents/${docId}/sections`, {
             method: 'PUT',
-            body: JSON.stringify({ sections, commit_message, isDraftOnly, document_name }),
+            body: JSON.stringify({ sections, commit_message, isDraftOnly, document_name, replaceAll }),
         });
     },
 
