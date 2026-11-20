@@ -94,7 +94,7 @@ export const ImageControls = ({ editor, onImageUpload }) => {
         // External upload handler provided by app/backend
         finalUrl = await onImageUpload(file);
       } else {
-        // Convert to persistent base64 Data URL so images survive saves and reloads
+        // Embed the image in editor content so it is included when the document is saved.
         finalUrl = await new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => resolve(reader.result);
@@ -103,11 +103,21 @@ export const ImageControls = ({ editor, onImageUpload }) => {
         });
       }
 
-      setImageUrl(finalUrl);
-      if (!altText) {
-        setAltText(file.name.replace(/\.[^/.]+$/, ''));
+      if (typeof finalUrl !== 'string' || !finalUrl.trim()) {
+        throw new Error('Image upload did not return an image URL');
       }
+
+      const nextAltText = altText || file.name.replace(/\.[^/.]+$/, '');
+      setImageUrl(finalUrl);
+      setAltText(nextAltText);
+      editor.chain().focus().setImage({
+        src: finalUrl,
+        alt: nextAltText,
+        'data-width': width,
+        'data-alignment': alignment,
+      }).run();
       setActiveTab('url');
+      setIsOpen(false);
     } catch (err) {
       setUploadError(err.message || 'Image upload failed');
     } finally {

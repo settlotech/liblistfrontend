@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
+import { documentManagementApi } from '../../services/api/documentManagementApi';
 import styles from './Home.module.css';
 
 const formatTimeAgo = (dateStr) => {
@@ -31,6 +32,12 @@ const Navbar = ({ onToggleSidebar, onToggleChatPanel, chatPanelOpen }) => {
   const navigate = useNavigate();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [policyQuery, setPolicyQuery] = useState('');
+  const [policyResults, setPolicyResults] = useState([]);
+  const [policySearchLoading, setPolicySearchLoading] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchRef = useRef(null);
+  const searchInputRef = useRef(null);
 
   const canViewPolicyAccess =
     user?.isSuperAdmin ||
@@ -42,6 +49,54 @@ const Navbar = ({ onToggleSidebar, onToggleChatPanel, chatPanelOpen }) => {
 
   const dropdownRef = useRef(null);
   const notifRef = useRef(null);
+
+  useEffect(() => {
+    const query = policyQuery.trim();
+    if (!query) {
+      setPolicyResults([]);
+      setPolicySearchLoading(false);
+      return undefined;
+    }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setPolicySearchLoading(true);
+      try {
+        const response = await documentManagementApi.getDocuments({ search: query, limit: 8 });
+        if (!cancelled) setPolicyResults(Array.isArray(response?.data) ? response.data : []);
+      } catch (error) {
+        if (!cancelled) setPolicyResults([]);
+      } finally {
+        if (!cancelled) setPolicySearchLoading(false);
+      }
+    }, 250);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [policyQuery]);
+
+  useEffect(() => {
+    const handleShortcut = (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        setSearchOpen(true);
+      }
+      if (event.key === 'Escape') setSearchOpen(false);
+    };
+    const handleOutside = (event) => {
+      if (searchRef.current && !searchRef.current.contains(event.target)) setSearchOpen(false);
+    };
+    window.addEventListener('keydown', handleShortcut);
+    document.addEventListener('mousedown', handleOutside);
+    return () => {
+      window.removeEventListener('keydown', handleShortcut);
+      document.removeEventListener('mousedown', handleOutside);
+    };
+  }, []);
+
+  const openPolicy = (policy) => {
+    setSearchOpen(false);
+    setPolicyQuery('');
+    navigate(`/documents/${policy.id}`);
+  };
 
   const {
     notifications,
@@ -102,14 +157,37 @@ const Navbar = ({ onToggleSidebar, onToggleChatPanel, chatPanelOpen }) => {
       </div>
 
       {/* ── Center: Search Bar ── */}
-      <div className={styles.searchContainer}>
+      <div className={styles.searchContainer} ref={searchRef}>
         <Search size={15} strokeWidth={2.2} className={styles.searchIcon} />
         <input
           type="text"
           className={styles.searchInput}
           placeholder="Ask LibList"
+          value={policyQuery}
+          ref={searchInputRef}
+          aria-label="Search policies"
+          aria-expanded={searchOpen && Boolean(policyQuery.trim())}
+          onFocus={() => setSearchOpen(true)}
+          onChange={(event) => { setPolicyQuery(event.target.value); setSearchOpen(true); }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && policyResults[0]) openPolicy(policyResults[0]);
+          }}
         />
         <span className={styles.searchShortcut}>Ctrl+K</span>
+        {searchOpen && policyQuery.trim() && (
+          <div className={styles.policySearchResults} role="listbox" aria-label="Policy search results">
+            {policySearchLoading ? (
+              <div className={styles.policySearchMessage}>Searching policies…</div>
+            ) : policyResults.length ? policyResults.map((policy) => (
+              <button key={policy.id} type="button" className={styles.policySearchResult} role="option" onClick={() => openPolicy(policy)}>
+                <span className={styles.policyResultName}>{policy.document_name}</span>
+                <span className={styles.policyResultMeta}>{policy.library_name || 'Policy'}{policy.status ? ` · ${policy.status}` : ''}</span>
+              </button>
+            )) : (
+              <div className={styles.policySearchMessage}>No accessible policies found</div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Right Side: Access + Bell + Hamburger for Chats & Shidney + Profile ── */}

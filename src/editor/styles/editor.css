@@ -724,6 +724,12 @@
 /* --------------------------------------------------------------------------
    Image & Link Popovers
    -------------------------------------------------------------------------- */
+.image-controls-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
 .image-modal-popover {
   position: absolute;
   top: 100%;
@@ -735,7 +741,7 @@
   box-shadow: var(--rte-shadow-lg);
   padding: 12px;
   width: 300px;
-  z-index: 100;
+  z-index: 1000;
 }
 
 .image-modal-header,

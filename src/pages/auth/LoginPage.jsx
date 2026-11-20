@@ -16,8 +16,6 @@ import { useAuth } from '../../context/AuthContext';
 import FormInput from '../../components/ui/FormInput';
 import Alert from '../../components/ui/Alert';
 import Spinner from '../../components/ui/Spinner';
-import logoImg from '../../assets/liblist-logo.png';
-import illustrationImg from '../../assets/login-illustration.jpg';
 import LoginSlideshow from '../../components/auth/LoginSlideshow';
 import styles from './LoginPage.module.css';
 
@@ -156,20 +154,9 @@ const LoginPage = () => {
 
   return (
     <div className={styles.page}>
-      {/* ── LEFT PANEL (58%) ── */}
+      {/* ── LEFT PANEL (60%) ── */}
       <div className={styles.leftPanel}>
-        {/* Top Header */}
-        <div className={styles.leftTopBar}>
-          <div className={styles.logoWrap}>
-            <img src={logoImg} alt="LibList Logo" className={styles.logoImg} />
-          </div>
-          <span className={styles.versionTag}>v0.0.1</span>
-        </div>
-
-        {/* Feature Slideshow (Automatic Scrolling) */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', marginTop: '16px' }}>
-          <LoginSlideshow autoPlayInterval={4500} />
-        </div>
+        <LoginSlideshow autoPlayInterval={5000} />
       </div>
 
       {/* ── RIGHT PANEL (40%) ── */}

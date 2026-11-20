@@ -86,6 +86,9 @@
 /* Search Bar */
 .searchContainer {
   position: relative;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
   min-width: 280px;
@@ -139,6 +142,39 @@
   padding: 2px 5px;
   pointer-events: none;
 }
+
+.policySearchResults {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: 360px;
+  overflow-y: auto;
+  background: var(--bg-surface, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
+  z-index: 100;
+}
+
+.policySearchResult {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--border-color, #f1f5f9);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.policySearchResult:last-child { border-bottom: 0; }
+.policySearchResult:hover, .policySearchResult:focus-visible { background: var(--bg-hover, #f1f5f9); outline: none; }
+.policyResultName { color: var(--text-primary, #0f172a); font-size: 0.8125rem; font-weight: 600; }
+.policyResultMeta { color: var(--text-muted, #64748b); font-size: 0.7rem; text-transform: capitalize; }
+.policySearchMessage { padding: 14px 12px; color: var(--text-muted, #64748b); font-size: 0.78rem; }
 
 /* Nav Right */
 .navRight {

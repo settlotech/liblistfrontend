@@ -1,25 +1,28 @@
  
 .page {
+  position: fixed;
+  inset: 0;
   display: flex;
-  min-height: 100vh;
-  width: 100%;
-  gap: 10px;
-  padding: 16px;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  width: 100vw;
+  gap: 0;
+  padding: 0;
   background: var(--bg-surface, #ffffff);
   color: var(--text-primary, #0f172a);
-  overflow-x: hidden;
+  overflow: hidden;
 }
  
 .leftPanel {
-  flex: 0 0 56%;
-  max-width: 56%;
-  background: var(--bg-surface, #ffffff);
-  border-right: 1px solid #e8edf3;
-  padding: 30px 44px;
+  flex: 0 0 60%;
+  max-width: 60%;
+  min-width: 0;
+  height: 100%;
+  background: #f8fafc;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 /* Top bar: Logo + Version */
@@ -321,9 +324,8 @@
 ══════════════════════════════════════════════════════════════════════════ */
 @media (max-width: 1100px) {
   .leftPanel {
-    flex: 0 0 52%;
-    max-width: 52%;
-    padding: 32px 36px;
+    flex: 0 0 56%;
+    max-width: 56%;
   }
   .rightPanel {
     padding: 32px 28px;
@@ -344,7 +346,8 @@
     flex: unset;
     max-width: 100%;
     width: 100%;
-    padding: 32px 24px;
+    height: 42vh;
+    min-height: 260px;
     border-right: none;
     border-bottom: 1px solid #e8edf3;
   }
