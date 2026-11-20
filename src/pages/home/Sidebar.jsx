@@ -21,6 +21,37 @@ import CreateLibraryModal from '../../components/documents/CreateLibraryModal';
 import MasterLibraryTree from '../../components/documents/MasterLibraryTree';
 import styles from './Home.module.css';
 
+const templateCss = {
+    button: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '7px',
+        width: '100%',
+        padding: '7px 10px',
+        border: 'none',
+        borderRadius: '5px',
+        background: 'transparent',
+        color: '#475569',
+        fontSize: '12px',
+        fontWeight: 500,
+        cursor: 'pointer',
+        transition: 'all 0.2s ease',
+        textAlign: 'left',
+        whiteSpace: 'nowrap'
+    },
+
+    icon: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minWidth: '16px'
+    },
+
+    text: {
+        fontSize: '12px',
+        lineHeight: '16px'
+    }
+};
 const Sidebar = ({ isOpen, onToggle }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -116,7 +147,9 @@ const Sidebar = ({ isOpen, onToggle }) => {
     const secId = typeof section === 'object' ? section?.id : section;
     navigate(`/documents/${docId}?sectionId=${secId}`);
   };
-
+  const templateNav = [
+    { name: 'Policy Templates', path: '/templates', icon: <FileSpreadsheet size={17} strokeWidth={2.2} /> }
+  ];
   return (
     <>
       <aside className={`${styles.sidebar} ${!isOpen ? styles.sidebarClosed : ''}`}>
@@ -130,9 +163,8 @@ const Sidebar = ({ isOpen, onToggle }) => {
                 <button
                   key={item.name}
                   type="button"
-                  className={`${styles.navLink} ${
-                    isActive ? styles.navLinkActive : ''
-                  }`}
+                  className={`${styles.navLink} ${isActive ? styles.navLinkActive : ''
+                    }`}
                   onClick={() => {
                     navigate(item.path);
                   }}
@@ -228,6 +260,17 @@ const Sidebar = ({ isOpen, onToggle }) => {
               />
             </div>
 
+            {templateNav.map((item) => (
+              <button
+                key={item.name}
+                type="button"
+                style={templateCss.button}
+                onClick={() => navigate(item.path)}
+              >
+                <span style={templateCss.icon}>{item.icon}</span>
+                <span style={templateCss.text}>{item.name}</span>
+              </button>
+            ))}
             {/* Master Library Tree with live backend data */}
             <div className={styles.libraryTree}>
               <MasterLibraryTree

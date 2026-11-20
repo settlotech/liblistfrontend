@@ -149,6 +149,12 @@ export default function PolicyAccessControl({ canUpdate = true, canCreate = true
     const [policyAccess, setPolicyAccess] = useState({});
     // Raw policy list from backend for selected user
     const [policies, setPolicies]         = useState([]);
+    const [departments, setDepartments] = useState([]);
+    const [originalDepartments, setOriginalDepartments] = useState([]);
+    const isSelectedDepartmentAdmin = Boolean(selectedUser && (
+        (selectedUser.role_name || '').toLowerCase().includes('department admin') ||
+        (selectedUser.roles || []).some(r => (typeof r === 'string' ? r : r.role_name || '').toLowerCase() === 'department admin')
+    ));
 
     const [isLoadingUsers, setIsLoadingUsers] = useState(true);
     const [isLoadingPolicies, setIsLoadingPolicies] = useState(false);
@@ -206,6 +212,53 @@ export default function PolicyAccessControl({ canUpdate = true, canCreate = true
     useEffect(() => {
         if (selectedUser) loadUserPolicies(selectedUser);
     }, [selectedUser, loadUserPolicies]);
+
+    useEffect(() => {
+        if (!selectedUser || !isSelectedDepartmentAdmin) { setDepartments([]); return; }
+        documentManagementApi.getDepartmentAccess(selectedUser.id)
+            .then(res => {
+                const list = res?.data || [];
+                setDepartments(list);
+                setOriginalDepartments(list);
+            })
+            .catch(err => { console.error('Failed loading departments:', err); showToast('Failed to load departments.', 'error'); });
+    }, [selectedUser, isSelectedDepartmentAdmin]);
+
+    const toggleDepartmentAccess = (libraryId, field) => setDepartments(current => current.map(d => {
+        if (d.library_id !== libraryId) return d;
+        const next = { ...d, [field]: !d[field] };
+        if (field === 'can_view' && !next.can_view) next.can_edit = next.can_delete = false;
+        if ((field === 'can_edit' || field === 'can_delete') && next[field]) next.can_view = true;
+        return next;
+    }));
+
+    const filteredDepartments = departments.filter(d => !policySearch.trim() ||
+        (d.library_name || '').toLowerCase().includes(policySearch.toLowerCase().trim()));
+    const changedDepartmentCount = departments.filter(d => {
+        const original = originalDepartments.find(item => item.library_id === d.library_id) || {};
+        return d.can_view !== original.can_view || d.can_edit !== original.can_edit || d.can_delete !== original.can_delete;
+    }).length;
+
+    const selectAllDepartmentView = () => {
+        const visibleIds = new Set(filteredDepartments.map(d => d.library_id));
+        setDepartments(current => current.map(d => visibleIds.has(d.library_id) ? { ...d, can_view: true } : d));
+    };
+    const clearAllDepartmentAccess = () => {
+        const visibleIds = new Set(filteredDepartments.map(d => d.library_id));
+        setDepartments(current => current.map(d => visibleIds.has(d.library_id)
+            ? { ...d, can_view: false, can_edit: false, can_delete: false }
+            : d));
+    };
+
+    const saveDepartments = async () => {
+        setIsSaving(true);
+        try {
+            await documentManagementApi.saveDepartmentAccess(selectedUser.id, departments);
+            setOriginalDepartments(departments);
+            showToast(`Department access saved for ${selectedUser.name}.`);
+        } catch (err) { showToast(err.message || 'Failed to save department access.', 'error'); }
+        finally { setIsSaving(false); }
+    };
 
     const showToast = (msg, type = 'success') => {
         setToast(msg);
@@ -410,7 +463,7 @@ export default function PolicyAccessControl({ canUpdate = true, canCreate = true
                                     {selectedUser.name}
                                 </div>
                                 <div style={{ fontSize: '11px', color: '#3b82f6' }}>
-                                    {selectedUser.role_name || 'Bank User'} · {selectedUser.email}
+                                    {selectedUser.role_name || (selectedUser.roles || []).map(r => typeof r === 'string' ? r : r.role_name).filter(Boolean).join(', ') || 'Bank User'} · {selectedUser.email}
                                 </div>
                             </div>
                         </div>
@@ -419,7 +472,46 @@ export default function PolicyAccessControl({ canUpdate = true, canCreate = true
             </div>
 
             {/* Policy Grid — only show when user is selected */}
-            {selectedUser && (
+            {selectedUser && isSelectedDepartmentAdmin && (
+                <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
+                    <div style={{ padding: '14px 20px', borderBottom: '1px solid #f1f5f9', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                        <div>
+                            <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#0f172a' }}>Department Access for <span style={{ color: '#0057B8' }}>{selectedUser.name}</span></h4>
+                            <span style={{ fontSize: 11.5, color: '#64748b' }}>{filteredDepartments.length} folders · {changedDepartmentCount > 0 ? <span style={{ color: '#b45309', fontWeight: 600 }}>{changedDepartmentCount} unsaved change{changedDepartmentCount !== 1 ? 's' : ''}</span> : 'No changes'}</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <div style={{ position: 'relative' }}>
+                                <Search size={13} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                                <input type="text" placeholder="Search folders..." value={policySearch} onChange={e => setPolicySearch(e.target.value)} style={{ paddingLeft: 28, paddingRight: 10, paddingTop: 7, paddingBottom: 7, border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 12.5, outline: 'none', width: 200 }} />
+                                {policySearch && <button type="button" onClick={() => setPolicySearch('')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}><X size={12} style={{ color: '#94a3b8' }} /></button>}
+                            </div>
+                            <button type="button" onClick={selectAllDepartmentView} disabled={!canEdit} style={{ padding: '7px 12px', border: '1px solid #e2e8f0', borderRadius: 6, background: '#fff', fontSize: 12, cursor: canEdit ? 'pointer' : 'not-allowed', color: canEdit ? '#475569' : '#94a3b8' }}><Eye size={12} style={{ marginRight: 4, display: 'inline' }} />Select All View</button>
+                            <button type="button" onClick={clearAllDepartmentAccess} disabled={!canEdit} style={{ padding: '7px 12px', border: '1px solid #e2e8f0', borderRadius: 6, background: '#fff', fontSize: 12, cursor: canEdit ? 'pointer' : 'not-allowed', color: canEdit ? '#dc2626' : '#94a3b8' }}><Lock size={12} style={{ marginRight: 4, display: 'inline' }} />Revoke All</button>
+                            <button type="button" onClick={saveDepartments} disabled={!canEdit || isSaving || changedDepartmentCount === 0} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 6, fontSize: 12.5, fontWeight: 600, cursor: canEdit && !isSaving && changedDepartmentCount ? 'pointer' : 'not-allowed', background: canEdit && changedDepartmentCount ? '#0057B8' : '#e2e8f0', color: canEdit && changedDepartmentCount ? '#fff' : '#94a3b8', border: 'none' }}>{isSaving ? <Loader2 size={13} /> : <Save size={13} />}{isSaving ? 'Saving...' : 'Save Changes'}</button>
+                        </div>
+                    </div>
+                    {isLoadingPolicies ? <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}><Loader2 size={22} style={{ margin: '0 auto 8px', display: 'block' }} />Loading folders...</div> : filteredDepartments.length === 0 ? <div style={{ padding: 44, textAlign: 'center', color: '#94a3b8' }}><Folder size={26} style={{ margin: '0 auto 8px', display: 'block' }} />{policySearch ? 'No folders match your search.' : 'No folders found in the master tree.'}</div> : (
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                            <thead><tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                                <th style={{ padding: '11px 20px', textAlign: 'left', fontSize: 11.5, fontWeight: 700, color: '#475569', letterSpacing: '.03em' }}>DEPARTMENT FOLDER</th>
+                                <th style={{ padding: '11px 16px', textAlign: 'center', fontSize: 11.5, fontWeight: 700, color: '#475569', width: 100 }}><Eye size={12} style={{ display: 'inline', marginRight: 4 }} />CAN VIEW</th>
+                                <th style={{ padding: '11px 16px', textAlign: 'center', fontSize: 11.5, fontWeight: 700, color: '#475569', width: 100 }}><Edit2 size={12} style={{ display: 'inline', marginRight: 4 }} />CAN EDIT</th>
+                                <th style={{ padding: '11px 16px', textAlign: 'center', fontSize: 11.5, fontWeight: 700, color: '#dc2626', width: 110 }}><Trash2 size={12} style={{ display: 'inline', marginRight: 4 }} />CAN DELETE</th>
+                            </tr></thead>
+                            <tbody>{filteredDepartments.map((d, idx) => {
+                                const original = originalDepartments.find(item => item.library_id === d.library_id) || {};
+                                const isChanged = d.can_view !== original.can_view || d.can_edit !== original.can_edit || d.can_delete !== original.can_delete;
+                                return <tr key={d.library_id} style={{ borderBottom: '1px solid #f1f5f9', background: isChanged ? '#fffbeb' : idx % 2 === 0 ? '#fff' : '#fafafa', transition: 'background .15s' }} onMouseEnter={e => { if (!isChanged) e.currentTarget.style.background = '#f0f9ff'; }} onMouseLeave={e => { e.currentTarget.style.background = isChanged ? '#fffbeb' : idx % 2 === 0 ? '#fff' : '#fafafa'; }}>
+                                    <td style={{ padding: '12px 20px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Folder size={14} style={{ color: '#0057B8', flexShrink: 0 }} /><span style={{ fontWeight: 600, fontSize: 13, color: '#0f172a' }}>{d.library_name}</span>{isChanged && <span style={{ fontSize: 10, background: '#fef3c7', color: '#92400e', padding: '2px 7px', borderRadius: 99, fontWeight: 600 }}>Modified</span>}</div></td>
+                                    {['can_view', 'can_edit', 'can_delete'].map((field, index) => <td key={field} style={{ padding: '12px 16px', textAlign: 'center' }}><label style={{ display: 'inline-flex', cursor: canEdit && (index === 0 || d.can_view) ? 'pointer' : 'not-allowed' }}><input type="checkbox" checked={!!d[field]} disabled={!canEdit || (index > 0 && !d.can_view)} onChange={() => toggleDepartmentAccess(d.library_id, field)} style={{ width: 16, height: 16, cursor: canEdit && (index === 0 || d.can_view) ? 'pointer' : 'not-allowed', accentColor: index === 2 ? '#dc2626' : '#0057B8', opacity: canEdit && (index === 0 || d.can_view) ? 1 : .4 }} /></label></td>)}
+                                </tr>;
+                            })}</tbody>
+                        </table>
+                    )}
+                    {changedDepartmentCount > 0 && <div style={{ padding: '12px 20px', background: '#fffbeb', borderTop: '1px solid #fde68a', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}><span style={{ fontSize: 12.5, color: '#92400e', fontWeight: 600 }}>⚠ {changedDepartmentCount} unsaved change{changedDepartmentCount !== 1 ? 's' : ''} — Click "Save Changes" to apply.</span><button type="button" onClick={saveDepartments} disabled={isSaving} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 6, fontSize: 12.5, fontWeight: 600, cursor: isSaving ? 'not-allowed' : 'pointer', background: '#0057B8', color: '#fff', border: 'none' }}>{isSaving ? <Loader2 size={13} /> : <Save size={13} />}{isSaving ? 'Saving...' : 'Save Changes'}</button></div>}
+                </div>
+            )}
+            {selectedUser && !isSelectedDepartmentAdmin && (
                 <div style={{
                     background: '#fff', border: '1px solid #e2e8f0',
                     borderRadius: '12px', overflow: 'hidden',

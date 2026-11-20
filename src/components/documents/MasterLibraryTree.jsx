@@ -359,17 +359,7 @@ export default function MasterLibraryTree({
 
     return (
         <div className="dms-master-tree-container">
-            {templateNav.map((item) => (
-                <button
-                    key={item.name}
-                    type="button"
-                    style={templateCss.button}
-                    onClick={() => navigate(item.path)}
-                >
-                    <span style={templateCss.icon}>{item.icon}</span>
-                    <span style={templateCss.text}>{item.name}</span>
-                </button>
-            ))}
+            
             {filteredTree.map((rootLib) => {
                 const renderNode = (lib) => {
                     const isLibExpanded = expandedNodeIds.has(lib.id);

@@ -18,6 +18,7 @@ import Alert from '../../components/ui/Alert';
 import Spinner from '../../components/ui/Spinner';
 import LoginSlideshow from '../../components/auth/LoginSlideshow';
 import styles from './LoginPage.module.css';
+import { BriefcaseBusiness } from "lucide-react";
 
 // ── Demo Personas ─────────────────────────────────────────────────────────────
 const DEMO_PERSONAS = [
@@ -34,6 +35,13 @@ const DEMO_PERSONAS = [
     password: '123456',
     icon: <Building2 size={16} strokeWidth={2} color="#d97706" />,
     bg: '#fef3c7',
+  },
+  {
+    role: 'Department Admin',
+    email: 'tamilmanik2006@gmail.com',
+    password: '123456',
+    icon: <BriefcaseBusiness size={16} strokeWidth={2} color="#059669" />,
+    bg: '#ecfdf5',
   },
   {
     role: 'User alias Employee',
@@ -196,9 +204,8 @@ const LoginPage = () => {
                   <button
                     key={p.role}
                     type="button"
-                    className={`${styles.personaCard} ${
-                      isActive ? styles.activePersona : ''
-                    }`}
+                    className={`${styles.personaCard} ${isActive ? styles.activePersona : ''
+                      }`}
                     onClick={() => handleSelectPersona(p)}
                   >
                     <div

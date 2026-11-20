@@ -156,6 +156,16 @@ export const documentManagementApi = {
         });
     },
 
+    async getDepartmentAccess(userId) {
+        return apiFetch(`${DMS_BASE}/documents/department-access/${userId}`);
+    },
+
+    async saveDepartmentAccess(userId, departments) {
+        return apiFetch(`${DMS_BASE}/documents/department-access/${userId}`, {
+            method: 'PUT', body: JSON.stringify({ departments }),
+        });
+    },
+
     // ── POLICY REMOVAL WORKFLOW (Maker-Checker) ──
     async requestPolicyRemoval(id, reason) {
         return apiFetch(`${DMS_BASE}/documents/${id}/request-removal`, {

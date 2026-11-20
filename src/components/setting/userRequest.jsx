@@ -266,7 +266,7 @@ export default function Userrequest() {
                 <div>
                     <h3 className="setting-section-title">New User Requests</h3>
                     <p className="setting-section-desc">
-                        Review incoming signup requests, verify email status, and approve accounts with role assignments
+                        Review email-verified signup requests, approve accounts, and assign roles. Repeat OTP attempts are kept out of this queue.
                     </p>
                 </div>
                 <div className="setting-header-actions">

@@ -75,6 +75,8 @@ export default function ChangeManagementPage() {
         return name?.toLowerCase() === 'super admin';
     });
     const canApprove = isSuperAdmin || (user?.permissionStrings || user?.permissions || []).includes('documents:approval');
+    const isDepartmentAdmin = (user?.roles || []).some(r => (typeof r === 'string' ? r : r.role_name || '').toLowerCase() === 'department admin');
+    const canReviewDepartment = canApprove || isDepartmentAdmin;
 
     useEffect(() => {
         if (!toastMsg) return;
@@ -161,7 +163,7 @@ export default function ChangeManagementPage() {
             setReviewingDoc(null);
             setOpenDoc(null);
             setRejectionReason('');
-            setToastMsg(`Policy "${reviewingDoc.pending_document_name || reviewingDoc.document_name}" ${reviewAction === 'approve' ? 'approved & published to Master Library' : 'rejected / returned for revision'}.`);
+            setToastMsg(`Policy "${reviewingDoc.pending_document_name || reviewingDoc.document_name}" ${reviewAction === 'department_approve' ? 'approved by Department admin and sent to Super Admin' : reviewAction === 'approve' ? 'approved & published to Master Library' : 'rejected / returned for revision'}.`);
             if (reviewAction === 'approve') {
                 // Refresh sidebar Master Library tree so new version appears
                 window.dispatchEvent(new CustomEvent('liblist:document-updated', { detail: { library_id: reviewingDoc.library_id } }));
@@ -840,7 +842,12 @@ export default function ChangeManagementPage() {
 
                                             {/* Status */}
                                             <td>
-                                                {doc.has_pending_revision && doc.revision_status === 'pending_review' ? (
+                                                {doc.has_department_admin && doc.department_approval_status !== 'approved' && !isDepartmentAdmin ? (
+                                                    <span className={`policy-status-pill ${doc.department_approval_status === 'rejected' ? 'rejected' : 'pending'}`}>
+                                                        {doc.department_approval_status === 'rejected' ? <XCircle size={11} /> : <Clock size={11} />}
+                                                        <span>{doc.department_approval_status === 'rejected' ? 'Department Admin Rejected' : 'Awaiting Department Admin'}</span>
+                                                    </span>
+                                                ) : doc.has_pending_revision && doc.revision_status === 'pending_review' ? (
                                                     <span className="policy-status-pill pending">
                                                         <Clock size={11} />
                                                         <span>Revision v{doc.pending_revision_version} Pending</span>
@@ -914,7 +921,7 @@ export default function ChangeManagementPage() {
                                             {/* Actions */}
                                             <td style={{ textAlign: 'right' }}>
                                                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
-                                                    {canApprove && (isPending || isDraft) ? (
+                                                    {canReviewDepartment && (isPending || isDraft) && (isDepartmentAdmin && !isSuperAdmin ? doc.department_approval_status !== 'approved' : (!doc.has_department_admin || doc.department_approval_status === 'approved')) ? (
                                                         <button
                                                             type="button"
                                                             className="btn btn-sm btn-primary"
@@ -922,17 +929,17 @@ export default function ChangeManagementPage() {
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
                                                                 setReviewingDoc(doc);
-                                                                setReviewAction('approve');
+                                                                setReviewAction(isDepartmentAdmin && !isSuperAdmin ? 'department_approve' : 'approve');
                                                                 setReviewError('');
                                                             }}
-                                                            title="Approve & Publish"
+                                                            title={isDepartmentAdmin && !isSuperAdmin ? 'Approve department review' : 'Approve & Publish'}
                                                         >
                                                             <Check size={12} />
-                                                            <span>Approve</span>
+                                                            <span>{isDepartmentAdmin && !isSuperAdmin ? 'Department review' : 'Approve'}</span>
                                                         </button>
                                                     ) : null}
 
-                                                    {canApprove && (isPending || isDraft) && (
+                                                    {canReviewDepartment && (isPending || isDraft) && (isDepartmentAdmin && !isSuperAdmin ? doc.department_approval_status !== 'approved' : (!doc.has_department_admin || doc.department_approval_status === 'approved')) && (
                                                         <button
                                                             type="button"
                                                             className="btn btn-sm btn-danger"
@@ -940,6 +947,7 @@ export default function ChangeManagementPage() {
                                                                 e.stopPropagation();
                                                                 setReviewingDoc(doc);
                                                                 setReviewAction('reject');
+                                                                setRejectionReason('');
                                                                 setReviewError('');
                                                             }}
                                                             title="Reject / Rework"
@@ -979,17 +987,19 @@ export default function ChangeManagementPage() {
                     <div className="template-modal-card" style={{ maxWidth: '580px', height: 'auto', maxHeight: '90vh' }}>
                         <div className="template-modal-header">
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                {reviewAction === 'approve' ? (
+                                {reviewAction !== 'reject' ? (
                                     <CheckCircle2 size={18} style={{ color: '#16a34a' }} />
                                 ) : (
                                     <XCircle size={18} style={{ color: '#dc2626' }} />
                                 )}
                                 <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>
                                     {reviewingDoc.has_pending_revision && reviewingDoc.revision_status === 'pending_review'
-                                        ? (reviewAction === 'approve'
+                                        ? (reviewAction !== 'reject'
                                             ? `Approve Revision v${reviewingDoc.pending_revision_version || ''}`
                                             : `Reject Revision v${reviewingDoc.pending_revision_version || ''}`)
-                                        : (reviewAction === 'approve'
+                                        : (reviewAction === 'department_approve'
+                                            ? 'Department Admin Policy Review'
+                                            : reviewAction === 'approve'
                                             ? 'Approve & Publish Operational Policy'
                                             : 'Request Rework / Reject Policy')}
                                 </h3>
@@ -1022,6 +1032,31 @@ export default function ChangeManagementPage() {
                                 )}
                             </div>
 
+                            {reviewAction === 'approve' && (
+                                <div style={{ padding: '12px 14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8 }}>
+                                    <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '.03em', marginBottom: 6 }}>Department admin review</div>
+                                    {(() => {
+                                        const status = !reviewingDoc.has_department_admin
+                                            ? 'Not required — no Department admin assigned'
+                                            : reviewingDoc.department_approval_status === 'approved'
+                                                ? 'Approved'
+                                                : reviewingDoc.department_approval_status === 'rejected'
+                                                    ? 'Rejected'
+                                                    : 'Pending';
+                                        const color = status === 'Approved' ? '#15803d' : status === 'Rejected' ? '#b91c1c' : '#b45309';
+                                        return <>
+                                            <div style={{ fontSize: 13, fontWeight: 700, color }}>{status}</div>
+                                            {reviewingDoc.department_approval_status === 'approved' && reviewingDoc.department_approved_by_name && (
+                                                <div style={{ marginTop: 4, fontSize: 11.5, color: '#64748b' }}>
+                                                    Approved by {reviewingDoc.department_approved_by_name}
+                                                    {reviewingDoc.department_approved_at ? ` · ${new Date(reviewingDoc.department_approved_at).toLocaleString()}` : ''}
+                                                </div>
+                                            )}
+                                        </>;
+                                    })()}
+                                </div>
+                            )}
+
                             {reviewingDoc.pending_revision_commit_message && (
                                 <div style={{ padding: '10px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '7px' }}>
                                     <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', marginBottom: '4px' }}>Revision commit message</div>
@@ -1029,7 +1064,9 @@ export default function ChangeManagementPage() {
                                 </div>
                             )}
 
-                            {reviewAction === 'approve' ? (
+                            {reviewAction === 'department_approve' ? (
+                                <p style={{ margin: 0, fontSize: '13px', color: '#334155', lineHeight: '1.5' }}>Your department approval records the first review. The policy will then be available for Super Admin review.</p>
+                            ) : reviewAction === 'approve' ? (
                                 <p style={{ margin: 0, fontSize: '13px', color: '#334155', lineHeight: '1.5' }}>
                                     {reviewingDoc.has_pending_revision
                                         ? `Approving will promote Revision v${reviewingDoc.pending_revision_version || ''} to live version and update the Master Library across all  institutions.`
@@ -1062,14 +1099,14 @@ export default function ChangeManagementPage() {
                                 </button>
                                 <button
                                     type="button"
-                                    className={`btn ${reviewAction === 'approve' ? 'btn-primary' : 'btn-danger'}`}
-                                    style={reviewAction === 'approve' ? { background: '#16a34a', borderColor: '#15803d' } : {}}
+                                    className={`btn ${reviewAction !== 'reject' ? 'btn-primary' : 'btn-danger'}`}
+                                    style={reviewAction !== 'reject' ? { background: '#16a34a', borderColor: '#15803d' } : {}}
                                     onClick={handleConfirmReview}
-                                    disabled={isReviewing}
+                                    disabled={isReviewing || (reviewAction === 'approve' && reviewingDoc.has_department_admin && reviewingDoc.department_approval_status !== 'approved')}
                                 >
                                     {isReviewing
                                         ? 'Processing...'
-                                        : (reviewAction === 'approve' ? 'Confirm Approval & Publish' : 'Confirm Rejection')
+                                        : (reviewAction === 'department_approve' ? 'Approve Department Review' : reviewAction === 'approve' && reviewingDoc.has_department_admin && reviewingDoc.department_approval_status !== 'approved' ? 'Waiting for Department Admin' : reviewAction === 'approve' ? 'Confirm Approval & Publish' : 'Confirm Rejection')
                                     }
                                 </button>
                             </div>
@@ -1105,7 +1142,7 @@ export default function ChangeManagementPage() {
                             const doc = val?.json || (val?.type === 'doc' ? val : null) || val;
                             setOpenDocContent(doc);
                         }}
-                        onApprove={(docNeedsReview && canApprove) ? async () => {
+                        onApprove={(docNeedsReview && canReviewDepartment) ? async () => {
                             setIsReviewing(true);
                             try {
                                 if (Array.isArray(openDocSections) && openDocSections.length > 0) {
@@ -1128,16 +1165,10 @@ export default function ChangeManagementPage() {
                                     }
                                 }
 
-                                await documentManagementApi.reviewDocument(openDoc.id, 'approve');
-                                const name = openDoc.document_name;
-                                const libId = openDoc.library_id;
-                                const docId = openDoc.id;
+                                setReviewingDoc(openDoc);
+                                setReviewAction(isDepartmentAdmin && !isSuperAdmin ? 'department_approve' : 'approve');
+                                setReviewError('');
                                 setOpenDoc(null);
-                                setToastMsg(`Policy "${name}" approved & published to Master Library.`);
-                                window.dispatchEvent(new CustomEvent('liblist:document-updated', { detail: { library_id: libId } }));
-                                window.dispatchEvent(new CustomEvent('liblist:version-committed', { detail: { document_id: docId } }));
-                                window.dispatchEvent(new CustomEvent('liblist:refresh-nav'));
-                                loadPolicies();
                             } catch (err) {
                                 alert(err.message || 'Failed to approve policy');
                             } finally {
@@ -1146,9 +1177,10 @@ export default function ChangeManagementPage() {
                         } : null}
                         isApproving={isReviewing && !reviewingDoc}
                         approveLabel={openDoc.has_pending_revision ? `Approve Revision v${openDoc.pending_revision_version || ''}` : 'Approve & Publish'}
-                        onReject={(docNeedsReview && canApprove) ? () => {
+                        onReject={(docNeedsReview && canReviewDepartment) ? () => {
                             setReviewingDoc(openDoc);
                             setReviewAction('reject');
+                            setApprovalChecklist({});
                             setReviewError('');
                             setRejectionReason('');
                         } : null}
